@@ -57,7 +57,7 @@ git config core.hooksPath scripts/hooks
 | 无障碍树读取：单次 AX 调用超时 + 整棵树总时间预算（截断时明确标注）+ 客户端读取超时 | `AXBackend.dumpTree`、`NativeClient.call` | 已实现，有测试 |
 | 树的文本输出与字段覆盖率统计 | `TreeFormatter`、`FieldCoverage` | 已实现，覆盖率有测试 |
 | 文本化元素表（本次输出内的句柄、转义、元素数上限） | `ElementTable` | 已实现，有测试 |
-| 只读 MCP stdio 服务：`check_permissions`、`list_apps`、`get_ax_state`（见 [MCP 接入面](../interfaces/mcp_surface.md)） | `SCUMCP`、`scu mcp`、`NativeSession` | 已实现，有单元测试与真实管道的端到端测试。**尚未在真实 MCP 宿主里运行过** |
+| 只读 MCP stdio 服务：`check_permissions`、`list_apps`、`get_ax_state`（见 [MCP 接入面](../interfaces/mcp_surface.md)） | `SCUMCP`、`scu mcp`、`NativeSession` | 已实现，有单元测试与真实管道的端到端测试；已在 Cursor 一个宿主里跑通（见 [MCP 接入面的未验证项](../interfaces/mcp_surface.md#未验证项)） |
 | 进程被信号终止或 SIGKILL 时回收原生进程与 socket 目录 | `NativeClient.terminateAllForShutdown`、`scu-native` 退出清理 | 已实现，由 `scripts/check.sh` 冒烟覆盖 |
 | K1~K4 候选键与匹配键计算（纯函数，无状态） | `IdentityAnalyzer` | 已实现，有测试（含唯一性的伪随机性质测试） |
 | 各档位分布统计（整树 / 窗口内可交互 / 菜单栏 / 按 role），K1 与标签的多种口径 | `IdentityReport`、`scu identity` | 已实现。**只呈现分布，不给成败结论**（ADR-0013「基线先行」） |
@@ -98,7 +98,7 @@ scu identity --pid <pid> [--depth N] [--budget-ms M] [--by-role] [--show-k4]
 
 **辅助功能权限归属于启动 `scu mcp` 的宿主**，不是整台机器。接入后第一件事是让模型调用
 `check_permissions`；未授权时按[macOS 权限](permissions.md)给宿主授权。
-这一流程**尚未在真实宿主里验证**，见 [MCP 接入面的未验证项](../interfaces/mcp_surface.md#未验证项)。
+该流程只在 Cursor 里验证过一次，见 [MCP 接入面的未验证项](../interfaces/mcp_surface.md#未验证项)。
 
 用管道手动驱动（不需要宿主）：
 

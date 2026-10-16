@@ -129,11 +129,16 @@ socket 目录建在 `TMPDIR`（若设置且存在）或系统临时目录下。
 
 ## 未验证项
 
-- **尚未在真实 MCP 宿主（Cursor、Claude Desktop 等）里运行过。** 现有验证是：测试里的假读取器、
-  真实管道上的端到端测试、手动经管道驱动。宿主的实际握手行为、对 `isError` 的呈现、
-  是否因 `instructions` 或 `title` 字段产生兼容问题，都未观察。
-- **宿主的权限归属。** 从宿主启动 `scu mcp` 时，辅助功能权限归属于哪个进程（宿主本体还是其辅助进程）
-  尚未验证。用 `check_permissions` 在目标宿主里确认，不要假设，见 [macOS 权限](../operations/permissions.md)。
+- **只在 Cursor 一个宿主里运行过**（2026-10-16，用户级 `~/.cursor/mcp.json`，macOS 26.6.2，Cursor 版本未记录）。
+  观察到：握手成功；三个工具都被识别；`initialize` 的 `instructions` 被作为服务描述呈现给模型；
+  `check_permissions`、`list_apps`、`get_ax_state` 的调用都成功。Cursor 还在工具列表里额外注入了一个 `mcp_auth`，不是本服务提供的。
+  `isError` 的呈现、其他宿主（Claude Desktop 等）都未观察。
+- **宿主的权限归属只有一个数据点。** 在上述 Cursor 环境里，`check_permissions` 返回已授予。
+  这只说明该环境下成立，不能推到其他宿主或其他机器；归属的是哪个进程（Cursor 本体还是辅助进程）没有核对。
+  见 [macOS 权限](../operations/permissions.md)。
+- **Finder 的读取在该环境下触发了 15 秒预算截断**（1884 个元素，窗口里有长列表）；同一应用较早一次读取为 871 个且未截断，
+  原因未查明（窗口状态不同，或宿主下 AX 调用更慢，两者都没有区分）。
+- **`state=disabled` 可能有噪声**：访达的 `AXApplication` 元素被标为 disabled，是否真实反映 `AXEnabled` 还是该属性对应用元素无意义，未核实。
 - **Electron 应用的树大小随读取时机变化**，原因未查明，见[本地环境](../operations/local_setup.md#已知缺口p0-内待处理)。
 - **元素表对模型是否好用**未经评估：1500 个元素的默认上限是估计值，不是依据数据定的。
 

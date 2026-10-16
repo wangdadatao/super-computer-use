@@ -55,7 +55,10 @@ osascript -e 'tell application "System Events" to get UI elements enabled'
 
 **作为 MCP 服务运行时**（`scu mcp`），宿主是启动它的 MCP 客户端，而不是你的终端。
 在终端里 `scu permissions` 显示已授予，不代表 Cursor 等客户端启动的 `scu mcp` 也有权限；
-让模型调用 `check_permissions` 才是在目标宿主里检测。**这一归属尚未在真实 MCP 宿主里验证。**
+让模型调用 `check_permissions` 才是在目标宿主里检测。
+
+已观察到（2026-10-16，macOS 26.6.2，Cursor 经用户级 `~/.cursor/mcp.json` 启动 `scu mcp`，Cursor 版本未记录）：
+`check_permissions` 返回已授予，随后读取访达的无障碍树成功。**只有这一个数据点**：没有核对负责进程，也没有其他宿主的结果。
 
 未授予时，`scu permissions` 以退出码 2 结束，`scu dump` 报 `system_permission_missing`。
 屏幕录制权限**尚未检测**，指示层隔离验证（B 组）需要它。
