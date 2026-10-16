@@ -1,0 +1,91 @@
+import Foundation
+import SCUWire
+
+/// 原生进程的服务循环：接受一条连接，握手后逐帧应答，对端关闭即退出。
+/// sidecar 的生命周期绑定到连接——不做常驻（生命周期策略是系统总览里的未定项）。
+public struct NativeServer: Sendable {
+    public let socketPath: String
+    public var protocolVersion: Int
+    /// 等待协议层连入的上限。协议层在连接前死亡时，sidecar 据此自行退出而不是成为孤儿。
+    public var acceptTimeoutMs: Int32
+
+    public init(
+        socketPath: String, protocolVersion: Int = scuNativeProtocolVersion, acceptTimeoutMs: Int32 = 10_000
+    ) {
+        self.socketPath = socketPath
+        self.protocolVersion = protocolVersion
+        self.acceptTimeoutMs = acceptTimeoutMs
+    }
+
+    // @project-doc docs/decisions/adr_0012_protocol_versioning.md#internal_boundary
+    public func run() throws {
+        let listenFd = try UnixSocket.listen(at: socketPath)
+        defer {
+            close(listenFd)
+            unlink(socketPath)
+        }
+        let fd = try UnixSocket.accept(listenFd, timeoutMs: acceptTimeoutMs)
+        defer { close(fd) }
+
+        var handshaken = false
+        while true {
+            let frame: RequestFrame
+            do {
+                frame = try Frame.read(RequestFrame.self, from: fd)
+            } catch TransportError.closed {
+                return  // 对端关闭（含半帧到达后关闭）：正常退出
+            } catch TransportError.frameTooLarge(let n) {
+                // 超长帧的主体不会被读取，无法再对齐帧边界：应答后关闭连接。
+                try? reply(fd, id: 0, .failure(.internalError("帧过大：\(n) 字节，上限 \(scuMaxFrameBytes)")))
+                return
+            } catch is DecodingError {
+                try? reply(fd, id: 0, .failure(.internalError("无法解析请求")))
+                return
+            }
+
+            if !handshaken {
+                // 握手之前只接受 hello；版本不一致明确拒绝并关闭，不降级运行（ADR-0012）。
+                guard case .hello(let clientVersion) = frame.request else {
+                    try? reply(fd, id: frame.id, .failure(.internalError("必须先完成握手")))
+                    return
+                }
+                guard clientVersion == protocolVersion else {
+                    try? reply(
+                        fd, id: frame.id,
+                        .failure(.versionMismatch(client: clientVersion, server: protocolVersion)))
+                    return
+                }
+                handshaken = true
+                try reply(fd, id: frame.id, .hello(protocolVersion: protocolVersion))
+            } else {
+                try reply(fd, id: frame.id, handle(frame.request))
+            }
+        }
+    }
+
+    func reply(_ fd: Int32, id: Int, _ response: Response) throws {
+        try Frame.write(ResponseFrame(id: id, response: response), to: fd)
+    }
+
+    func handle(_ request: Request) -> Response {
+        switch request {
+        case .hello:
+            return .failure(.internalError("重复握手"))
+        case .checkPermissions:
+            return .permissions(accessibility: AXBackend.isAccessibilityTrusted())
+        case .listApps:
+            return .apps(AXBackend.listApps())
+        case .dumpTree(let pid, let maxDepth):
+            guard (0...scuMaxTreeDepth).contains(maxDepth) else {
+                return .failure(.internalError("maxDepth 必须在 0...\(scuMaxTreeDepth)，收到 \(maxDepth)"))
+            }
+            do {
+                return .tree(try AXBackend.dumpTree(pid: pid, maxDepth: maxDepth))
+            } catch let e as WireError {
+                return .failure(e)
+            } catch {
+                return .failure(.internalError("\(error)"))
+            }
+        }
+    }
+}

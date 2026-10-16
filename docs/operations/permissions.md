@@ -36,10 +36,25 @@ osascript -e 'tell application "System Events" to get UI elements enabled'
 
 ## 本机状态
 
-当前开发机上的检测结果：**辅助功能未授予**（`false`）。
+**权限状态取决于运行命令的宿主，不是机器级事实。** macOS 的 TCC 按"负责进程"归属权限：
+同一台机器上，从终端运行与从 IDE 内置 agent 会话运行，得到的结果可以不同。
+`scu-native` 是 `scu` 的子进程，权限沿用启动链上的宿主。
 
-在授权之前无法进行任何真实 UI 操作验证，包括[元素身份](../architecture/element_identity.md)
-所依赖的无障碍树样本采集。
+用 `scu permissions` 检测——它走的正是原生进程实际使用的路径，比 `osascript` 更可信。
+
+已观察到的结果（2026-10-16，macOS 26.6.2，arm64，同一台开发机）：
+
+| 宿主 | `osascript` | `scu permissions` | 读取访达无障碍树 |
+| --- | --- | --- | --- |
+| Cursor 的 agent 会话（一次运行） | `true` | 已授予 | 成功 |
+| 另一次 agent 会话（审计复现） | `false` | 未授予（退出码 2） | 未执行 |
+
+两次结果不一致，**原因未查明**。符合 TCC 按宿主归属的解释，但没有进一步验证
+（例如核对两次会话的负责进程）。结论只有一条：**不要假设某个宿主继承了权限，
+每次在目标宿主里先运行 `scu permissions`。**
+
+未授予时，`scu permissions` 以退出码 2 结束，`scu dump` 报 `system_permission_missing`。
+屏幕录制权限**尚未检测**，指示层隔离验证（B 组）需要它。
 
 ## 排障
 

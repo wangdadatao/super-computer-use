@@ -59,7 +59,10 @@ SCU 分为四层，依赖方向单向向下。
 **SCU 自建窗口的登记表**。这个状态的存在理由是把自身产生的窗口
 排除出截图与元素表，详见[虚拟指示层](virtual_indicator.md)。
 
+<a id="process_boundary"></a>
 ## 进程边界与通信
+
+帧格式与消息目录见[原生层线协议](../interfaces/native_wire_protocol.md)。
 
 协议层运行在服务进程内，原生层以**独立 sidecar 进程**形式存在。
 
@@ -111,6 +114,7 @@ agent 不需要为两者写不同的代码路径。
 
 具体平台映射不在本文展开，见[决策：macOS 优先](../decisions/adr_0005_macos_first_linux_later.md)。
 
+<a id="responsibility_boundary"></a>
 ## 职责边界
 
 明确划线，避免职责渗漏：

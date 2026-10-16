@@ -1,22 +1,10 @@
 # macOS
 .DS_Store
 
-# Python
-__pycache__/
-*.py[cod]
-.venv/
-venv/
-*.egg-info/
-
-# Node
-node_modules/
-dist/
-build/
-
-# 本地状态与证据（不纳入版本控制）
-.scu/
-*.evidence.json
-/snapshots/
+# Swift
+.build/
+.swiftpm/
+Package.resolved
 
 # 编辑器
 .idea/

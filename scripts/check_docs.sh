@@ -13,6 +13,7 @@
 #   7. 术语一致性：不应残留已废弃的旧术语
 #   8. mermaid 图型合法（结构检查）
 #   9. mermaid 实际渲染（需 mmdc，缺失时跳过并提示）
+#  10. 代码侧 @project-doc 锚点：路径存在、目标是显式 <a id> ID、格式合规；显式 ID 不重复
 #
 # 扫描范围：docs/、verification/、仓库根的 *.md（含审计报告）。
 #
@@ -64,12 +65,22 @@ def slug(heading):
 
 # 预算每篇文档的锚点集合
 anchors = {}
+explicit = {}
 for p in files:
     txt = open(p, encoding="utf-8").read()
     body = strip_code(txt)
     anchors[os.path.normpath(p)] = {
         slug(m.group(1)) for m in re.finditer(r"^#{1,6}\s+(.+)$", body, re.M)
     }
+    # 显式 HTML ID（<a id="x"></a>）：代码锚点只允许指向这类稳定 ID，不指向标题 slug。
+    ids = re.findall(r'<a id="([^"]+)"></a>', body)
+    explicit[os.path.normpath(p)] = set(ids)
+    anchors[os.path.normpath(p)] |= set(ids)
+    for dup in {i for i in ids if ids.count(i) > 1}:
+        errors.append(f"重复的显式章节 ID {dup}: {p}")
+    for bad in ids:
+        if not re.fullmatch(r"[a-z][a-z0-9_]*", bad):
+            errors.append(f"显式章节 ID 不符合 snake_case {bad}: {p}")
 
 for p in files:
     b = os.path.basename(p)
@@ -138,7 +149,32 @@ for f in sorted(os.listdir("docs/decisions")):
         if need not in t:
             errors.append(f"ADR 缺字段 {need}: {f}")
 
-print(f"   扫描 {len(files)} 个文件，{mermaid} 张 mermaid 图")
+# 代码侧 @project-doc 锚点：路径存在、ID 是显式 ID、格式合规。
+code_anchors = 0
+for top in ("Sources", "Tests", "scripts"):
+    for dp, _, fn in os.walk(top):
+        for f in fn:
+            if not f.endswith((".swift", ".sh")) or f == "check_docs.sh":
+                continue
+            cp = os.path.join(dp, f)
+            for i, line in enumerate(open(cp, encoding="utf-8"), 1):
+                if "@project-doc" not in line:
+                    continue
+                m = re.search(r"@project-doc\s+(\S+)", line)
+                code_anchors += 1
+                if not m:
+                    errors.append(f"锚点缺少目标: {cp}:{i}")
+                    continue
+                target = m.group(1)
+                path, _, sid = target.partition("#")
+                if not re.fullmatch(r"docs/[a-z0-9_/]+\.md", path) or not re.fullmatch(r"[a-z][a-z0-9_]*", sid):
+                    errors.append(f"锚点格式不合规: {cp}:{i} -> {target}")
+                elif not os.path.exists(path):
+                    errors.append(f"锚点文档不存在: {cp}:{i} -> {target}")
+                elif sid not in explicit.get(os.path.normpath(path), set()):
+                    errors.append(f"锚点 ID 不存在（须是 <a id> 显式 ID）: {cp}:{i} -> {target}")
+
+print(f"   扫描 {len(files)} 个文件，{mermaid} 张 mermaid 图，{code_anchors} 个代码锚点")
 if errors:
     print(f"   ❌ {len(errors)} 个问题：")
     for e in errors[:60]:

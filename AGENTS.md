@@ -2,8 +2,10 @@
 
 ## 项目定位
 
-SuperComputerUse（SCU）是一个开源桌面自动化服务。当前处于设计阶段，
-目标是先固化协议与领域模型，再实现原生层。
+SuperComputerUse（SCU）是一个开源桌面自动化服务。当前处于 P0：
+已有 Swift 脚手架（`Package.swift`、`Sources/`、`Tests/`），核心机制仍在实现中。
+验证内嵌在 P0 里作为出口门槛，见 `docs/decisions/adr_0013_p0_vertical_slice.md`。
+构建与测试：`swift build && swift test`。
 
 ## 文档协作规则
 
@@ -20,8 +22,16 @@ SuperComputerUse（SCU）是一个开源桌面自动化服务。当前处于设�
 - 参考外部实现时只借鉴设计模式，不复制代码。文档中注明灵感来源。
 - **图示用 mermaid 内联在 markdown 中**，不使用外部图片。理由：可 diff、可版本控制、
   人和 agent 都能直接读。
-- **提交前运行 `scripts/check_docs.sh`**。它检查命名、H1 唯一性、链接可达性（含锚点）、
-  分类路由、ADR 字段、废弃术语与 mermaid 语法；若本机安装了 `mmdc` 则一并做渲染验证。
+- **提交前运行 `scripts/check.sh`**：文档检查 + `swift build` + `swift test` + 命令行冒烟，
+  是唯一的提交前入口。启用 pre-commit：`git config core.hooksPath scripts/hooks`。
+  其中的 `scripts/check_docs.sh` 检查命名、H1 唯一性、链接可达性（含锚点）、
+  分类路由、ADR 字段、废弃术语、mermaid 语法与代码侧 `@project-doc` 锚点；
+  若本机安装了 `mmdc` 则一并做渲染验证。
+- **代码锚点**：在实现某份文档所描述的契约的手写入口处，加一行
+  `// @project-doc docs/<path>.md#<id>`。`<id>` 必须是目标文档里 `<a id="..."></a>` 的显式 ID，
+  不指向标题 slug。改契约时同步改文档与锚点，`check_docs.sh` 会校验锚点有效。
+- **宿主相关的事实不要写成机器级事实**：权限（辅助功能、屏幕录制）按宿主进程归属，
+  记录时写明在哪个宿主、哪个环境下观察到，并用 `scu permissions` 而不是 `osascript` 判断。
 - **引用外部实现的观察时，先在 `verification/external-sources.md` 登记来源**：
   工件路径、版本、SHA-256、采集方法、日期，并把结论落到具体证据。
   文档中只引用来源 ID，不重复证据本身。

@@ -43,6 +43,7 @@ SCU 失败返回的结构、分类与可重试性。成功返回的形态见
 `converged` 与 `noOpSuspected` 两个字段。**把它们做成错误会诱导调用方
 对正常情况做异常处理。**
 
+<a id="error_structure"></a>
 ## 错误结构
 
 ```ts

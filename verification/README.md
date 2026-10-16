@@ -35,6 +35,8 @@ verification/
 
 ## 当前状态
 
-**空。** 尚无任何验证执行——全部假设处于未验证状态，
-阻塞原因是辅助功能权限未授予，见
+**空。** 尚无任何假设验证被执行，全部处于未验证状态。
+验证内嵌在 P0 中，门槛见
+[ADR-0013](../docs/decisions/adr_0013_p0_vertical_slice.md)。
+元素身份与令牌尚未实现，相关验证还不能开始；权限状态见
 [docs/operations/permissions.md](../docs/operations/permissions.md)。
