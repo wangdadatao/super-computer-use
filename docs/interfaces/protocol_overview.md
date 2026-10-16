@@ -114,6 +114,10 @@ interface Target {
 type Coordinates = { x: number; y: number; geometryToken: string };
 ```
 
+编辑类动作（设值 / 输入 / 选择 / 粘贴）的内部语义差异较大，
+包括三条写入路径各自触发什么、目标解析顺序、剪贴板的快照语义。
+详见[编辑类操作语义](edit_semantics.md)。
+
 ## 动作效果
 
 每个动作返回效果摘要，而不是空返回：
@@ -121,20 +125,31 @@ type Coordinates = { x: number; y: number; geometryToken: string };
 ```ts
 interface Effect {
   delivered: boolean;          // 事件是否成功投递
+  converged: boolean;          // 目标是否已进入稳定状态
   treeChanged: boolean;        // 树是否变化
   targetChanged: boolean;      // 目标元素的可观察属性是否变化
   focusStolenBy: string | null; // 焦点是否被其他目标夺走
-  noOpSuspected: boolean;      // 已投递但无任何可观测变化
+  noOpSuspected: boolean;      // 已收敛但无任何可观测变化
   snapshotToken: string | null; // 若树已重读，返回新令牌
 }
 ```
 
+**\`converged\` 与 \`noOpSuspected\` 必须分开看。** 未收敛不是“没生效”，
+而是“还不知道”——这两种情况对调用方的含义不同。详见
+[动作收敛与等待](../architecture/action_convergence.md)。
+
 字段语义见[术语表](../domains/glossary.md)。设计理由见
-[ADR-0006](../decisions/adr_0006_action_effect_verification.md)。
+[ADR-0006](../decisions/adr_0006_action_effect_verification.md) 与
+[ADR-0011](../decisions/adr_0011_convergence_over_fixed_delay.md)。
 
 ## 约束
 
 - **一次一个目标。** 会话同时只绑定一个目标。切换目标会让旧令牌全部失效。
-- **不并行。** 同一会话内的动作串行执行。桌面本身是单点资源，并行会导致焦点竞争。
+  目标的发现与绑定规则见[目标发现与绑定](target_discovery.md)。
+- **不并行。** 同一会话内的动作串行执行，收敛窗口包含在串行段内。
+  这是正确性要求：桌面是单点资源，并行会导致事件顺序不可预测和焦点竞争。
+  详见[会话与控制租约](../architecture/session_and_lease.md)。
 - **坐标令牌必填。** 基于坐标的动作没有令牌时直接拒绝，不做默认值推断。
 - **失败即拒绝。** 令牌失效、引用歧义、目标不存在时拒绝执行，不做兜底猜测。
+- **动作先过策略。** 每个动作在执行前经过[策略层](../architecture/policy_layer.md)准入。
+  策略拒绝与协议拒绝在返回值上必须可区分：前者不重试，后者应重读状态后重试。
