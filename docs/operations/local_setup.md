@@ -56,15 +56,19 @@ git config core.hooksPath scripts/hooks
 | 应用列表 | `AXBackend.listApps` | 已实现 |
 | 无障碍树读取：单次 AX 调用超时 + 整棵树总时间预算（截断时明确标注）+ 客户端读取超时 | `AXBackend.dumpTree`、`NativeClient.call` | 已实现，有测试 |
 | 树的文本输出与字段覆盖率统计 | `TreeFormatter`、`FieldCoverage` | 已实现，覆盖率有测试 |
+| 文本化元素表（本次输出内的句柄、转义、元素数上限） | `ElementTable` | 已实现，有测试 |
+| 只读 MCP stdio 服务：`check_permissions`、`list_apps`、`get_ax_state`（见 [MCP 接入面](../interfaces/mcp_surface.md)） | `SCUMCP`、`scu mcp`、`NativeSession` | 已实现，有单元测试与真实管道的端到端测试。**尚未在真实 MCP 宿主里运行过** |
+| 进程被信号终止或 SIGKILL 时回收原生进程与 socket 目录 | `NativeClient.terminateAllForShutdown`、`scu-native` 退出清理 | 已实现，由 `scripts/check.sh` 冒烟覆盖 |
 | K1~K4 候选键与匹配键计算（纯函数，无状态） | `IdentityAnalyzer` | 已实现，有测试（含唯一性的伪随机性质测试） |
 | 各档位分布统计（整树 / 窗口内可交互 / 菜单栏 / 按 role），K1 与标签的多种口径 | `IdentityReport`、`scu identity` | 已实现。**只呈现分布，不给成败结论**（ADR-0013「基线先行」） |
 
-**尚未实现**：句柄注册表（跨快照延续，**暂缓**，见 [ADR-0013](../decisions/adr_0013_p0_vertical_slice.md#暂缓句柄注册表)）、
+**尚未实现**：动作（点击、输入、设值）、策略层、屏幕捕获；句柄注册表（跨快照延续，**暂缓**，见 [ADR-0013](../decisions/adr_0013_p0_vertical_slice.md#暂缓句柄注册表)）、
 快照令牌、动作注入、效果摘要。
 
 命令行：
 
 ```bash
+scu mcp                             # MCP stdio 服务（只读档）；stdout 只有协议消息，诊断写 stderr
 scu permissions                     # 检查辅助功能权限
 scu apps                            # 列出可绑定的应用与 pid
 scu dump --pid <pid> [--depth N] [--budget-ms M]
@@ -79,6 +83,31 @@ scu identity --pid <pid> [--depth N] [--budget-ms M] [--by-role] [--show-k4]
 `dump` 输出的是原始树，**不是**最终的元素表格式（见[元素寻址](../interfaces/element_addressing.md)）。
 此时还没有句柄。
 
+### 接入 MCP 宿主
+
+`scu mcp` 由宿主按 MCP stdio 方式启动。以 Cursor 的 `mcp.json` 为例（路径换成本机的构建产物目录，
+用 `swift build --show-bin-path` 查询；`scu` 会在同目录找 `scu-native`）：
+
+```json
+{
+  "mcpServers": {
+    "scu": { "command": "/绝对路径/.build/out/Products/Debug/scu", "args": ["mcp"] }
+  }
+}
+```
+
+**辅助功能权限归属于启动 `scu mcp` 的宿主**，不是整台机器。接入后第一件事是让模型调用
+`check_permissions`；未授权时按[macOS 权限](permissions.md)给宿主授权。
+这一流程**尚未在真实宿主里验证**，见 [MCP 接入面的未验证项](../interfaces/mcp_surface.md#未验证项)。
+
+用管道手动驱动（不需要宿主）：
+
+```bash
+printf '%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}' \
+  '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' | "$(swift build --show-bin-path)/scu" mcp
+```
+
 ### 已知缺口（P0 内待处理）
 
 - **Electron 应用的树大小随读取时机变化。** 同一个 Cursor 进程，较早一次读取 251 个元素，
@@ -87,7 +116,7 @@ scu identity --pid <pid> [--depth N] [--budget-ms M] [--by-role] [--show-k4]
   `AXManualAccessibility` / `AXEnhancedUserInterface`，那会改变目标应用的状态，属有副作用的操作，需先设计。
 - **`description` 是否纳入 K2 待定。** 后端已读取 `AXDescription`，分布统计并列两种口径；
   基线显示它对 K4 比例的改善有限，见 [基线记录](../../verification/2026-10-16-baseline-identity.md)。
-- **客户端被 SIGTERM 终止时，原生进程会继续工作到时间预算耗尽**（最长 `budgetMs`），之后退出。
+- **客户端被终止时，原生进程若正在读树，会继续工作到时间预算耗尽**（最长 `budgetMs`），之后退出并回收 socket 目录。`scu mcp` 收到 SIGTERM / SIGINT / SIGHUP 时会立即终止原生进程；SIGKILL 则只能靠原生进程自行发现连接断开。
 
 ## 首次运行的顺序
 

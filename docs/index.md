@@ -15,7 +15,7 @@
 ## 当前阶段
 
 **P0 进行中：已有脚手架，核心机制尚未实现。** 仓库有一个 Swift package，
-实现了两进程通信、版本协商、权限检测与无障碍树读取；元素身份、令牌、动作与效果摘要尚未实现。
+实现了两进程通信、版本协商、权限检测、无障碍树读取，以及只读的 MCP stdio 服务（`scu mcp`，见 [MCP 接入面](interfaces/mcp_surface.md)）；元素身份注册、令牌、动作与效果摘要尚未实现，AI 目前只能读，不能操作。
 范围与出口门槛见 [ADR-0013](decisions/adr_0013_p0_vertical_slice.md)，
 已实现内容见[本地环境](operations/local_setup.md)。
 

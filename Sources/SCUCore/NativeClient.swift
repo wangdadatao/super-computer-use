@@ -22,6 +22,41 @@ public final class NativeClient {
         }
     }
 
+    /// 存活的连接登记表：进程被信号终止时，`defer` 与 `deinit` 都不会运行，
+    /// 需要一条不依赖实例的清理路径（见 `terminateAllForShutdown`）。
+    private final class LiveRegistry: @unchecked Sendable {
+        private let lock = NSLock()
+        private var entries: [String: Int32] = [:]  // socket 目录 → sidecar pid
+
+        func add(dir: String, pid: Int32) { lock.withLock { entries[dir] = pid } }
+        func remove(dir: String) { lock.withLock { _ = entries.removeValue(forKey: dir) } }
+        func drain() -> [String: Int32] { lock.withLock { let e = entries; entries = [:]; return e } }
+    }
+
+    private static let live = LiveRegistry()
+
+    /// 供信号处理器调用：终止全部存活的原生进程并删除其 socket 目录。
+    /// 只用 `kill` 与文件删除，不等待、不持有实例锁，因此在读树进行中也能立即完成。
+    public static func terminateAllForShutdown() {
+        for (dir, pid) in live.drain() {
+            kill(pid, SIGTERM)
+            try? FileManager.default.removeItem(atPath: dir)
+        }
+    }
+
+    /// socket 目录的父目录。显式读取 `TMPDIR`：macOS 的 `FileManager.temporaryDirectory`
+    /// 优先用系统的每用户临时目录，不一定遵从 `TMPDIR`，而测试与冒烟检查需要把它指到可审计的位置。
+    /// 注意 Unix socket 路径上限约 104 字节，过长的 `TMPDIR` 会以 `pathTooLong` 失败。
+    static func socketBase() -> URL {
+        if let t = ProcessInfo.processInfo.environment["TMPDIR"], !t.isEmpty {
+            var isDir: ObjCBool = false
+            if FileManager.default.fileExists(atPath: t, isDirectory: &isDir), isDir.boolValue {
+                return URL(fileURLWithPath: t, isDirectory: true)
+            }
+        }
+        return FileManager.default.temporaryDirectory
+    }
+
     private let fd: Int32
     let process: Process
     private let socketDir: URL
@@ -38,8 +73,7 @@ public final class NativeClient {
             throw ClientError.nativeExecutableNotFound(nativeExecutable.path)
         }
         // 私有目录（0700）存放 socket，避免其他用户连入。
-        let dir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("scu-\(UUID().uuidString.prefix(8))")
+        let dir = Self.socketBase().appendingPathComponent("scu-\(UUID().uuidString.prefix(8))")
         try FileManager.default.createDirectory(
             at: dir, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
         let path = dir.appendingPathComponent("n.sock").path
@@ -49,12 +83,18 @@ public final class NativeClient {
         var args = ["--socket", path]
         if let v = nativeProtocolVersionOverride { args += ["--protocol-version", String(v)] }
         proc.arguments = args
+        // 接入层（如 MCP stdio）独占 stdout 与 stdin：原生进程的任何输出都不能混入，
+        // 也不能读走协议流。stdout 转到 stderr，stdin 断开。
+        proc.standardOutput = FileHandle.standardError
+        proc.standardInput = FileHandle.nullDevice
         do {
             try proc.run()
         } catch {
             try? FileManager.default.removeItem(at: dir)
             throw error
         }
+
+        Self.live.add(dir: dir.path, pid: proc.processIdentifier)
 
         var connected: Int32?
         for _ in 0..<60 {
@@ -68,6 +108,7 @@ public final class NativeClient {
         guard let fd = connected else {
             if proc.isRunning { proc.terminate() }
             proc.waitUntilExit()
+            Self.live.remove(dir: dir.path)
             try? FileManager.default.removeItem(at: dir)
             throw ClientError.connectTimeout
         }
@@ -124,6 +165,7 @@ public final class NativeClient {
         Darwin.close(fd)
         if process.isRunning { process.terminate() }
         process.waitUntilExit()
+        Self.live.remove(dir: socketDir.path)
         try? FileManager.default.removeItem(at: socketDir)
     }
 

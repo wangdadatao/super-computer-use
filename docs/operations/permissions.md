@@ -53,6 +53,10 @@ osascript -e 'tell application "System Events" to get UI elements enabled'
 （例如核对两次会话的负责进程）。结论只有一条：**不要假设某个宿主继承了权限，
 每次在目标宿主里先运行 `scu permissions`。**
 
+**作为 MCP 服务运行时**（`scu mcp`），宿主是启动它的 MCP 客户端，而不是你的终端。
+在终端里 `scu permissions` 显示已授予，不代表 Cursor 等客户端启动的 `scu mcp` 也有权限；
+让模型调用 `check_permissions` 才是在目标宿主里检测。**这一归属尚未在真实 MCP 宿主里验证。**
+
 未授予时，`scu permissions` 以退出码 2 结束，`scu dump` 报 `system_permission_missing`。
 屏幕录制权限**尚未检测**，指示层隔离验证（B 组）需要它。
 

@@ -1,8 +1,11 @@
 import Foundation
+import Dispatch
 import SCUCore
+import SCUMCP
 import SCUWire
 
-// P0 命令行入口，代替后续的 MCP 接入层。
+// 命令行入口：诊断命令，以及 `scu mcp`（MCP stdio 服务）。
+//   scu mcp                            以 MCP stdio 服务运行（只读档），见 docs/interfaces/mcp_surface.md
 //   scu permissions
 //   scu apps
 //   scu dump --pid <pid> [--depth <n>] [--json]
@@ -45,6 +48,46 @@ func parseBudget(_ args: [String]) throws -> Int {
 /// 读树的客户端等待上限 = 时间预算 + 余量（单次 AX 调用最多再耗 2 秒，加上编码与传输）。
 func treeTimeoutMs(_ budgetMs: Int) -> Int32 { Int32(budgetMs + 10_000) }
 
+let scuVersion = "0.0.1-p0"
+
+/// 以 MCP stdio 服务运行。**stdout 只允许出现协议消息**：任何诊断都写 stderr。
+func runMCP() {
+    // 宿主关闭管道后继续写会触发 SIGPIPE；改为让 write 返回错误，由循环正常退出并清理。
+    signal(SIGPIPE, SIG_IGN)
+
+    // 被信号终止时 defer 不会执行：用信号源兜底，终止 sidecar 并删除 socket 目录。
+    var sources: [DispatchSourceSignal] = []
+    for sig in [SIGTERM, SIGINT, SIGHUP] {
+        signal(sig, SIG_IGN)
+        let src = DispatchSource.makeSignalSource(signal: sig, queue: .global())
+        src.setEventHandler {
+            NativeClient.terminateAllForShutdown()
+            exit(128 + sig)
+        }
+        src.resume()
+        sources.append(src)
+    }
+
+    let session = NativeSession(nativeExecutable: nativeExecutableURL())
+    defer { session.close() }
+    let server = MCPServer(reader: session, serverVersion: scuVersion)
+    server.run(
+        readLine: { Swift.readLine(strippingNewline: true) },
+        write: { line in
+            var bytes = Array((line + "\n").utf8)[...]
+            while !bytes.isEmpty {
+                let n = bytes.withUnsafeBytes { Darwin.write(1, $0.baseAddress, $0.count) }
+                if n < 0 {
+                    if errno == EINTR { continue }
+                    return false
+                }
+                bytes = bytes.dropFirst(n)
+            }
+            return true
+        })
+    withExtendedLifetime(sources) {}
+}
+
 func run(command: String, args: [String]) throws {
     // 先校验参数，再启动 sidecar：用法错误不应拉起子进程。
     var pid: Int32 = 0
@@ -75,6 +118,9 @@ func run(command: String, args: [String]) throws {
             depth = n
         }
         budgetMs = try parseBudget(args)
+    } else if command == "mcp" {
+        runMCP()
+        return
     } else if command != "permissions" && command != "apps" {
         throw usage("未知命令：\(command)")
     }
@@ -148,7 +194,7 @@ func main() -> Int32 {
     let argv = Array(CommandLine.arguments.dropFirst())
     guard let command = argv.first else {
         FileHandle.standardError.write(
-            Data("用法：scu permissions | apps | dump|identity --pid <pid> [--depth <n>] [--budget-ms <n>] [--json|--show-k4|--by-role]\n".utf8))
+            Data("用法：scu mcp | permissions | apps | dump|identity --pid <pid> [--depth <n>] [--budget-ms <n>] [--json|--show-k4|--by-role]\n".utf8))
         return 64
     }
     do {
