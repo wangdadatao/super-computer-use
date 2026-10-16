@@ -270,8 +270,45 @@ struct ToolReply: Equatable {
         reader.tree = .success(TreeReading(root: wide, truncated: false))
         let capped = callTool(server, "get_ax_state", ["pid": 1, "max_elements": 4]).text
         #expect(capped.contains("元素 11"))
-        #expect(capped.contains("仅输出前 4 个"))
+        #expect(capped.contains("显示 4"))
+        #expect(capped.contains("按层级优先"))
+        #expect(capped.contains("(折叠 7)"))  // 根折叠了未显示的 7 个后代
         #expect(capped.split(separator: "\n").count == 1 + 4)
+    }
+
+    @Test func focusParametersSelectSubtreesAndEmptyStringMeansUnset() {
+        reader.tree = .success(TreeReading(
+            root: AXNode(role: "AXWindow", children: [
+                AXNode(role: "AXButton", title: "确定"), AXNode(role: "AXButton", title: "取消"),
+            ]), truncated: false))
+        let s = server
+        let one = callTool(s, "get_ax_state", ["pid": 1, "focus": "确定"])
+        #expect(!one.isError)
+        #expect(one.text.contains("focus 命中 1 处"))
+        #expect(one.text.contains("@ AXWindow"))
+        #expect(one.text.contains(#"[AXButton#2] "确定""#))
+        #expect(!one.text.contains("取消"))
+
+        let byRole = callTool(s, "get_ax_state", ["pid": 1, "focus_role": "Button"])
+        #expect(byRole.text.contains("focus 命中 2 处"))
+
+        // 模型常把不需要的可选参数填成空串：等价于没给。
+        let empty = callTool(s, "get_ax_state", ["pid": 1, "focus": "", "focus_role": ""])
+        #expect(!empty.text.contains("focus 命中") && empty.text.contains("元素 3"))
+    }
+
+    @Test func focusWithNoMatchIsAnInformativeResultNotAnError() {
+        reader.tree = .success(TreeReading(root: AXNode(role: "AXWindow"), truncated: true))
+        let r = callTool(server, "get_ax_state", ["pid": 1, "focus": "不存在"])
+        #expect(!r.isError)
+        #expect(r.text.contains("没有元素匹配 focus"))
+        #expect(r.text.contains("树不完整"))  // 截断时要提醒"可能只是没读到"
+    }
+
+    @Test func focusMustBeAString() {
+        let r = callTool(server, "get_ax_state", ["pid": 1, "focus": 5])
+        #expect(r.isError && r.text.hasPrefix("[invalid_argument]"))
+        #expect(reader.treeCalls.isEmpty)
     }
 }
 

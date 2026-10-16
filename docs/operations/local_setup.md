@@ -54,9 +54,9 @@ git config core.hooksPath scripts/hooks
 | 命令行失败路径不泄漏临时目录与子进程 | `scu` 的 `main` | 已实现，由 `scripts/check.sh` 冒烟覆盖 |
 | 权限检测（辅助功能） | `AXBackend.isAccessibilityTrusted` | 已实现 |
 | 应用列表 | `AXBackend.listApps` | 已实现 |
-| 无障碍树读取：单次 AX 调用超时 + 整棵树总时间预算（截断时明确标注）+ 客户端读取超时 | `AXBackend.dumpTree`、`NativeClient.call` | 已实现，有测试 |
+| 无障碍树读取：广度优先遍历，单次 AX 调用超时 + 整棵树总时间预算（截断时明确标注，丢弃的是最深的节点）+ 客户端读取超时 | `AXBackend.dumpTree`、`NativeClient.call` | 已实现，有测试 |
 | 树的文本输出与字段覆盖率统计 | `TreeFormatter`、`FieldCoverage` | 已实现，覆盖率有测试 |
-| 文本化元素表（本次输出内的句柄、转义、元素数上限） | `ElementTable` | 已实现，有测试 |
+| 文本化元素表（本次读取内的句柄、转义、层级优先的元素数上限、`focus` 展开） | `ElementTable` | 已实现，有测试 |
 | 只读 MCP stdio 服务：`check_permissions`、`list_apps`、`get_ax_state`（见 [MCP 接入面](../interfaces/mcp_surface.md)） | `SCUMCP`、`scu mcp`、`NativeSession` | 已实现，有单元测试与真实管道的端到端测试；已在 Cursor 一个宿主里跑通（见 [MCP 接入面的未验证项](../interfaces/mcp_surface.md#未验证项)） |
 | 进程被信号终止或 SIGKILL 时回收原生进程与 socket 目录 | `NativeClient.terminateAllForShutdown`、`scu-native` 退出清理 | 已实现，由 `scripts/check.sh` 冒烟覆盖 |
 | K1~K4 候选键与匹配键计算（纯函数，无状态） | `IdentityAnalyzer` | 已实现，有测试（含唯一性的伪随机性质测试） |

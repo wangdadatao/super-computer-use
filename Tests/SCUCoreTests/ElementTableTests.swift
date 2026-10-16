@@ -43,11 +43,139 @@ import Testing
         #expect(line.count < 200)
     }
 
-    @Test func maxElementsCutsOutputButStillCountsEverything() {
-        let tree = AXNode(role: "AXGroup", children: (0..<20).map { _ in AXNode(role: "AXButton") })
-        let r = ElementTable.render(tree, maxElements: 5)
-        #expect(r.total == 21 && r.shown == 5)
-        #expect(r.text.split(separator: "\n").count == 5)
-        #expect(r.text.hasSuffix("[AXButton#5]") || r.text.hasSuffix("  [AXButton#5]"))
+    // MARK: - 层级优先
+
+    /// 根 → [A（50 个叶子）, B, C]。先序截断会让 A 的叶子占满配额，看不到 B 与 C。
+    static func bigFirstSubtree() -> AXNode {
+        AXNode(role: "AXWindow", children: [
+            AXNode(role: "AXGroup", title: "A", children: (0..<50).map { _ in AXNode(role: "AXButton") }),
+            AXNode(role: "AXToolbar", title: "B"),
+            AXNode(role: "AXGroup", title: "C"),
+        ])
+    }
+
+    @Test func levelFirstShowsSiblingsBeforeDescendants() {
+        let r = ElementTable.render(Self.bigFirstSubtree(), maxElements: 6)
+        let lines = r.text.split(separator: "\n").map(String.init)
+        #expect(lines.count == 6 && r.shown == 6 && r.total == 54)
+        // B、C 是第 1 层，必须可见；句柄按完整树先序编号（B 是 #53，C 是 #54），与是否显示无关。
+        #expect(lines.contains { $0.contains("[AXToolbar#53]") })
+        #expect(lines.contains { $0.contains("[AXGroup#54]") })
+        // A 下的 50 个叶子只显示了 2 个，其余 48 个折叠，并在 A 行尾标出。
+        let a = lines.first { $0.contains("[AXGroup#2]") }
+        #expect(a?.hasSuffix("(折叠 48)") == true)
+    }
+
+    @Test func fullyFittingTreeHasNoCollapseMarkers() {
+        let r = ElementTable.render(Self.bigFirstSubtree(), maxElements: 54)
+        #expect(r.shown == 54 && !r.text.contains("折叠"))
+    }
+
+    @Test func collapsedCountMakesTheTotalAddUp() {
+        for cap in [1, 2, 3, 10, 53] {
+            let r = ElementTable.render(Self.bigFirstSubtree(), maxElements: cap)
+            let root = r.text.split(separator: "\n").first.map(String.init) ?? ""
+            let hidden = root.range(of: "(折叠 ").flatMap { Int(root[$0.upperBound...].dropLast()) } ?? 0
+            #expect(r.shown + hidden == r.total && r.shown == cap, "cap=\(cap)")
+        }
+    }
+
+    @Test func levelFirstRespectsCapAndKeepsParentsVisibleForArbitraryTrees() {
+        var seed: UInt64 = 0xC0FFEE
+        func next(_ n: Int) -> Int {
+            seed = seed &* 6364136223846793005 &+ 1442695040888963407
+            return Int((seed >> 33) % UInt64(n))
+        }
+        func tree(_ depth: Int) -> AXNode {
+            let kids = depth == 0 ? 0 : next(5)
+            return AXNode(role: "AXGroup", children: (0..<kids).map { _ in tree(depth - 1) })
+        }
+        for _ in 0..<200 {
+            let t = tree(5)
+            let cap = 1 + next(40)
+            let r = ElementTable.render(t, maxElements: cap)
+            let lines = r.text.split(separator: "\n").map(String.init)
+            #expect(r.shown == min(cap, r.total))
+            #expect(lines.count == r.shown)
+            // 缩进只会比前一行深一级：显示的元素一定带着它的祖先（父节点必已显示）。
+            var prev = -1
+            for l in lines {
+                let indent = (l.prefix { $0 == " " }.count) / 2
+                #expect(indent <= prev + 1)
+                prev = indent
+            }
+        }
+    }
+
+    // MARK: - focus
+
+    static func sample() -> AXNode {
+        AXNode(role: "AXWindow", title: "主窗口", children: [
+            AXNode(role: "AXToolbar", children: [
+                AXNode(role: "AXButton", description: "返回"),
+                AXNode(role: "AXButton", description: "前进"),
+            ]),
+            AXNode(role: "AXScrollArea", children: [
+                AXNode(role: "AXOutline", description: "边栏", children: [
+                    AXNode(role: "AXRow", children: [AXNode(role: "AXStaticText", value: "边栏项目一")]),
+                    AXNode(role: "AXRow", children: [AXNode(role: "AXStaticText", identifier: "side-2", value: "项目二")]),
+                ])
+            ]),
+        ])
+    }
+
+    @Test func focusTextMatchesAnyFieldCaseInsensitivelyAndShowsAncestorPath() {
+        let r = ElementTable.render(Self.sample(), focus: .init(text: "SIDE-2"))
+        #expect(r.matches == 1)
+        let lines = r.text.split(separator: "\n").map(String.init)
+        #expect(lines[0] == #"@ AXWindow "主窗口" > AXScrollArea > AXOutline "边栏" > AXRow"#)
+        // 缩进相对命中的子树根，从 0 开始；句柄仍是完整树里的编号。
+        #expect(lines[1] == #"[AXStaticText#10] value="项目二" id="side-2""#)
+    }
+
+    @Test func focusReturnsOutermostMatchOnlyAndExpandsItsWholeSubtree() {
+        // "边栏" 同时命中 AXOutline（desc）与其内的 AXStaticText（value），只取最外层，子树整体展开。
+        let r = ElementTable.render(Self.sample(), focus: .init(text: "边栏"))
+        #expect(r.matches == 1)
+        #expect(r.scope == 5 && r.shown == 5)
+        #expect(r.text.contains("[AXOutline#"))
+        #expect(r.text.contains("边栏项目一"))
+    }
+
+    @Test func focusRoleNormalizesAxPrefixAndCombinesWithText() {
+        #expect(ElementTable.render(Self.sample(), focus: .init(role: "Button")).matches == 2)
+        #expect(ElementTable.render(Self.sample(), focus: .init(role: "AXButton")).matches == 2)
+        #expect(ElementTable.render(Self.sample(), focus: .init(text: "返回", role: "Button")).matches == 1)
+        #expect(ElementTable.render(Self.sample(), focus: .init(text: "返回", role: "Row")).matches == 0)
+    }
+
+    @Test func focusWithNoMatchIsEmptyNotAnError() {
+        let r = ElementTable.render(Self.sample(), focus: .init(text: "不存在"))
+        #expect(r.matches == 0 && r.text.isEmpty && r.shown == 0 && r.total == 10)
+    }
+
+    @Test func focusHandlesAgreeWithTheUnfocusedTable() {
+        let full = ElementTable.render(Self.sample()).text
+        let part = ElementTable.render(Self.sample(), focus: .init(text: "前进")).text
+        let handle = part.split(separator: "\n").last.flatMap { l in l.split(separator: "#").last?.split(separator: "]").first }
+        #expect(handle != nil)
+        #expect(full.contains("#\(handle ?? "")]") && full.contains("desc=\"前进\""))
+    }
+
+    @Test func focusExpandsAtMostTwentyMatchesButCountsAll() {
+        let many = AXNode(role: "AXGroup", children: (0..<30).map { _ in AXNode(role: "AXButton", title: "x") })
+        let r = ElementTable.render(many, focus: .init(role: "Button"))
+        #expect(r.matches == 30)
+        #expect(r.text.split(separator: "\n").filter { $0.hasPrefix("@") }.count == ElementTable.maxFocusMatches)
+    }
+
+    @Test func focusSharesTheCapAcrossMatchesLevelFirst() {
+        let groups = AXNode(role: "AXWindow", children: (0..<3).map { i in
+            AXNode(role: "AXGroup", title: "g", children: (0..<10).map { _ in AXNode(role: "AXButton", title: "b\(i)") })
+        })
+        let r = ElementTable.render(groups, maxElements: 6, focus: .init(text: "g", role: "Group"))
+        #expect(r.matches == 3 && r.scope == 33 && r.shown == 6)
+        // 3 个子树根都显示（第 0 层先放满），其余配额按先序分给下一层。
+        #expect(r.text.split(separator: "\n").filter { $0.contains("[AXGroup#") }.count == 3)
     }
 }

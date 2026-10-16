@@ -55,7 +55,7 @@ agent 侧的会话 API 见[协议总览](protocol_overview.md)，两者是不同
 | `hello` | `protocolVersion: int` | `hello` |
 | `permissions` | `accessibility: bool` | `checkPermissions` |
 | `apps` | `apps: [{pid, name, bundleId?}]` | `listApps` |
-| `tree` | `tree: AXNode`、`truncated: bool` | `dumpTree`。`truncated` 为真表示时间预算耗尽、树不完整；深度上限造成的未展开不算截断（那是调用方的选择） |
+| `tree` | `tree: AXNode`、`truncated: bool` | `dumpTree`。`truncated` 为真表示时间预算耗尽、树不完整；深度上限造成的未展开不算截断（那是调用方的选择）。**遍历按层级（广度优先）进行**，预算耗尽时丢弃的是尚未读取的最深节点，已读部分是树的完整上层；`truncated` 只在确实丢弃了待读节点时为真 |
 | `failure` | `error: WireError` | 任意请求 |
 
 `AXNode` 是原生层如实返回的平台事实：`role`、`subrole?`、`title?`、`identifier?`、`value?`、

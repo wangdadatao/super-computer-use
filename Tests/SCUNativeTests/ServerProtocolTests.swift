@@ -169,3 +169,76 @@ import Testing
         #expect(throws: TransportError.timeout) { try server.run() }
     }
 }
+
+/// 遍历顺序与截断语义：不依赖真实应用。
+@Suite struct TraversalTests {
+    /// 假节点：`kids` 是子节点下标。
+    struct Fake {
+        var name: String
+        var kids: [Int]
+    }
+
+    /// 根 → [A（含 3 个子节点，其中第一个又有 100 个孙节点）, B, C]。
+    static func fixture() -> [Fake] {
+        var nodes: [Fake] = [Fake(name: "root", kids: [1, 2, 3])]  // 0
+        nodes.append(Fake(name: "A", kids: [4, 5, 6]))  // 1
+        nodes.append(Fake(name: "B", kids: []))  // 2
+        nodes.append(Fake(name: "C", kids: []))  // 3
+        nodes.append(Fake(name: "A0", kids: Array(7..<107)))  // 4：带 100 个孙节点
+        nodes.append(Fake(name: "A1", kids: []))  // 5
+        nodes.append(Fake(name: "A2", kids: []))  // 6
+        for i in 0..<100 { nodes.append(Fake(name: "leaf\(i)", kids: [])) }  // 7...106
+        return nodes
+    }
+
+    static func run(maxDepth: Int, expireAfterReads: Int?) -> (root: AXNode, truncated: Bool, reads: [String]) {
+        let nodes = fixture()
+        var reads: [String] = []
+        let r = AXBackend.traverse(
+            root: 0, maxDepth: maxDepth,
+            isExpired: { expireAfterReads.map { reads.count >= $0 } ?? false },
+            read: { i in
+                reads.append(nodes[i].name)
+                return AXNode(role: nodes[i].name)
+            },
+            children: { nodes[$0].kids })
+        return (r.root, r.truncated, reads)
+    }
+
+    static func names(_ n: AXNode) -> [String] { [n.role] + n.children.flatMap(names) }
+
+    @Test func fullTraversalKeepsSiblingOrderAndIsNotTruncated() {
+        let r = Self.run(maxDepth: 10, expireAfterReads: nil)
+        #expect(!r.truncated)
+        #expect(Self.names(r.root).count == 107)
+        #expect(r.root.children.map(\.role) == ["A", "B", "C"])
+        #expect(r.root.children[0].children.map(\.role) == ["A0", "A1", "A2"])
+    }
+
+    @Test func readsAreBreadthFirst() {
+        let r = Self.run(maxDepth: 10, expireAfterReads: nil)
+        #expect(Array(r.reads.prefix(7)) == ["root", "A", "B", "C", "A0", "A1", "A2"])
+    }
+
+    @Test func expiryDropsTheDeepestNodesNotTheLaterSiblings() {
+        // 先序遍历在这里会把预算花在 A0 的 100 个孙节点上，读不到 B 与 C。
+        let r = Self.run(maxDepth: 10, expireAfterReads: 12)
+        #expect(r.truncated)
+        let all = Self.names(r.root)
+        for s in ["root", "A", "B", "C", "A0", "A1", "A2"] { #expect(all.contains(s), "缺少 \(s)") }
+        #expect(all.count == 12)  // 前 7 个结构节点 + 5 个孙节点
+    }
+
+    @Test func expiringAfterTheLastReadIsNotTruncation() {
+        // 预算恰好在读完最后一个节点时到期：没有丢弃任何东西，不应标为截断。
+        let r = Self.run(maxDepth: 10, expireAfterReads: 107)
+        #expect(!r.truncated)
+        #expect(Self.names(r.root).count == 107)
+    }
+
+    @Test func depthLimitIsNotTruncation() {
+        let r = Self.run(maxDepth: 1, expireAfterReads: nil)
+        #expect(!r.truncated)
+        #expect(Self.names(r.root) == ["root", "A", "B", "C"])
+    }
+}

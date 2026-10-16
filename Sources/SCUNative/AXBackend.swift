@@ -54,20 +54,65 @@ public enum AXBackend {
             throw WireError.targetMissing(pid: pid)
         }
         let budget = TraversalBudget(milliseconds: budgetMs)
-        let root = node(app, depth: 0, maxDepth: maxDepth, budget: budget)
-        return TreeResult(root: root, truncated: budget.truncated)
+        let (root, truncated) = traverse(
+            root: app, maxDepth: maxDepth,
+            isExpired: { budget.expired },
+            read: { el in nodeAttributes(el) },
+            children: { el in
+                let kids = elements(el, kAXChildrenAttribute) ?? []
+                for kid in kids { AXUIElementSetMessagingTimeout(kid, messagingTimeout) }
+                return kids
+            })
+        return TreeResult(root: root, truncated: truncated)
     }
 
-    static func node(_ el: AXUIElement, depth: Int, maxDepth: Int, budget: TraversalBudget) -> AXNode {
-        var children: [AXNode] = []
-        if depth < maxDepth, !budget.expired, let kids = elements(el, kAXChildrenAttribute) {
-            for kid in kids {
-                if budget.expired { break }
-                AXUIElementSetMessagingTimeout(kid, messagingTimeout)
-                children.append(node(kid, depth: depth + 1, maxDepth: maxDepth, budget: budget))
+    struct TraversalSlot {
+        var node: AXNode
+        var kids: [Int] = []
+    }
+
+    /// **按层级（广度优先）遍历**，时间预算耗尽时丢弃尚未读取的节点。
+    ///
+    /// 不用深度优先：先序遍历在预算耗尽时会丢掉"后面的兄弟"，而一棵巨大的早期子树
+    /// （访达的文件列表、Electron 的网页内容）会吃掉全部预算，工具栏、侧边栏等结构性元素读不到。
+    /// 广度优先保证被丢弃的永远是最深、最晚发现的节点，整体结构先完整。
+    ///
+    /// `truncated` 只在**确实丢弃了待读节点**时为真：预算在最后一个节点读完后才到期，不算截断。
+    /// 泛型 + 注入的读取函数，是为了不依赖真实应用就能测遍历顺序与截断语义。
+    static func traverse<E>(
+        root: E, maxDepth: Int, isExpired: () -> Bool,
+        read: (E) -> AXNode, children: (E) -> [E]
+    ) -> (root: AXNode, truncated: Bool) {
+        var slots: [TraversalSlot] = []
+        var queue: [(el: E, depth: Int, parent: Int)] = [(root, 0, -1)]
+        var head = 0
+        var truncated = false
+
+        while head < queue.count {
+            if isExpired() {
+                truncated = true
+                break
+            }
+            let (el, depth, parent) = queue[head]
+            head += 1
+            let index = slots.count
+            slots.append(TraversalSlot(node: read(el)))
+            if parent >= 0 { slots[parent].kids.append(index) }
+            if depth < maxDepth {
+                for kid in children(el) { queue.append((kid, depth + 1, index)) }
             }
         }
-        return AXNode(
+
+        func build(_ i: Int) -> AXNode {
+            var n = slots[i].node
+            n.children = slots[i].kids.map(build)
+            return n
+        }
+        return (build(0), truncated)
+    }
+
+    static func nodeAttributes(_ el: AXUIElement) -> AXNode {
+        AXNode(
             role: string(el, kAXRoleAttribute) ?? "AXUnknown",
             subrole: string(el, kAXSubroleAttribute),
             title: string(el, kAXTitleAttribute),
@@ -77,7 +122,7 @@ public enum AXBackend {
             description: string(el, kAXDescriptionAttribute),
             enabled: bool(el, kAXEnabledAttribute),
             frame: frame(el),
-            children: children)
+            children: [])
     }
 
     // MARK: - 属性读取
