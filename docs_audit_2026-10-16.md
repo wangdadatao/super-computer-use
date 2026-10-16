@@ -137,7 +137,7 @@
 
 #### D-07 【P1】「固定画布」链接指向错误文档
 
-`docs/interfaces/edit_semantics.md:116`：「坐标是[固定画布](element_addressing.md)坐标而非屏幕坐标」。
+`docs/interfaces/edit_semantics.md:116`：「坐标是 `[固定画布](element_addressing.md)` 坐标而非屏幕坐标」——链接目标语义错误。
 
 `element_addressing.md` 全文**没有任何画布内容**（画布定义在 `adr_0008:26` 与 `glossary.md`）。链接可达，但语义指向错误——这类错误比断链更难发现。
 
@@ -157,7 +157,7 @@
 
 #### D-09 【P2】链接文字与目标语义错位
 
-`docs/decisions/adr_0010_ui_automation_only.md:60`：「[策略层](adr_0009_policy_layer.md)的拒绝类目……」——链接文字是层名，目标是 ADR 文件。
+`docs/decisions/adr_0010_ui_automation_only.md:60`：「`[策略层](adr_0009_policy_layer.md)` 的拒绝类目……」——链接文字是层名，目标是 ADR 文件。
 
 #### D-10 【P2】根目录的未定项指针已过时
 
@@ -591,3 +591,33 @@ grep -rc "参考实现" docs/*/*.md    # 16 处、0 来源
 本轮新增了 2 篇接口文档与 2 张表，属于"把已发现的不一致补齐"，
 不是继续扩张设计面。但**元素身份的新表示、令牌判定机制、收敛阈值三项
 依然是纸面设计**，其可行性只能由真实样本判定。
+
+---
+
+# 附录 D：第三轮修复（N 系列，2026-10-16 晚）
+
+修复上一轮引入 / 残留的 9 个问题。
+
+| 编号 | 状态 | 处置 |
+| --- | --- | --- |
+| N-01 | ✅ | ADR-0004「取舍」「风险」两节改写：删除"4 位十六进制指纹""碰撞在匹配阶段处理"，改为 K1~K4 候选键与 L2 区分力受限的表述 |
+| N-02 | ✅ | `protocol_overview.md` 元素表示例改为新格式（`#t7` 句柄 + 层级缩进） |
+| N-03 | ✅ | 「指纹」全部清除。元素身份语境改称「候选键 / 匹配键」，树校验语境改称「结构摘要」。`testing.md` 的元素身份验证整节重写：观测对象改为句柄延续性，删去"无碰撞"断言（句柄是计数器，碰撞在结构上不可能） |
+| N-04 | ✅ | **统一为同步阻塞模型**：删除 `confirmation_required` 与 `authorization_required`（同步阻塞下调用方不会收到"需确认"这个错误），新增 `confirmation_denied` / `authorization_denied` / `authorization_timeout`。/ `error_taxonomy.md` 增加「为什么没有 `confirmation_required`」一节 |
+| N-05 | ✅ | `policy_layer.md` 新增「授权的授予」：授权提示与审批提示共用界面，给出「仅本次 / 始终允许 / 拒绝」到会话级 / 持久级 / 错误码的完整映射 |
+| N-06 | ✅ | **候选键列表 + 唯一性约束**：每个元素按 K1~K4 优先级取"第一个树内唯一的候选键"作为匹配键，注册表以匹配键为键，两个 K2 相同的兄弟因此在 K4 上区分开，不会共用句柄。同时说明键层级漂移导致句柄不延续的已知代价 |
+| N-07 | ✅ | `confirmation_timeout` 的 `retry` 由 `immediate` 改为 `after_user_action`，并说明理由（立即重试会形成弹窗循环） |
+| N-08 | ✅ | `check_docs.sh` 增加**锚点校验**（GitHub 风格 slug）与**行内代码剥离**（避免引用文本中的链接被误判）；扫描范围扩到仓库根 `*.md` 与 `verification/`；一次性审计报告豁免命名 / H1 / 术语检查。新校验立刻抓出一个真实缺陷：`element_addressing.md` 导航指向已被删除的 `#坐标引用` 章节 |
+| N-09 | ✅ | `element_addressing.md` 明确已消失句柄的动作语义：返回 `element_gone`，`retry: after_refresh`，不静默忽略也不自动重试 |
+
+## 连带变更
+
+**匹配结果由五态减为四态**（去掉 `ambiguous`）。理由：`ambiguous` 源于单一哈希
+不可拆解，而候选键列表中的 K4 含同级序号、必然唯一，歧义在结构上被消除。
+可靠性信号改由 `inferred` 承载。
+
+这个改动同步到：`element_identity.md`（归属）、`glossary.md`、`element_addressing.md`、
+`adr_0004`、`testing.md`。
+
+`ambiguous_reference` 错误码**保留但收窄语义**：它现在只指**目标引用**的歧义
+（同名应用、同 URL 标签页），不再指元素匹配。元素匹配不再产生歧义。

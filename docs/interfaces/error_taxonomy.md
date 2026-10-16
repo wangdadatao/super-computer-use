@@ -57,8 +57,8 @@ interface ScuError {
   message: string;
   /** 错误码特定的补充信息。 */
   details?: Record<string, unknown>;
-  /** 仅 ambiguous_reference 携带：候选列表，调用方可直接选用。 */
-  candidates?: ElementRef[];
+  /** 仅 ambiguous_reference 携带：候选目标列表，调用方可直接选用。 */
+  candidates?: TargetRef[];
 }
 ```
 
@@ -74,12 +74,13 @@ interface ScuError {
 | `target_switched` | protocol | `after_rebind` | 令牌属于已解绑的目标 |
 | `target_missing` | protocol | `no` | 目标不存在或已退出 |
 | `element_gone` | protocol | `after_refresh` | 引用在新快照中无法匹配 |
-| `ambiguous_reference` | protocol | `after_disambiguation` | 多个同等候选，携带 `candidates` |
+| `ambiguous_reference` | protocol | `after_disambiguation` | **目标**引用歧义（同名应用 / 同 URL 标签页），携带 `candidates` |
 | `unsupported_operation` | protocol | `no` | 元素不支持该操作（如不可写元素设值） |
 | `policy_denied` | policy | `no` | 命中拒绝类目，不可协商 |
-| `authorization_required` | policy | `after_user_action` | 目标应用未被用户授权 |
-| `confirmation_required` | policy | `after_user_action` | 动作需要逐次确认 |
-| `confirmation_timeout` | policy | `immediate` | 确认请求超时未决 |
+| `authorization_denied` | policy | `no` | 用户在授权提示中明确拒绝 |
+| `authorization_timeout` | policy | `after_user_action` | 授权提示超时未响应 |
+| `confirmation_denied` | policy | `no` | 用户在审批提示中明确拒绝 |
+| `confirmation_timeout` | policy | `after_user_action` | 审批提示超时未响应 |
 | `system_permission_missing` | platform | `after_user_action` | 系统权限未授予（辅助功能 / 屏幕录制） |
 | `platform_unavailable` | platform | `immediate` | 原生层不可达或崩溃 |
 | `protocol_version_mismatch` | boundary | `no` | 两侧协议版本不一致 |
@@ -105,11 +106,37 @@ interface ScuError {
 | `after_disambiguation` | 用 `candidates` 中的一项重发 |
 | `after_user_action` | 需要用户完成某个动作（授权 / 确认），然后重试 |
 
+**关于"超时"为什么不是 `immediate`**：超时的原因是用户没有响应。
+立即重试会重新弹出提示——如果用户仍然不在，就是一次无效的弹窗循环。
+因此超时归为 `after_user_action`：它要求的是"用户回到电脑前"这个动作，
+而不是重试本身。
+
 **`after_refresh` 是最常见的一类**，它对应[ADR-0003](../decisions/adr_0003_snapshot_token_contract.md)
 的核心机制：状态已变，重新读取后即可继续。这类错误**不是故障，是正常流程的一部分**。
 
 **`no` 是硬边界。** `policy_denied` 与 `target_missing` 属于此类。
 对 `policy_denied` 重试不会改变结果——它对应的是不可协商的拒绝类目。
+
+## 为什么没有 `confirmation_required`
+
+策略层的"需确认"**不是返回给调用方的错误码**，理由见
+[策略与审批](../architecture/policy_layer.md)：确认是**同步阻塞**的——
+动作请求会一直等到用户作出决定，调用方看到的是一个尚未 resolve 的 Promise。
+
+因此调用方只会观察到三种结果：
+
+| 结果 | 错误码 |
+| --- | --- |
+| 用户同意，动作执行 | 无（正常返回效果摘要） |
+| 用户明确拒绝 | `confirmation_denied` |
+| 时限内无响应 | `confirmation_timeout` |
+
+**授权请求遵循同一模型**，对应 `authorization_denied` 与 `authorization_timeout`。
+
+这对调用方是一个重要性质：**它不需要为"等待用户"写额外的分支**——
+线性代码只会在用户决定之后继续。代价是它无法在等待期间做别的事，
+也无法感知"正在等待"这个中间状态。这个代价是刻意接受的，
+见[策略与审批](../architecture/policy_layer.md)的取舍说明。
 
 ## 在 code mode 中的形态
 

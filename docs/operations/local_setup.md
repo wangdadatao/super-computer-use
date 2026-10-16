@@ -50,7 +50,7 @@ python3 -c "import Quartz, ApplicationServices; print('ok')"
    音乐或访达），导出完整树并人工确认结构合理。
 4. **导出第二个应用**，优先选一个 Electron 应用，用于对比两种
    技术栈暴露的字段差异。
-5. **在样本上验证指纹稳定性**，见[测试策略](testing.md)。
+5. **在样本上验证身份键稳定性**，见[测试策略](testing.md)。
 
 第 3、4 步的产出是所有后续设计的依据。在拿到真实样本前，
 [元素身份](../architecture/element_identity.md) 的字段选择属于假设。

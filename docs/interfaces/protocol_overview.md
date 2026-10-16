@@ -85,8 +85,9 @@ interface Target {
 **元素表是文本。** 每行一个元素，形如：
 
 ```
-[AXTextField#7a3f] "搜索" value="" actions=[press]
-[AXButton#1b20] "搜索" actions=[press]
+[AXWindow#1] "网易云音乐"
+  [AXTextField#t7] "搜索" value="" actions=[press]
+  [AXButton#1a] "搜索"
 ```
 
 格式定义见[元素寻址](element_addressing.md)。默认返回与上一次的差异，
