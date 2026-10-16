@@ -121,12 +121,42 @@ import Testing
         defer { r.finish() }
         try Self.handshake(r)
         try Frame.write(
-            RequestFrame(id: 2, request: .dumpTree(pid: 1, maxDepth: scuMaxTreeDepth + 1)), to: r.fd)
+            RequestFrame(id: 2, request: .dumpTree(pid: 1, maxDepth: scuMaxTreeDepth + 1, budgetMs: 1000)), to: r.fd)
         try Self.expectFailure(r, code: "internal_error")
         // 越界参数是单次请求的错误，连接仍可用。
         try Frame.write(RequestFrame(id: 3, request: .checkPermissions), to: r.fd)
         let reply = try Frame.read(ResponseFrame.self, from: r.fd)
         guard case .permissions = reply.response else { Issue.record("连接应仍可用"); return }
+    }
+
+    @Test func budgetOutsideRangeIsRejected() throws {
+        let r = try Self.startServer()
+        defer { r.finish() }
+        try Self.handshake(r)
+        for bad in [0, scuTreeBudgetMsRange.upperBound + 1] {
+            try Frame.write(RequestFrame(id: 2, request: .dumpTree(pid: 1, maxDepth: 1, budgetMs: bad)), to: r.fd)
+            try Self.expectFailure(r, code: "internal_error")
+        }
+    }
+
+    @Test func traversalBudgetExpires() {
+        let b = AXBackend.TraversalBudget(milliseconds: 20)
+        #expect(!b.expired)
+        #expect(!b.truncated)
+        Thread.sleep(forTimeInterval: 0.05)
+        #expect(b.expired)
+        #expect(b.truncated)
+    }
+
+    /// 需要辅助功能权限与运行中的访达；缺一则跳过。访达的树远大于 1 毫秒能读完的量。
+    @Test(.enabled(if: AXBackend.isAccessibilityTrusted()))
+    func tinyBudgetTruncatesRealTree() throws {
+        guard let finder = AXBackend.listApps().first(where: { $0.bundleId == "com.apple.finder" }) else { return }
+        let started = Date()
+        let r = try AXBackend.dumpTree(pid: finder.pid, maxDepth: 24, budgetMs: 100)
+        #expect(r.truncated)
+        // 预算 100ms；允许最后一次 AX 调用的超时余量，但不得接近完整遍历的耗时量级。
+        #expect(Date().timeIntervalSince(started) < 10)
     }
 
     @Test func serverGivesUpWhenNobodyConnects() throws {

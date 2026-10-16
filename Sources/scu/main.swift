@@ -34,10 +34,22 @@ func option(_ name: String, in args: [String]) -> String? {
     return args[i + 1]
 }
 
+func parseBudget(_ args: [String]) throws -> Int {
+    guard let b = option("--budget-ms", in: args) else { return scuDefaultTreeBudgetMs }
+    guard let n = Int(b), scuTreeBudgetMsRange.contains(n) else {
+        throw usage("--budget-ms 必须在 \(scuTreeBudgetMsRange)")
+    }
+    return n
+}
+
+/// 读树的客户端等待上限 = 时间预算 + 余量（单次 AX 调用最多再耗 2 秒，加上编码与传输）。
+func treeTimeoutMs(_ budgetMs: Int) -> Int32 { Int32(budgetMs + 10_000) }
+
 func run(command: String, args: [String]) throws {
     // 先校验参数，再启动 sidecar：用法错误不应拉起子进程。
     var pid: Int32 = 0
     var depth = 12
+    var budgetMs = scuDefaultTreeBudgetMs
     if command == "dump" {
         guard let pidText = option("--pid", in: args), let p = Int32(pidText) else {
             throw usage("缺少或无效的 --pid")
@@ -49,6 +61,7 @@ func run(command: String, args: [String]) throws {
             }
             depth = n
         }
+        budgetMs = try parseBudget(args)
     } else if command == "identity" {
         guard let pidText = option("--pid", in: args), let p = Int32(pidText) else {
             throw usage("缺少或无效的 --pid")
@@ -61,6 +74,7 @@ func run(command: String, args: [String]) throws {
             }
             depth = n
         }
+        budgetMs = try parseBudget(args)
     } else if command != "permissions" && command != "apps" {
         throw usage("未知命令：\(command)")
     }
@@ -83,20 +97,27 @@ func run(command: String, args: [String]) throws {
         for a in apps { print("\(a.pid)\t\(a.name)\t\(a.bundleId ?? "-")") }
 
     case "identity":
-        guard case .tree(let root) = try client.call(.dumpTree(pid: pid, maxDepth: depth)) else {
+        guard case .tree(let root, let truncated) = try client.call(
+            .dumpTree(pid: pid, maxDepth: depth, budgetMs: budgetMs), timeoutMs: treeTimeoutMs(budgetMs))
+        else {
             throw CLIExit(code: 1, message: "应答类型错误")
         }
+        if truncated {
+            FileHandle.standardError.write(Data("⚠️ 已截断：\(budgetMs) 毫秒预算耗尽，分布只覆盖已读取部分。\n".utf8))
+        }
         // 基线：只呈现各档分布，不给成败结论（ADR-0013「基线先行」）。
-        print("匹配键档位分布（保守口径：不把 _NS:<数字> 算作显式标识符）")
-        print(IdentityAnalyzer.report(root, policy: .conservative).text(title: "保守口径"))
-        print(IdentityAnalyzer.report(root, policy: .inclusive).text(title: "若计入 _NS:<数字>"))
+        print("匹配键档位分布。保守口径：不把 _NS:<数字> 算作显式标识符")
+        print(IdentityAnalyzer.report(root, policy: .conservative).text(title: "[A] 保守 · 仅 title（ADR-0013 冻结口径）"))
+        print(IdentityAnalyzer.report(root, policy: .inclusive).text(title: "[B] 计入 _NS:<数字> · 仅 title"))
+        print(IdentityAnalyzer.report(root, policy: .conservative, labels: .titleOrDescription)
+            .text(title: "[C] 保守 · title 或 description（实验）"))
         if args.contains("--by-role") {
-            print("\n可交互元素按 role 拆分（保守口径）：")
-            print(IdentityAnalyzer.report(root, policy: .conservative).byRoleText())
+            print("\n可交互元素按 role 拆分（口径 C）：")
+            print(IdentityAnalyzer.report(root, policy: .conservative, labels: .titleOrDescription).byRoleText())
         }
         if args.contains("--show-k4") {
             print("\n可交互元素中落入 K4 的元素：")
-            for e in IdentityAnalyzer.analyze(root) where e.isInteractive && e.matchLevel == .k4 {
+            for e in IdentityAnalyzer.analyze(root, labels: .titleOrDescription) where e.isInteractive && e.matchLevel == .k4 {
                 print("  \(e.role) title=\(e.title.map { "\"\($0)\"" } ?? "-") id=\(e.identifier ?? "-") path=\(e.path)")
             }
         }
@@ -104,8 +125,13 @@ func run(command: String, args: [String]) throws {
             Data("深度上限 \(depth)：更深的节点未读取，分布只覆盖已读取部分。\n".utf8))
 
     default:  // dump
-        guard case .tree(let root) = try client.call(.dumpTree(pid: pid, maxDepth: depth)) else {
+        guard case .tree(let root, let truncated) = try client.call(
+            .dumpTree(pid: pid, maxDepth: depth, budgetMs: budgetMs), timeoutMs: treeTimeoutMs(budgetMs))
+        else {
             throw CLIExit(code: 1, message: "应答类型错误")
+        }
+        if truncated {
+            FileHandle.standardError.write(Data("⚠️ 已截断：\(budgetMs) 毫秒预算耗尽，树不完整。\n".utf8))
         }
         if args.contains("--json") {
             let enc = JSONEncoder()
@@ -122,7 +148,7 @@ func main() -> Int32 {
     let argv = Array(CommandLine.arguments.dropFirst())
     guard let command = argv.first else {
         FileHandle.standardError.write(
-            Data("用法：scu permissions | apps | dump|identity --pid <pid> [--depth <n>] [--json|--show-k4|--by-role]\n".utf8))
+            Data("用法：scu permissions | apps | dump|identity --pid <pid> [--depth <n>] [--budget-ms <n>] [--json|--show-k4|--by-role]\n".utf8))
         return 64
     }
     do {

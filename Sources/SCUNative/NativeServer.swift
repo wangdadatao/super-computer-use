@@ -75,12 +75,16 @@ public struct NativeServer: Sendable {
             return .permissions(accessibility: AXBackend.isAccessibilityTrusted())
         case .listApps:
             return .apps(AXBackend.listApps())
-        case .dumpTree(let pid, let maxDepth):
+        case .dumpTree(let pid, let maxDepth, let budgetMs):
             guard (0...scuMaxTreeDepth).contains(maxDepth) else {
                 return .failure(.internalError("maxDepth 必须在 0...\(scuMaxTreeDepth)，收到 \(maxDepth)"))
             }
+            guard scuTreeBudgetMsRange.contains(budgetMs) else {
+                return .failure(.internalError("budgetMs 必须在 \(scuTreeBudgetMsRange)，收到 \(budgetMs)"))
+            }
             do {
-                return .tree(try AXBackend.dumpTree(pid: pid, maxDepth: maxDepth))
+                let r = try AXBackend.dumpTree(pid: pid, maxDepth: maxDepth, budgetMs: budgetMs)
+                return .tree(r.root, truncated: r.truncated)
             } catch let e as WireError {
                 return .failure(e)
             } catch {

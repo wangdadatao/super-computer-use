@@ -35,6 +35,22 @@ public struct IdentifierPolicy: Sendable, Equatable {
     }
 }
 
+/// K2 里用什么作"标签"。
+///
+/// **实验性**：基线显示访达的大量控件没有 `title`，标签很可能在 `AXDescription` 里。
+/// 两种口径并存是为了用数据回答"是否把 description 纳入 K2"，结论出来后收敛为一种。
+public enum LabelPolicy: Sendable, Equatable {
+    case titleOnly
+    case titleOrDescription
+
+    func label(_ n: AXNode) -> String? {
+        switch self {
+        case .titleOnly: return n.title
+        case .titleOrDescription: return n.title ?? n.description
+        }
+    }
+}
+
 /// 一个元素的身份计算结果。
 public struct ElementIdentity: Sendable, Equatable {
     /// 从根出发的子节点下标序列。根为空。
@@ -47,6 +63,9 @@ public struct ElementIdentity: Sendable, Equatable {
     public var matchLevel: KeyLevel
     /// 匹配键 = 第一个在整棵树中唯一的候选键，带档位前缀。
     public var matchKey: String
+    /// 位于菜单栏子树内（祖先含 `AXMenuBar`）。
+    public var inMenuBar: Bool
+    /// 窗口内可交互元素：role 属于可交互集合，且**不在菜单栏内**（ADR-0013 口径 v2）。
     public var isInteractive: Bool
 }
 
@@ -54,10 +73,14 @@ public struct ElementIdentity: Sendable, Equatable {
 // @project-doc docs/architecture/element_identity.md#candidate_keys
 public enum IdentityAnalyzer {
     /// 判定"可交互元素"的 role 集合。ADR-0013 的初始定义；`AXNode` 尚无 action 列表，先按 role 近似。
+    /// 菜单栏子树内的元素另计（口径 v2，见 ADR-0013 追加记录）。
     public static let interactiveRoles: Set<String> = [
         "AXButton", "AXCheckBox", "AXRadioButton", "AXTextField", "AXTextArea", "AXComboBox",
         "AXPopUpButton", "AXMenuButton", "AXMenuItem", "AXLink", "AXSlider", "AXSearchField",
     ]
+
+    /// 窗口内可交互元素少于此数时，该应用的 K4 比例不具统计意义，不参与门槛判定。
+    public static let minInteractiveSample = 20
 
     private struct Raw {
         var node: AXNode
@@ -67,7 +90,9 @@ public enum IdentityAnalyzer {
     }
 
     /// 先序遍历，返回每个元素的身份。顺序与先序一致。
-    public static func analyze(_ root: AXNode, policy: IdentifierPolicy = .conservative) -> [ElementIdentity] {
+    public static func analyze(
+        _ root: AXNode, policy: IdentifierPolicy = .conservative, labels: LabelPolicy = .titleOnly
+    ) -> [ElementIdentity] {
         var raws: [Raw] = []
         collect(root, path: [], rolePath: [], ordinalPath: [], ordinal: 0, into: &raws)
 
@@ -78,7 +103,7 @@ public enum IdentityAnalyzer {
             let n = r.node
             let pathText = r.rolePath.joined(separator: "/")
             let k1 = n.identifier.flatMap { policy.accepts($0) ? "K1:" + $0 : nil }
-            let k2 = n.title.map { "K2:" + [n.role, n.subrole ?? "", $0, pathText].joined(separator: sep) }
+            let k2 = labels.label(n).map { "K2:" + [n.role, n.subrole ?? "", $0, pathText].joined(separator: sep) }
             let k3 = "K3:" + [n.role, n.subrole ?? "", pathText].joined(separator: sep)
             let k4 = "K4:" + r.ordinalPath.joined(separator: "/")
             return Cands(k1: k1, k2: k2, k3: k3, k4: k4)
@@ -108,7 +133,8 @@ public enum IdentityAnalyzer {
             return ElementIdentity(
                 path: r.path, role: r.node.role, title: r.node.title, identifier: r.node.identifier,
                 candidates: dict, matchLevel: level, matchKey: key,
-                isInteractive: interactiveRoles.contains(r.node.role))
+                inMenuBar: r.rolePath.contains("AXMenuBar"),
+                isInteractive: interactiveRoles.contains(r.node.role) && !r.rolePath.contains("AXMenuBar"))
         }
     }
 
@@ -127,19 +153,23 @@ public enum IdentityAnalyzer {
         }
     }
 
-    public static func report(_ root: AXNode, policy: IdentifierPolicy = .conservative) -> IdentityReport {
-        let ids = analyze(root, policy: policy)
+    public static func report(
+        _ root: AXNode, policy: IdentifierPolicy = .conservative, labels: LabelPolicy = .titleOnly
+    ) -> IdentityReport {
+        let ids = analyze(root, policy: policy, labels: labels)
         var all = LevelDistribution()
         var interactive = LevelDistribution()
+        var menu = LevelDistribution()
         var byRole: [String: LevelDistribution] = [:]
         for e in ids {
             all.add(e.matchLevel)
+            if e.inMenuBar { menu.add(e.matchLevel) }
             if e.isInteractive {
                 interactive.add(e.matchLevel)
                 byRole[e.role, default: LevelDistribution()].add(e.matchLevel)
             }
         }
-        return IdentityReport(all: all, interactive: interactive, interactiveByRole: byRole)
+        return IdentityReport(all: all, interactive: interactive, menuBar: menu, interactiveByRole: byRole)
     }
 }
 
@@ -165,8 +195,10 @@ public struct LevelDistribution: Sendable, Equatable {
 public struct IdentityReport: Sendable, Equatable {
     /// 整棵树口径（照常记录，不参与门槛判定）。
     public var all: LevelDistribution
-    /// 可交互元素口径（ADR-0013 的 K4 门槛口径）。
+    /// 窗口内可交互元素口径（ADR-0013 的 K4 门槛口径，不含菜单栏）。
     public var interactive: LevelDistribution
+    /// 菜单栏子树内的全部元素。单独呈现，不参与门槛判定。
+    public var menuBar: LevelDistribution
     /// 可交互元素按 role 拆分。用于发现某个 role 把整体比例拉偏（口径检查）。
     public var interactiveByRole: [String: LevelDistribution]
 
@@ -186,6 +218,10 @@ public struct IdentityReport: Sendable, Equatable {
             }
             return "  \(name)（\(d.total)）  " + cells.joined(separator: "   ")
         }
-        return [title, row("整棵树    ", all), row("可交互元素", interactive)].joined(separator: "\n")
+        var lines = [title, row("整棵树      ", all), row("窗口内可交互", interactive), row("菜单栏      ", menuBar)]
+        if interactive.total < IdentityAnalyzer.minInteractiveSample {
+            lines.append("  ⚠️ 窗口内可交互元素 \(interactive.total) 个，少于 \(IdentityAnalyzer.minInteractiveSample)：样本不足，不得据此判定")
+        }
+        return lines.joined(separator: "\n")
     }
 }

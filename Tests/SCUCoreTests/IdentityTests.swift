@@ -107,6 +107,26 @@ import Testing
         #expect(r.all.count(.k4) == 4)
     }
 
+    @Test func menuBarElementsAreCountedSeparatelyFromWindowControls() {
+        let menuBar = AXNode(role: "AXMenuBar", children: [
+            AXNode(role: "AXMenuBarItem", title: "文件", children: [
+                AXNode(role: "AXMenu", children: [AXNode(role: "AXMenuItem", title: "新建"), AXNode(role: "AXMenuItem", title: "新建")]),
+            ]),
+        ])
+        let app = AXNode(role: "AXApplication", children: [menuBar, AXNode(role: "AXWindow", children: [AXNode(role: "AXButton", title: "OK")])])
+        let ids = IdentityAnalyzer.analyze(app)
+        #expect(ids.filter(\.isInteractive).map(\.role) == ["AXButton"])  // 菜单项不计入
+        #expect(ids.filter(\.inMenuBar).count == 5)                        // 菜单栏子树整体另计
+        let r = IdentityAnalyzer.report(app)
+        #expect(r.interactive.total == 1)
+        #expect(r.menuBar.total == 5)
+    }
+
+    @Test func smallSampleIsFlaggedInReport() {
+        let r = IdentityAnalyzer.report(Self.win([AXNode(role: "AXButton", title: "OK")]))
+        #expect(r.text(title: "t").contains("样本不足"))
+    }
+
     @Test func emptyInteractiveSetHasNoRatioRatherThanZero() {
         let r = IdentityAnalyzer.report(Self.win([AXNode(role: "AXGroup")]))
         #expect(r.interactive.total == 0)

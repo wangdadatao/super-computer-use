@@ -27,6 +27,7 @@ verification/
 | `external-sources.md` | 外部实现观察的来源清单：工件标识、采集方法、结论到证据的映射、复核步骤 |
 | `samples/` | 采集到的原始样本 |
 | `YYYY-MM-DD-<假设编号>.md` | 单次验证的结论 |
+| `2026-10-16-baseline-identity.md` | 元素身份各档位分布的**基线记录**（不是验证结论） |
 
 ## 结论文件格式
 
@@ -35,7 +36,8 @@ verification/
 
 ## 当前状态
 
-**空。** 尚无任何假设验证被执行，全部处于未验证状态。
+**尚无任何假设验证被执行，全部处于未验证状态。** 已有一份元素身份的基线记录
+（[2026-10-16-baseline-identity.md](2026-10-16-baseline-identity.md)），它不是验证结论。
 验证内嵌在 P0 中，门槛见
 [ADR-0013](../docs/decisions/adr_0013_p0_vertical_slice.md)。
 元素身份与令牌尚未实现，相关验证还不能开始；权限状态见

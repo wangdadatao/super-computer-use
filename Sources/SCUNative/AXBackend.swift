@@ -20,8 +20,27 @@ public enum AXBackend {
             .sorted { $0.pid < $1.pid }
     }
 
-    /// 读取某个进程的无障碍树。
-    public static func dumpTree(pid: Int32, maxDepth: Int) throws -> AXNode {
+    /// 遍历的时间预算。超出后停止展开更多节点，并标记截断（而不是无限等待）。
+    final class TraversalBudget {
+        let deadline: Date
+        private(set) var truncated = false
+        init(milliseconds: Int) { deadline = Date().addingTimeInterval(Double(milliseconds) / 1000) }
+        /// 是否已超时。一旦超时即记录截断。
+        var expired: Bool {
+            if truncated { return true }
+            if Date() >= deadline { truncated = true }
+            return truncated
+        }
+    }
+
+    public struct TreeResult: Sendable {
+        public var root: AXNode
+        /// 因时间预算耗尽而未读完。深度上限造成的未展开不算截断（那是调用方的选择）。
+        public var truncated: Bool
+    }
+
+    /// 读取某个进程的无障碍树。`budgetMs` 是整棵树的总时限；单次 AX 调用另有 `messagingTimeout`。
+    public static func dumpTree(pid: Int32, maxDepth: Int, budgetMs: Int) throws -> TreeResult {
         guard isAccessibilityTrusted() else {
             throw WireError.permissionMissing("辅助功能")
         }
@@ -34,15 +53,18 @@ public enum AXBackend {
         guard string(app, kAXRoleAttribute) != nil else {
             throw WireError.targetMissing(pid: pid)
         }
-        return node(app, depth: 0, maxDepth: maxDepth)
+        let budget = TraversalBudget(milliseconds: budgetMs)
+        let root = node(app, depth: 0, maxDepth: maxDepth, budget: budget)
+        return TreeResult(root: root, truncated: budget.truncated)
     }
 
-    static func node(_ el: AXUIElement, depth: Int, maxDepth: Int) -> AXNode {
+    static func node(_ el: AXUIElement, depth: Int, maxDepth: Int, budget: TraversalBudget) -> AXNode {
         var children: [AXNode] = []
-        if depth < maxDepth, let kids = elements(el, kAXChildrenAttribute) {
-            children = kids.map { kid in
+        if depth < maxDepth, !budget.expired, let kids = elements(el, kAXChildrenAttribute) {
+            for kid in kids {
+                if budget.expired { break }
                 AXUIElementSetMessagingTimeout(kid, messagingTimeout)
-                return node(kid, depth: depth + 1, maxDepth: maxDepth)
+                children.append(node(kid, depth: depth + 1, maxDepth: maxDepth, budget: budget))
             }
         }
         return AXNode(
@@ -52,6 +74,7 @@ public enum AXBackend {
             identifier: string(el, "AXIdentifier"),
             value: valueText(el),
             roleDescription: string(el, kAXRoleDescriptionAttribute),
+            description: string(el, kAXDescriptionAttribute),
             enabled: bool(el, kAXEnabledAttribute),
             frame: frame(el),
             children: children)

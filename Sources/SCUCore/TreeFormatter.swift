@@ -13,6 +13,7 @@ public enum TreeFormatter {
         var line = String(repeating: "  ", count: depth) + "[\(n.role)]"
         if let s = n.subrole { line += " subrole=\(s)" }
         if let t = n.title { line += " title=\(quote(t))" }
+        if let d = n.description { line += " desc=\(quote(d))" }
         if let i = n.identifier { line += " id=\(quote(i))" }
         if let v = n.value { line += " value=\(quote(v))" }
         if n.enabled == false { line += " disabled" }
@@ -33,6 +34,7 @@ public struct FieldCoverage: Equatable, Sendable {
     public var total = 0
     public var withIdentifier = 0
     public var withTitle = 0
+    public var withDescription = 0
 
     public init() {}
 
@@ -44,11 +46,12 @@ public struct FieldCoverage: Equatable, Sendable {
         total += 1
         if n.identifier != nil { withIdentifier += 1 }
         if n.title != nil { withTitle += 1 }
+        if n.description != nil { withDescription += 1 }
         for c in n.children { add(c) }
     }
 
     public var summary: String {
         func pct(_ x: Int) -> String { total == 0 ? "-" : String(format: "%.1f%%", Double(x) * 100 / Double(total)) }
-        return "元素 \(total)；有 AXIdentifier \(withIdentifier)（\(pct(withIdentifier))）；有 title \(withTitle)（\(pct(withTitle))）"
+        return "元素 \(total)；有 AXIdentifier \(withIdentifier)（\(pct(withIdentifier))）；有 title \(withTitle)（\(pct(withTitle))）；有 description \(withDescription)（\(pct(withDescription))）"
     }
 }

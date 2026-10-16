@@ -5,7 +5,7 @@ import Testing
 
 @Suite struct FrameTests {
     @Test func requestRoundTrip() throws {
-        let frame = RequestFrame(id: 7, request: .dumpTree(pid: 123, maxDepth: 4))
+        let frame = RequestFrame(id: 7, request: .dumpTree(pid: 123, maxDepth: 4, budgetMs: 5000))
         let data = try Frame.encode(frame)
         // 前 4 字节是大端长度
         let len = data.prefix(4).reduce(0) { ($0 << 8) | Int($1) }
@@ -17,8 +17,8 @@ import Testing
     @Test func responseWithTreeRoundTrip() throws {
         let tree = AXNode(
             role: "AXWindow", title: "t",
-            children: [AXNode(role: "AXButton", identifier: "ok", enabled: true)])
-        let frame = ResponseFrame(id: 1, response: .tree(tree))
+            children: [AXNode(role: "AXButton", identifier: "ok", description: "确定", enabled: true)])
+        let frame = ResponseFrame(id: 1, response: .tree(tree, truncated: true))
         let data = try Frame.encode(frame)
         #expect(try Frame.decode(ResponseFrame.self, body: data.dropFirst(4)) == frame)
     }
@@ -65,6 +65,13 @@ import Testing
         }
     }
 
+    @Test func waitReadableTimesOutWhenPeerIsSilent() throws {
+        var fds: [Int32] = [0, 0]
+        #expect(socketpair(AF_UNIX, SOCK_STREAM, 0, &fds) == 0)
+        defer { close(fds[0]); close(fds[1]) }
+        #expect(throws: TransportError.timeout) { try UnixSocket.waitReadable(fds[0], timeoutMs: 50) }
+    }
+
     @Test func oversizedHeaderIsRejectedWithoutAllocating() throws {
         var fds: [Int32] = [0, 0]
         #expect(socketpair(AF_UNIX, SOCK_STREAM, 0, &fds) == 0)
@@ -92,11 +99,12 @@ import Testing
         #expect(req["type"] as? String == "hello")
         #expect(req["protocolVersion"] as? Int == 1)
 
-        let dump = try Self.json(RequestFrame(id: 2, request: .dumpTree(pid: 9, maxDepth: 3)))
+        let dump = try Self.json(RequestFrame(id: 2, request: .dumpTree(pid: 9, maxDepth: 3, budgetMs: 700)))
         let d = dump["request"] as! [String: Any]
         #expect(d["type"] as? String == "dumpTree")
         #expect(d["pid"] as? Int == 9)
         #expect(d["maxDepth"] as? Int == 3)
+        #expect(d["budgetMs"] as? Int == 700)
     }
 
     @Test func responseShapeIsFlatWithTypeDiscriminator() throws {
@@ -114,10 +122,18 @@ import Testing
         #expect(p["accessibility"] as? Bool == true)
     }
 
+    @Test func treeResponseCarriesTruncatedFlag() throws {
+        let t = try Self.json(ResponseFrame(id: 1, response: .tree(AXNode(role: "AXWindow", description: "d"), truncated: true)))
+        let r = t["response"] as! [String: Any]
+        #expect(r["type"] as? String == "tree")
+        #expect(r["truncated"] as? Bool == true)
+        #expect((r["tree"] as! [String: Any])["description"] as? String == "d")
+    }
+
     @Test func noSynthesizedAssociatedValueKeysLeak() throws {
         let all: [Response] = [
             .hello(protocolVersion: 1), .permissions(accessibility: false), .apps([]),
-            .tree(AXNode(role: "AXWindow")), .failure(.internalError("x")),
+            .tree(AXNode(role: "AXWindow"), truncated: false), .failure(.internalError("x")),
         ]
         for r in all {
             let data = try JSONEncoder().encode(ResponseFrame(id: 1, response: r))
@@ -131,7 +147,7 @@ import Testing
     }
 
     @Test func missingRequiredFieldFailsToDecode() {
-        let body = Data(#"{"id":1,"request":{"type":"dumpTree","pid":1}}"#.utf8)
+        let body = Data(#"{"id":1,"request":{"type":"dumpTree","pid":1,"maxDepth":3}}"#.utf8)
         #expect(throws: DecodingError.self) { try Frame.decode(RequestFrame.self, body: body) }
     }
 }

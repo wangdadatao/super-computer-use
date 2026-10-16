@@ -46,7 +46,7 @@ agent 侧的会话 API 见[协议总览](protocol_overview.md)，两者是不同
 | `hello` | `protocolVersion: int` | 握手，必须是连接上的第一个请求 |
 | `checkPermissions` | — | 查询辅助功能权限 |
 | `listApps` | — | 列出可绑定的应用（常规激活策略） |
-| `dumpTree` | `pid: int`、`maxDepth: int` | 读取某进程的无障碍树。`maxDepth` 范围 `0...64`，越界被拒绝而不是截断 |
+| `dumpTree` | `pid: int`、`maxDepth: int`、`budgetMs: int` | 读取某进程的无障碍树。`maxDepth` 范围 `0...64`；`budgetMs` 是整棵树的总时间预算，范围 `100...120000`。越界一律拒绝而不是截断 |
 
 ### 应答
 
@@ -55,11 +55,11 @@ agent 侧的会话 API 见[协议总览](protocol_overview.md)，两者是不同
 | `hello` | `protocolVersion: int` | `hello` |
 | `permissions` | `accessibility: bool` | `checkPermissions` |
 | `apps` | `apps: [{pid, name, bundleId?}]` | `listApps` |
-| `tree` | `tree: AXNode` | `dumpTree` |
+| `tree` | `tree: AXNode`、`truncated: bool` | `dumpTree`。`truncated` 为真表示时间预算耗尽、树不完整；深度上限造成的未展开不算截断（那是调用方的选择） |
 | `failure` | `error: WireError` | 任意请求 |
 
 `AXNode` 是原生层如实返回的平台事实：`role`、`subrole?`、`title?`、`identifier?`、`value?`、
-`roleDescription?`、`enabled?`、`frame?`、`children`。可选字段缺失时**省略**，不填空串。
+`roleDescription?`、`description?`、`enabled?`、`frame?`、`children`。可选字段缺失时**省略**，不填空串。
 原生层不判断元素"是不是同一个"，那是协议层的职责。
 
 ## 握手与版本
@@ -70,6 +70,9 @@ agent 侧的会话 API 见[协议总览](protocol_overview.md)，两者是不同
    消息中同时给出双方版本，然后关闭连接。不降级运行。
 4. 版本号是编译期常量，来源见实现中的 `scuNativeProtocolVersion`。
 
+当前版本 **2**。版本 1 → 2：`dumpTree` 增加 `budgetMs`，`tree` 应答增加 `truncated`，
+`AXNode` 增加 `description`。
+
 线格式本身的任何不兼容变更（字段改名、`type` 增删、语义变化）都要提升版本号。
 
 ## 连接生命周期
@@ -79,6 +82,9 @@ agent 侧的会话 API 见[协议总览](protocol_overview.md)，两者是不同
 - 协议层启动原生进程后，原生进程等待连接有上限（默认 10 秒）。超时则自行退出，
   避免协议层在连接前死亡时留下孤儿进程。
 - 对端在半帧之后关闭：视为正常关闭，原生进程退出。
+- 协议层等待应答有**超时**：读树的上限为 `budgetMs` + 10 秒，其他请求 30 秒。
+  超时意味着原生进程无响应，连接无法再对齐帧边界，协议层关闭连接、终止子进程，
+  以 `platform_unavailable` 失败。
 - 协议层的关闭路径必须终止子进程并清理 socket 目录，**包括失败退出的路径**。
 
 ## 错误
@@ -114,7 +120,7 @@ agent 侧的会话 API 见[协议总览](protocol_overview.md)，两者是不同
 ## 当前实现范围
 
 已实现并有测试：帧编解码、超长头、半帧、畸形 JSON、未知类型、缺字段、握手前请求、
-版本错配、越界深度、对端关闭后写入、无人连接超时。
+版本错配、越界深度与预算、对端关闭后写入、无人连接超时、读取应答超时、遍历预算耗尽。
 
 消息目录只覆盖 P0 需要的四种请求。动作注入、屏幕捕获、变更通知等随 P0 推进增加，
 每增加一种都要在此登记并视情况提升版本号。

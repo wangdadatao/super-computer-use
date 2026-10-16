@@ -88,6 +88,21 @@ public enum UnixSocket {
         return addr
     }
 
+    /// 等待 fd 可读。`timeoutMs` 内无数据抛 `.timeout`。
+    /// 用于协议层读应答：原生进程卡住时不能无限等待。
+    public static func waitReadable(_ fd: Int32, timeoutMs: Int32) throws {
+        var pfd = pollfd(fd: fd, events: Int16(POLLIN), revents: 0)
+        while true {
+            let rc = poll(&pfd, 1, timeoutMs)
+            if rc < 0 {
+                if errno == EINTR { continue }
+                throw TransportError.socket("poll: \(String(cString: strerror(errno)))")
+            }
+            if rc == 0 { throw TransportError.timeout }
+            return
+        }
+    }
+
     /// 对端关闭后继续写会让进程收到 SIGPIPE 而直接死亡，连错误都来不及抛出。
     /// 在 fd 上设置 SO_NOSIGPIPE，使写失败退化为 EPIPE 错误。
     /// 所有经本类型创建的 fd 都会设置；自行创建 fd（如 socketpair）的调用方需要手动调用。

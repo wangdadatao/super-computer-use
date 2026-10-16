@@ -87,16 +87,23 @@ public final class NativeClient {
     }
 
     /// 发送一条请求并等待应答。`.failure` 以 WireError 抛出，调用方按 code 分支。
+    ///
+    /// `timeoutMs`：等待应答的上限。超时意味着原生进程无响应；此时连接已无法再对齐帧边界，
+    /// 本连接被关闭（并终止原生进程），以 `platform_unavailable` 失败。
     @discardableResult
-    public func call(_ request: Request) throws -> Response {
+    public func call(_ request: Request, timeoutMs: Int32 = 30_000) throws -> Response {
         let id = nextId
         nextId += 1
         let frame: ResponseFrame
         do {
             try Frame.write(RequestFrame(id: id, request: request), to: fd)
+            try UnixSocket.waitReadable(fd, timeoutMs: timeoutMs)
             frame = try Frame.read(ResponseFrame.self, from: fd)
         } catch let e as TransportError {
             switch e {
+            case .timeout:
+                close()
+                throw WireError.platformUnavailable("原生进程在 \(timeoutMs) 毫秒内无应答，已终止")
             case .closed:
                 // 握手阶段版本错配时，原生层会先回错误帧再关闭；写后读到的是错误帧而不是 EOF，
                 // 因此走到这里意味着对端在未应答的情况下消失了。

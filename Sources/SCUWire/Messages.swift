@@ -2,10 +2,14 @@ import Foundation
 
 /// 协议层 ↔ 原生层的协议版本。单调递增整数，两侧必须完全相等（ADR-0012）。
 /// 编译期常量：不是运行时可变状态。
-public let scuNativeProtocolVersion = 1
+public let scuNativeProtocolVersion = 2
 
 /// `dumpTree` 允许的最大深度。超出时原生层拒绝，不做静默截断。
 public let scuMaxTreeDepth = 64
+
+/// `dumpTree` 总时间预算的允许范围（毫秒）。超出范围被拒绝。
+public let scuTreeBudgetMsRange = 100...120_000
+public let scuDefaultTreeBudgetMs = 15_000
 
 /// 线上错误。code 取自错误码表。
 ///
@@ -88,6 +92,8 @@ public struct AXNode: Codable, Sendable, Equatable {
     public var identifier: String?
     public var value: String?
     public var roleDescription: String?
+    /// `AXDescription`。许多控件（如工具栏按钮）用它而不是 `title` 作标签。
+    public var description: String?
     public var enabled: Bool?
     public var frame: Rect?
     public var children: [AXNode]
@@ -95,7 +101,7 @@ public struct AXNode: Codable, Sendable, Equatable {
     public init(
         role: String, subrole: String? = nil, title: String? = nil,
         identifier: String? = nil, value: String? = nil, roleDescription: String? = nil,
-        enabled: Bool? = nil, frame: Rect? = nil, children: [AXNode] = []
+        description: String? = nil, enabled: Bool? = nil, frame: Rect? = nil, children: [AXNode] = []
     ) {
         self.role = role
         self.subrole = subrole
@@ -103,6 +109,7 @@ public struct AXNode: Codable, Sendable, Equatable {
         self.identifier = identifier
         self.value = value
         self.roleDescription = roleDescription
+        self.description = description
         self.enabled = enabled
         self.frame = frame
         self.children = children
@@ -120,19 +127,19 @@ public enum Request: Sendable, Equatable {
     case hello(protocolVersion: Int)
     case checkPermissions
     case listApps
-    case dumpTree(pid: Int32, maxDepth: Int)
+    case dumpTree(pid: Int32, maxDepth: Int, budgetMs: Int)
 }
 
 public enum Response: Sendable, Equatable {
     case hello(protocolVersion: Int)
     case permissions(accessibility: Bool)
     case apps([AppInfo])
-    case tree(AXNode)
+    case tree(AXNode, truncated: Bool)
     case failure(WireError)
 }
 
 extension Request: Codable {
-    private enum Key: String, CodingKey { case type, protocolVersion, pid, maxDepth }
+    private enum Key: String, CodingKey { case type, protocolVersion, pid, maxDepth, budgetMs }
     private enum Kind: String, Codable { case hello, checkPermissions, listApps, dumpTree }
 
     public init(from decoder: any Decoder) throws {
@@ -143,7 +150,8 @@ extension Request: Codable {
         case .listApps: self = .listApps
         case .dumpTree:
             self = .dumpTree(
-                pid: try c.decode(Int32.self, forKey: .pid), maxDepth: try c.decode(Int.self, forKey: .maxDepth))
+                pid: try c.decode(Int32.self, forKey: .pid), maxDepth: try c.decode(Int.self, forKey: .maxDepth),
+                budgetMs: try c.decode(Int.self, forKey: .budgetMs))
         }
     }
 
@@ -155,16 +163,17 @@ extension Request: Codable {
             try c.encode(v, forKey: .protocolVersion)
         case .checkPermissions: try c.encode(Kind.checkPermissions, forKey: .type)
         case .listApps: try c.encode(Kind.listApps, forKey: .type)
-        case .dumpTree(let pid, let depth):
+        case .dumpTree(let pid, let depth, let budget):
             try c.encode(Kind.dumpTree, forKey: .type)
             try c.encode(pid, forKey: .pid)
             try c.encode(depth, forKey: .maxDepth)
+            try c.encode(budget, forKey: .budgetMs)
         }
     }
 }
 
 extension Response: Codable {
-    private enum Key: String, CodingKey { case type, protocolVersion, accessibility, apps, tree, error }
+    private enum Key: String, CodingKey { case type, protocolVersion, accessibility, apps, tree, truncated, error }
     private enum Kind: String, Codable { case hello, permissions, apps, tree, failure }
 
     public init(from decoder: any Decoder) throws {
@@ -173,7 +182,9 @@ extension Response: Codable {
         case .hello: self = .hello(protocolVersion: try c.decode(Int.self, forKey: .protocolVersion))
         case .permissions: self = .permissions(accessibility: try c.decode(Bool.self, forKey: .accessibility))
         case .apps: self = .apps(try c.decode([AppInfo].self, forKey: .apps))
-        case .tree: self = .tree(try c.decode(AXNode.self, forKey: .tree))
+        case .tree:
+            self = .tree(
+                try c.decode(AXNode.self, forKey: .tree), truncated: try c.decode(Bool.self, forKey: .truncated))
         case .failure: self = .failure(try c.decode(WireError.self, forKey: .error))
         }
     }
@@ -190,9 +201,10 @@ extension Response: Codable {
         case .apps(let a):
             try c.encode(Kind.apps, forKey: .type)
             try c.encode(a, forKey: .apps)
-        case .tree(let t):
+        case .tree(let t, let truncated):
             try c.encode(Kind.tree, forKey: .type)
             try c.encode(t, forKey: .tree)
+            try c.encode(truncated, forKey: .truncated)
         case .failure(let e):
             try c.encode(Kind.failure, forKey: .type)
             try c.encode(e, forKey: .error)
