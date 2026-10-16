@@ -12,6 +12,11 @@
 > **本决策的核心（用内容寻址取代位置寻址）不变**，只是实现手段修正。
 > 详见[元素身份](../architecture/element_identity.md)。
 
+## 外部观察来源
+
+本文涉及对两套已发布实现的观察结论。来源、具体证据与复核方法见
+[verification/external-sources.md](../../verification/external-sources.md)。
+
 ## 背景
 
 既有实现都用**位置**寻址元素：读取一次无障碍树，为每个元素分配一个序号，

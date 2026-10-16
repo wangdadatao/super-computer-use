@@ -2,6 +2,11 @@
 
 SCU 如何利用针对特定应用的先验知识提升操作成功率。
 
+## 外部观察来源
+
+本文涉及对两套已发布实现的观察结论。来源、具体证据与复核方法见
+[verification/external-sources.md](../../verification/external-sources.md)。
+
 ## 导航
 
 - [动机](#动机)

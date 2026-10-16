@@ -45,4 +45,9 @@
 与 xAI / Anysphere 的 **Grok Bot Computer Use**。相关 ADR 会引用观察到的具体机制
 作为背景依据。
 
+**每条观察都可复核。** 工件标识（版本、SHA-256）、采集方法、结论到证据的映射，
+以及复核步骤记录在
+[verification/external-sources.md](../../verification/external-sources.md)。
+该文件属于证据，不属于本文档库。
+
 只借鉴设计模式与协议思想，不复制任何代码或专有实现。

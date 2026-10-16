@@ -3,6 +3,11 @@
 文本写入、选择、剪贴板与拖拽的语义约定。动作的统一形态见
 [协议总览](protocol_overview.md)，元素引用的格式见[元素寻址](element_addressing.md)。
 
+## 外部观察来源
+
+本文涉及对两套已发布实现的观察结论。来源、具体证据与复核方法见
+[verification/external-sources.md](../../verification/external-sources.md)。
+
 ## 导航
 
 - [三种写入路径](#三种写入路径)

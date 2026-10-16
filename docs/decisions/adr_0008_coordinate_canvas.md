@@ -3,6 +3,11 @@
 - **状态**：已接受
 - **日期**：2026-10-16
 
+## 外部观察来源
+
+本文涉及对两套已发布实现的观察结论。来源、具体证据与复核方法见
+[verification/external-sources.md](../../verification/external-sources.md)。
+
 ## 背景
 
 [ADR-0001](adr_0001_accessibility_first.md) 保留了视觉坐标作为兜底路径。

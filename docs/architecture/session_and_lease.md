@@ -2,6 +2,11 @@
 
 SCU 的会话状态、目标绑定关系，以及独占控制的获取与释放。
 
+## 外部观察来源
+
+本文涉及对两套已发布实现的观察结论。来源、具体证据与复核方法见
+[verification/external-sources.md](../../verification/external-sources.md)。
+
 ## 导航
 
 - [会话](#会话)

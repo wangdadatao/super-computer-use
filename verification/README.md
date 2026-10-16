@@ -20,6 +20,14 @@ verification/
 
 混在一起会让文档库充满无法维护的二进制与数据集。
 
+## 内容
+
+| 文件 | 内容 |
+| --- | --- |
+| `external-sources.md` | 外部实现观察的来源清单：工件标识、采集方法、结论到证据的映射、复核步骤 |
+| `samples/` | 采集到的原始样本 |
+| `YYYY-MM-DD-<假设编号>.md` | 单次验证的结论 |
+
 ## 结论文件格式
 
 见 [docs/operations/testing.md](../docs/operations/testing.md) 的

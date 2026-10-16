@@ -3,6 +3,11 @@
 SCU 如何在屏幕上显示"正在操作哪里"。这是 AX 优先寻址（[ADR-0001](../decisions/adr_0001_accessibility_first.md)）
 直接带来的需求，设计理由见 [ADR-0007](../decisions/adr_0007_virtual_indicator_layer.md)。
 
+## 外部观察来源
+
+本文涉及对两套已发布实现的观察结论。来源、具体证据与复核方法见
+[verification/external-sources.md](../../verification/external-sources.md)。
+
 ## 导航
 
 - [为什么必需](#为什么必需)

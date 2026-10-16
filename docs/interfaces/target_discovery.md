@@ -3,6 +3,11 @@
 SCU 如何枚举可操作的目标、如何解析调用方给出的引用，以及歧义如何处理。
 绑定后的行为见[会话与控制租约](../architecture/session_and_lease.md)。
 
+## 外部观察来源
+
+本文涉及对两套已发布实现的观察结论。来源、具体证据与复核方法见
+[verification/external-sources.md](../../verification/external-sources.md)。
+
 ## 导航
 
 - [发现与绑定是两件事](#发现与绑定是两件事)

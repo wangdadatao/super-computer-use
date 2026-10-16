@@ -5,6 +5,11 @@ SCU 如何决定一个动作是否允许执行。设计理由见
 [ADR-0010](../decisions/adr_0010_ui_automation_only.md)，
 错误返回结构见[错误与拒绝](../interfaces/error_taxonomy.md)。
 
+## 外部观察来源
+
+本文涉及对两套已发布实现的观察结论。来源、具体证据与复核方法见
+[verification/external-sources.md](../../verification/external-sources.md)。
+
 ## 导航
 
 - [位置](#位置)
