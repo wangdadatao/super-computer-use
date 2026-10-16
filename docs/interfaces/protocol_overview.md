@@ -25,7 +25,7 @@ SCU 对 agent **只暴露少量工具**，核心是一个 JavaScript 执行入�
 能力全部通过 JavaScript API 提供，而不是每个能力一个工具。
 理由与代价见 [ADR-0002](../decisions/adr_0002_code_mode_surface.md)。
 
-首版只提供 MCP stdio 形态。是否需要独立 CLI 待定（见建库备忘录的未决问题）。
+首版只提供 MCP stdio 形态。是否需要独立 CLI 待定。
 
 ## 会话 API
 
@@ -51,7 +51,8 @@ interface Scu {
 ```
 
 `App` 与 `Tab` 共享同一操作面（见[系统总览](../architecture/system_overview.md)的跨平台抽象）。
-差异只在 `App` 额外提供 `pressKey` 与 `paste`。
+差异只在 `App` 额外提供 `pressKey` 与 `paste`：浏览器标签页的按键与粘贴
+由页面自身的接口承担，不走系统级输入。
 
 ## 目标绑定
 
@@ -102,9 +103,16 @@ interface Target {
   drag(from: Coordinates, to: Coordinates, options?: DragOptions): Promise<Effect>;
   scroll(target: ElementRef | Coordinates, direction: Direction, pages?: number): Promise<Effect>;
   typeText(text: string): Promise<Effect>;
-  pressKey(key: string, options?: PressKeyOptions): Promise<Effect>;
   setValue(ref: ElementRef, value: string): Promise<Effect>;
   performSecondaryAction(ref: ElementRef, action: string): Promise<Effect>;
+}
+
+/** 应用目标特有的动作。页面目标由浏览器自身的接口承担。 */
+interface AppExtensions {
+  /** 按下按键或组合键。支持按住不放（见编辑类操作语义）。 */
+  pressKey(key: string, options?: PressKeyOptions): Promise<Effect>;
+  /** 经剪贴板写入文本，写入后恢复调用前的剪贴板内容。 */
+  paste(text: string, options?: PasteOptions): Promise<Effect>;
 }
 ```
 

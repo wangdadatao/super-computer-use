@@ -113,7 +113,7 @@ sequenceDiagram
 拖拽由两个坐标定义：起点与终点。
 
 与普通坐标动作相同，两者都受[坐标令牌](../architecture/snapshot_lifecycle.md)约束，
-且坐标是[固定画布](element_addressing.md)坐标而非屏幕坐标。
+且坐标是[固定画布](../decisions/adr_0008_coordinate_canvas.md)坐标而非屏幕坐标。
 
 拖拽的一个特殊之处是**中间过程可见**：从按下到释放之间，
 用户的界面处于"拖拽中"状态。这个状态的持续时间由调用方控制，

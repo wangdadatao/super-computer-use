@@ -16,10 +16,15 @@
 
 **设计阶段，无实现代码。** 文档描述的是已确定的设计意图，不是已验证的系统行为。
 
-设计中的未验证假设与未决问题在各自文档内就地标注，不集中另立一处：
-元素身份的可行性见[元素身份](architecture/element_identity.md)的待验证项，
-指示层的跨平台排除见 [ADR-0007](decisions/adr_0007_virtual_indicator_layer.md)的风险，
-其余未定项见[系统总览](architecture/system_overview.md)的「尚未确定的部分」。
+**未定项散落在各文档内就地标注**，不集中登记。检索方式：
+
+| 标记 | 含义 | 典型位置 |
+| --- | --- | --- |
+| 「待验证」 | 假设尚未证实或推翻 | [元素身份](architecture/element_identity.md)、[测试策略](operations/testing.md) |
+| 「未定项」「待定」 | 有意留到实现时决定 | [元素寻址](interfaces/element_addressing.md)、[动作收敛](architecture/action_convergence.md) |
+| 「风险」 | 已知可能失败的取舍 | 各 ADR、[虚拟指示层](architecture/virtual_indicator.md) |
+
+全文检索关键词：`待验证`、`未定项`、`待定`、`风险`、`待实现`。
 
 ## 分类
 
