@@ -56,6 +56,20 @@ git config core.hooksPath scripts/hooks
 | 应用列表 | `AXBackend.listApps` | 已实现 |
 | 无障碍树读取（含 AX 调用超时） | `AXBackend.dumpTree` | 已实现，手动运行过 |
 | 树的文本输出与字段覆盖率统计 | `TreeFormatter`、`FieldCoverage` | 已实现，覆盖率有测试 |
+| K1~K4 候选键与匹配键计算（纯函数，无状态） | `IdentityAnalyzer` | 已实现，有测试（含唯一性的伪随机性质测试） |
+| 各档位分布统计（整树 / 可交互元素 / 按 role），两种 K1 计入口径 | `IdentityReport`、`scu identity` | 已实现。**只呈现分布，不给成败结论**（ADR-0013「基线先行」） |
+
+**尚未实现**：句柄注册表（跨快照延续）、快照令牌、动作注入、效果摘要。
+
+### 已知缺口（P0 内待处理）
+
+- **`dumpTree` 没有总时限。** 单次 AX 调用有 2 秒超时，但整棵树没有预算，
+  `scu` 等待应答也没有超时。在节点极多的应用（实测：活动监视器）上，`scu dump` / `scu identity`
+  会长时间不返回。应用被终止（SIGTERM）后，原生进程会继续遍历直到下一次写入失败才退出。
+  需要：总时限、返回时标明"已截断"、客户端读取超时。
+- **`AXNode` 没有 `AXDescription`。** 基线显示访达的大量控件无 `title`（见
+  [元素身份](../architecture/element_identity.md)的待验证项），很可能靠 `AXDescription`
+  标注。后端目前不读取它，K2 因此偏弱。是否读取并纳入 K2 待定。
 
 命令行：
 
@@ -64,6 +78,8 @@ scu permissions                     # 检查辅助功能权限
 scu apps                            # 列出可绑定的应用与 pid
 scu dump --pid <pid> [--depth N]    # 输出无障碍树，并在 stderr 给出字段覆盖率；N 范围 0...64，默认 12
 scu dump --pid <pid> --json         # 输出 JSON，供后续比对
+scu identity --pid <pid> [--depth N] [--by-role] [--show-k4]
+                                    # 匹配键档位分布；--by-role 按 role 拆分，--show-k4 列出落入 K4 的可交互元素；默认深度 24
 ```
 
 `dump` 输出的是原始树，**不是**最终的元素表格式（见[元素寻址](../interfaces/element_addressing.md)）。
