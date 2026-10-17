@@ -57,11 +57,10 @@ public enum AXBackend {
         let (root, truncated) = traverse(
             root: app, maxDepth: maxDepth,
             isExpired: { budget.expired },
-            read: { el in nodeAttributes(el) },
-            children: { el in
-                let kids = elements(el, kAXChildrenAttribute) ?? []
+            read: { el, wantChildren in
+                let (node, kids) = readNode(el, wantChildren: wantChildren)
                 for kid in kids { AXUIElementSetMessagingTimeout(kid, messagingTimeout) }
-                return kids
+                return (node, kids)
             })
         return TreeResult(root: root, truncated: truncated)
     }
@@ -79,9 +78,12 @@ public enum AXBackend {
     ///
     /// `truncated` 只在**确实丢弃了待读节点**时为真：预算在最后一个节点读完后才到期，不算截断。
     /// 泛型 + 注入的读取函数，是为了不依赖真实应用就能测遍历顺序与截断语义。
+    ///
+    /// `read(元素, 是否需要子节点)` 一次返回节点自身的属性与（需要时）子节点：
+    /// 在最大深度处不需要子节点，真实后端据此省掉那次读取。
     static func traverse<E>(
         root: E, maxDepth: Int, isExpired: () -> Bool,
-        read: (E) -> AXNode, children: (E) -> [E]
+        read: (E, Bool) -> (node: AXNode, children: [E])
     ) -> (root: AXNode, truncated: Bool) {
         var slots: [TraversalSlot] = []
         var queue: [(el: E, depth: Int, parent: Int)] = [(root, 0, -1)]
@@ -89,17 +91,21 @@ public enum AXBackend {
         var truncated = false
 
         while head < queue.count {
-            if isExpired() {
+            // 根节点总是会被读取：预算在读第一个节点前就到期，也要返回一棵只有根的树，
+            // 而不是空树（空树无法构造根）。
+            if !slots.isEmpty, isExpired() {
                 truncated = true
                 break
             }
             let (el, depth, parent) = queue[head]
             head += 1
             let index = slots.count
-            slots.append(TraversalSlot(node: read(el)))
+            let wantChildren = depth < maxDepth
+            let (node, kids) = read(el, wantChildren)
+            slots.append(TraversalSlot(node: node))
             if parent >= 0 { slots[parent].kids.append(index) }
-            if depth < maxDepth {
-                for kid in children(el) { queue.append((kid, depth + 1, index)) }
+            if wantChildren {
+                for kid in kids { queue.append((kid, depth + 1, index)) }
             }
         }
 
@@ -111,8 +117,45 @@ public enum AXBackend {
         return (build(0), truncated)
     }
 
-    static func nodeAttributes(_ el: AXUIElement) -> AXNode {
-        AXNode(
+    static let nodeAttributeNames: [String] = [
+        kAXRoleAttribute, kAXSubroleAttribute, kAXTitleAttribute, "AXIdentifier", kAXValueAttribute,
+        kAXRoleDescriptionAttribute, kAXDescriptionAttribute, kAXEnabledAttribute,
+        kAXPositionAttribute, kAXSizeAttribute,
+    ]
+
+    /// 读取一个节点：**一次批量调用**取回全部属性（含子节点），而不是每个属性一次跨进程调用。
+    /// 批量失败（返回非成功，或结果数量不符）时退回逐属性读取，结果语义相同。
+    static func readNode(_ el: AXUIElement, wantChildren: Bool) -> (node: AXNode, children: [AXUIElement]) {
+        var names = nodeAttributeNames
+        if wantChildren { names.append(kAXChildrenAttribute) }
+        var out: CFArray?
+        let status = AXUIElementCopyMultipleAttributeValues(
+            el, names as CFArray, AXCopyMultipleAttributeOptions(rawValue: 0), &out)
+        guard status == .success, let values = out as? [CFTypeRef], values.count == names.count else {
+            return fallbackReadNode(el, wantChildren: wantChildren)
+        }
+        // 取不到的属性以 AXValue(.axError) 占位，视为缺失。
+        func got(_ i: Int) -> CFTypeRef? {
+            let v = values[i]
+            if CFGetTypeID(v) == AXValueGetTypeID(), AXValueGetType(v as! AXValue) == .axError { return nil }
+            return v
+        }
+        let node = AXNode(
+            role: asString(got(0)) ?? "AXUnknown",
+            subrole: asString(got(1)),
+            title: asString(got(2)),
+            identifier: asString(got(3)),
+            value: asValueText(got(4)),
+            roleDescription: asString(got(5)),
+            description: asString(got(6)),
+            enabled: asBool(got(7)),
+            frame: asFrame(position: got(8), size: got(9)),
+            children: [])
+        return (node, wantChildren ? asElements(got(10)) ?? [] : [])
+    }
+
+    static func fallbackReadNode(_ el: AXUIElement, wantChildren: Bool) -> (node: AXNode, children: [AXUIElement]) {
+        let node = AXNode(
             role: string(el, kAXRoleAttribute) ?? "AXUnknown",
             subrole: string(el, kAXSubroleAttribute),
             title: string(el, kAXTitleAttribute),
@@ -123,6 +166,7 @@ public enum AXBackend {
             enabled: bool(el, kAXEnabledAttribute),
             frame: frame(el),
             children: [])
+        return (node, wantChildren ? elements(el, kAXChildrenAttribute) ?? [] : [])
     }
 
     // MARK: - 属性读取
@@ -133,25 +177,35 @@ public enum AXBackend {
         return out
     }
 
-    static func string(_ el: AXUIElement, _ attr: String) -> String? {
-        guard let v = copy(el, attr), CFGetTypeID(v) == CFStringGetTypeID() else { return nil }
+    static func string(_ el: AXUIElement, _ attr: String) -> String? { asString(copy(el, attr)) }
+    static func bool(_ el: AXUIElement, _ attr: String) -> Bool? { asBool(copy(el, attr)) }
+    static func elements(_ el: AXUIElement, _ attr: String) -> [AXUIElement]? { asElements(copy(el, attr)) }
+    static func valueText(_ el: AXUIElement) -> String? { asValueText(copy(el, kAXValueAttribute)) }
+    static func frame(_ el: AXUIElement) -> Rect? {
+        asFrame(position: copy(el, kAXPositionAttribute), size: copy(el, kAXSizeAttribute))
+    }
+
+    // MARK: - 值转换（逐属性读取与批量读取共用，保证两条路径语义一致）
+
+    static func asString(_ v: CFTypeRef?) -> String? {
+        guard let v, CFGetTypeID(v) == CFStringGetTypeID() else { return nil }
         let s = v as! String
         return s.isEmpty ? nil : s
     }
 
-    static func bool(_ el: AXUIElement, _ attr: String) -> Bool? {
-        guard let v = copy(el, attr), CFGetTypeID(v) == CFBooleanGetTypeID() else { return nil }
+    static func asBool(_ v: CFTypeRef?) -> Bool? {
+        guard let v, CFGetTypeID(v) == CFBooleanGetTypeID() else { return nil }
         return CFBooleanGetValue((v as! CFBoolean))
     }
 
-    static func elements(_ el: AXUIElement, _ attr: String) -> [AXUIElement]? {
-        guard let v = copy(el, attr), CFGetTypeID(v) == CFArrayGetTypeID() else { return nil }
+    static func asElements(_ v: CFTypeRef?) -> [AXUIElement]? {
+        guard let v, CFGetTypeID(v) == CFArrayGetTypeID() else { return nil }
         return v as? [AXUIElement]
     }
 
     /// AXValue 可能是字符串、数字或布尔；统一成文本。其余类型（点、区间等）忽略。
-    static func valueText(_ el: AXUIElement) -> String? {
-        guard let v = copy(el, kAXValueAttribute) else { return nil }
+    static func asValueText(_ v: CFTypeRef?) -> String? {
+        guard let v else { return nil }
         let type = CFGetTypeID(v)
         if type == CFStringGetTypeID() { return (v as! String).isEmpty ? nil : (v as! String) }
         if type == CFNumberGetTypeID() { return "\(v as! NSNumber)" }
@@ -159,9 +213,8 @@ public enum AXBackend {
         return nil
     }
 
-    static func frame(_ el: AXUIElement) -> Rect? {
-        guard let p = copy(el, kAXPositionAttribute), CFGetTypeID(p) == AXValueGetTypeID(),
-            let s = copy(el, kAXSizeAttribute), CFGetTypeID(s) == AXValueGetTypeID()
+    static func asFrame(position p: CFTypeRef?, size s: CFTypeRef?) -> Rect? {
+        guard let p, CFGetTypeID(p) == AXValueGetTypeID(), let s, CFGetTypeID(s) == AXValueGetTypeID()
         else { return nil }
         var point = CGPoint.zero
         var size = CGSize.zero

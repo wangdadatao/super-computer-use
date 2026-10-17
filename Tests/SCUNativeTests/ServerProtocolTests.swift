@@ -148,14 +148,16 @@ import Testing
         #expect(b.truncated)
     }
 
-    /// 需要辅助功能权限与运行中的访达；缺一则跳过。访达的树远大于 1 毫秒能读完的量。
+    /// 需要辅助功能权限与运行中的访达；缺一则跳过。
+    /// 预算取 1 毫秒：根节点读完后必然已过期，因此截断是确定的，不依赖访达当时有多大、机器有多快
+    /// （批量读取之后，访达的树在 100 毫秒内就能读完，曾经的"预算 100 毫秒必然截断"不再成立）。
     @Test(.enabled(if: AXBackend.isAccessibilityTrusted()))
     func tinyBudgetTruncatesRealTree() throws {
         guard let finder = AXBackend.listApps().first(where: { $0.bundleId == "com.apple.finder" }) else { return }
         let started = Date()
-        let r = try AXBackend.dumpTree(pid: finder.pid, maxDepth: 24, budgetMs: 100)
+        let r = try AXBackend.dumpTree(pid: finder.pid, maxDepth: 24, budgetMs: 1)
         #expect(r.truncated)
-        // 预算 100ms；允许最后一次 AX 调用的超时余量，但不得接近完整遍历的耗时量级。
+        #expect(r.root.role == "AXApplication")  // 根总是存在
         #expect(Date().timeIntervalSince(started) < 10)
     }
 
@@ -197,11 +199,10 @@ import Testing
         let r = AXBackend.traverse(
             root: 0, maxDepth: maxDepth,
             isExpired: { expireAfterReads.map { reads.count >= $0 } ?? false },
-            read: { i in
+            read: { i, wantChildren in
                 reads.append(nodes[i].name)
-                return AXNode(role: nodes[i].name)
-            },
-            children: { nodes[$0].kids })
+                return (AXNode(role: nodes[i].name), wantChildren ? nodes[i].kids : [])
+            })
         return (r.root, r.truncated, reads)
     }
 
@@ -234,6 +235,13 @@ import Testing
         let r = Self.run(maxDepth: 10, expireAfterReads: 107)
         #expect(!r.truncated)
         #expect(Self.names(r.root).count == 107)
+    }
+
+    @Test func rootIsAlwaysReadEvenIfTheBudgetIsAlreadyExpired() {
+        let r = Self.run(maxDepth: 10, expireAfterReads: 0)
+        #expect(r.reads == ["root"])
+        #expect(r.root.role == "root" && r.root.children.isEmpty)
+        #expect(r.truncated)  // 根有 3 个子节点被丢弃
     }
 
     @Test func depthLimitIsNotTruncation() {
