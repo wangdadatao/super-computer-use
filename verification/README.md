@@ -29,6 +29,7 @@ verification/
 | `YYYY-MM-DD-<假设编号>.md` | 单次验证的结论 |
 | `2026-10-16-baseline-identity.md` | 元素身份各档位分布的**基线记录**（不是验证结论） |
 | `2026-10-17-read-latency.md` | 读树耗时：逐属性读取与批量读取的对比（性能测量，不是验证结论） |
+| `2026-10-18-identity-k4.md` | 元素身份 K4 比例的正式验证（3 个判定样本，结论不成立，限定见文内） |
 | `2026-10-18-fixture-validation.md` | 夹具应用上的令牌、动作效果、收敛、策略验证：哪些成立、哪些是缺口 |
 
 ## 结论文件格式
@@ -41,6 +42,6 @@ verification/
 **尚无任何假设被整体验证通过。** 有一份元素身份的基线记录
 （[2026-10-16-baseline-identity.md](2026-10-16-baseline-identity.md)，不是验证结论），
 和一份夹具上的验证记录（[2026-10-18-fixture-validation.md](2026-10-18-fixture-validation.md)，
-令牌语义成立、收敛有缺口）。元素身份的正式验证尚未执行。
+令牌语义成立、收敛有缺口）。元素身份的 K4 正式验证已执行（[2026-10-18-identity-k4.md](2026-10-18-identity-k4.md)），冻结规则下不成立。
 门槛见 [ADR-0013](../docs/decisions/adr_0013_p0_vertical_slice.md)；
 权限状态见 [docs/operations/permissions.md](../docs/operations/permissions.md)。
