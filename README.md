@@ -24,6 +24,14 @@ SCU 负责寻址、执行，并回报这次动作是否真的产生了预期效�
 SCU 把这三个问题从"调用方自律"提升为**协议保证**：每次读取状态都带版本令牌，
 每次动作都回报可机器核对的效果摘要。
 
+## 定位
+
+SCU 的目标是做一个**对 AI 更好用**的桌面操作工具：以 Codex Computer Use 与 Grok Computer Use 为参照，
+结合两者的长处，并补上两者都缺的动作效果回报。好用的评判者是 AI，不是人。
+
+**目前没有任何"优于"两者的证据**：对两者的了解只来自程序工件的观察，
+也没有任务集和度量数据。度量方式与"优于"的声称条件见 [ADR-0014](docs/decisions/adr_0014_positioning_ai_usability.md)。
+
 ## 设计出发点
 
 SCU 的设计建立在对两套已发布实现的观察之上：OpenAI 的 Codex Computer Use
@@ -77,6 +85,6 @@ swift build && swift test
 
 其中值得先读的三处：
 
-- [决策记录](docs/decisions/index.md)：13 条取舍的背景与代价，包括对本项目有直接影响的两套外部实现分析。
+- [决策记录](docs/decisions/index.md)：14 条取舍的背景与代价，包括对本项目有直接影响的两套外部实现分析。
 - [元素身份](docs/architecture/element_identity.md)：SCU 相对现有方案的核心差异点。
 - [策略与审批](docs/architecture/policy_layer.md)：动作准入机制，SCU 的安全边界。

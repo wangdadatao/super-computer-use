@@ -5,6 +5,9 @@
 SuperComputerUse（SCU）是一个开源桌面自动化服务。当前处于 P0：
 已有 Swift 脚手架（`Package.swift`、`Sources/`、`Tests/`），核心机制仍在实现中。
 验证内嵌在 P0 里作为出口门槛，见 `docs/decisions/adr_0013_p0_vertical_slice.md`。
+项目目标是做对 AI 更好用的桌面操作工具（以 Codex / Grok Computer Use 为参照），
+度量方式与"优于"的声称条件见 `docs/decisions/adr_0014_positioning_ai_usability.md`；
+在对照可行之前不要在文档里声称"优于"。
 构建与测试：`swift build && swift test`。
 
 ## 文档协作规则
