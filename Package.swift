@@ -6,6 +6,7 @@
 //   SCUCore    协议层（句柄注册表、令牌、失效检测），由 scu 进程承载
 //   SCUMCP     接入层：MCP stdio 服务（JSON-RPC、工具目录），只依赖协议层
 //   scu        命令行入口：诊断命令与 `scu mcp`
+//   scu-fixture 验证用的 AppKit 夹具应用（只被测试拉起）
 // 决策见 docs/decisions/adr_0013_p0_vertical_slice.md。
 import PackageDescription
 
@@ -23,6 +24,8 @@ let package = Package(
         .executableTarget(name: "scu-native", dependencies: ["SCUNative", "SCUWire"]),
         .target(name: "SCUMCP", dependencies: ["SCUCore", "SCUWire"]),
         .executableTarget(name: "scu", dependencies: ["SCUCore", "SCUMCP", "SCUWire"]),
+        // 验证用的夹具应用，只被测试拉起，不是产品的一部分。
+        .executableTarget(name: "scu-fixture"),
         .testTarget(name: "SCUWireTests", dependencies: ["SCUWire"]),
         .testTarget(name: "SCUNativeTests", dependencies: ["SCUNative", "SCUWire"]),
         .testTarget(name: "SCUCoreTests", dependencies: ["SCUCore", "SCUWire"]),
