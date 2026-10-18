@@ -33,7 +33,7 @@ enum ScuTool: String, CaseIterable {
             return """
                 读取指定应用的无障碍树，返回文本化元素表。只读，不会操作应用。\
                 每行一个元素，缩进表示层级，格式 [角色#句柄] "标题" 属性…。\
-                句柄只在本次输出内有效，目前没有任何工具接受句柄（SCU 尚不能操作元素）。\
+                输出带一个令牌，句柄与令牌配对、只在该令牌有效期内可用（界面结构变化后令牌失效）；目前没有任何工具接受句柄（SCU 尚不能操作元素）。\
                 读取有总时间预算，耗尽时输出会明确标注"已截断"。\
                 元素多于 max_elements 时按层级优先显示（先看整体结构，不是先序的前 N 个），\
                 被折叠的元素行尾标 (折叠 N)，表示其下还有 N 个后代未显示。\
@@ -113,13 +113,13 @@ enum ScuTool: String, CaseIterable {
         var isError: Bool
     }
 
-    func run(arguments: JSONValue?, reader: DesktopReader) -> Outcome {
+    func run(arguments: JSONValue?, session: DesktopSession) -> Outcome {
         do {
             let args = try Self.objectArguments(arguments)
             switch self {
             case .checkPermissions:
                 try Self.requireNoExtra(args, allowed: [])
-                let ok = try reader.checkPermissions()
+                let ok = try session.reader.checkPermissions()
                 return Outcome(
                     text: ok
                         ? "辅助功能：已授予（针对启动本服务的宿主应用）"
@@ -128,7 +128,7 @@ enum ScuTool: String, CaseIterable {
 
             case .listApps:
                 try Self.requireNoExtra(args, allowed: [])
-                let apps = try reader.listApps()
+                let apps = try session.reader.listApps()
                 let lines = apps.map { "\($0.pid)\t\($0.name)\t\($0.bundleId ?? "-")" }
                 return Outcome(text: lines.isEmpty ? "（没有可读取的应用）" : lines.joined(separator: "\n"), isError: false)
 
@@ -150,11 +150,12 @@ enum ScuTool: String, CaseIterable {
                 let focus = (focusText != nil || focusRole != nil)
                     ? ElementTable.Focus(text: focusText, role: focusRole) : nil
 
-                let reading = try reader.readTree(pid: Int32(pid), maxDepth: depth, budgetMs: budget)
+                let state = try session.readState(pid: Int32(pid), maxDepth: depth, budgetMs: budget)
+                let reading = state.reading
                 let table = ElementTable.render(reading.root, maxElements: maxElements, focus: focus)
                 let head = Self.header(
                     pid: pid, table: table, depthLimit: depth, budgetMs: budget,
-                    truncated: reading.truncated, focused: focus != nil)
+                    truncated: reading.truncated, focused: focus != nil, token: state.token)
                 return Outcome(text: table.text.isEmpty ? head : head + "\n" + table.text, isError: false)
             }
         } catch let e as ArgumentError {
@@ -167,9 +168,10 @@ enum ScuTool: String, CaseIterable {
     }
 
     static func header(
-        pid: Int, table: ElementTable.Result, depthLimit: Int, budgetMs: Int, truncated: Bool, focused: Bool
+        pid: Int, table: ElementTable.Result, depthLimit: Int, budgetMs: Int, truncated: Bool, focused: Bool,
+        token: SnapshotToken
     ) -> String {
-        var h = "# pid=\(pid) 元素 \(table.total)"
+        var h = "# pid=\(pid) 令牌 \(token) 元素 \(table.total)"
         if focused {
             let m = table.matches ?? 0
             if m == 0 {
@@ -188,7 +190,7 @@ enum ScuTool: String, CaseIterable {
         if table.shown < table.scope {
             h += "按层级优先显示；行尾 (折叠 N) 表示其下还有 N 个后代未显示。用 focus 看某一部分，或调大 max_elements。"
         }
-        h += "句柄仅本次输出内有效，目前没有工具接受句柄。"
+        h += "句柄只在该令牌有效期内可用（界面结构变化后令牌失效）；目前没有工具接受句柄。"
         if truncated { h += "\n⚠️ 已截断：\(budgetMs) 毫秒的读取预算耗尽，树不完整。" }
         if table.depth >= depthLimit { h += "\n⚠️ 已达深度上限 \(depthLimit)：更深的节点未读取。" }
         return h

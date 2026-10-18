@@ -47,6 +47,7 @@ agent 侧的会话 API 见[协议总览](protocol_overview.md)，两者是不同
 | `checkPermissions` | — | 查询辅助功能权限 |
 | `listApps` | — | 列出可绑定的应用（常规激活策略） |
 | `dumpTree` | `pid: int`、`maxDepth: int`、`budgetMs: int` | 读取某进程的无障碍树。`maxDepth` 范围 `0...64`；`budgetMs` 是整棵树的总时间预算，范围 `100...120000`。越界一律拒绝而不是截断 |
+| `performAction` | `pid: int`、`locator: ElementLocator`、`action: "press" \| "verify"` | 沿定位器的路径定位目标并核对，通过后执行动作；`verify` 只定位核对、不执行。路径长度上限同 `maxDepth`，每步须满足 `siblings ≥ 1` 且 `0 ≤ index < siblings`，否则 `internal_error`（连接保持）。见 [ADR-0015](../decisions/adr_0015_handle_resolution_by_path.md) |
 
 ### 应答
 
@@ -56,11 +57,29 @@ agent 侧的会话 API 见[协议总览](protocol_overview.md)，两者是不同
 | `permissions` | `accessibility: bool` | `checkPermissions` |
 | `apps` | `apps: [{pid, name, bundleId?}]` | `listApps` |
 | `tree` | `tree: AXNode`、`truncated: bool` | `dumpTree`。`truncated` 为真表示时间预算耗尽、树不完整；深度上限造成的未展开不算截断（那是调用方的选择）。**遍历按层级（广度优先）进行**，预算耗尽时丢弃的是尚未读取的最深节点，已读部分是树的完整上层；`truncated` 只在确实丢弃了待读节点时为真 |
+| `acted` | — | `performAction(press)`：动作已投递给平台且平台未报错。**不代表界面已经变化** |
+| `located` | — | `performAction(verify)`：定位器与界面现状一致 |
+| `stale` | `stale: StaleDetail` | `performAction`：定位器与界面现状不符，**没有执行任何动作** |
 | `failure` | `error: WireError` | 任意请求 |
 
 `AXNode` 是原生层如实返回的平台事实：`role`、`subrole?`、`title?`、`identifier?`、`value?`、
-`roleDescription?`、`description?`、`enabled?`、`frame?`、`children`。可选字段缺失时**省略**，不填空串。
+`roleDescription?`、`description?`、`enabled?`、`frame?`、`childCount?`、`children`。可选字段缺失时**省略**，不填空串。
 原生层不判断元素"是不是同一个"，那是协议层的职责。
+
+`childCount` 是平台报告的**真实**子节点数，只在读取过该节点的子节点时有值（深度上限处的节点没有）。
+预算耗尽时 `children` 可能短于它；已读取的子节点是真实子列表的**前缀**，所以列表下标等于真实下标。
+
+**动作定位相关类型**（均为扁平对象，可选字段省略）：
+
+- `ElementLocator`：`path: [PathStep]`、`target: TargetKey`。空路径表示应用根节点本身
+- `PathStep`：`index`（在父节点子列表中的下标）、`siblings`（读取时父节点的**真实**子节点数）、`role`
+- `TargetKey`：`role`、`subrole?`、`title?`、`identifier?`、`description?`
+- `StaleDetail`：`reason`（`childCount` 路径某层子节点数不同／`role` 路径某层角色不同或下标越界／`target` 到达目标但核对键不一致）、
+  `step?`（不符发生在路径第几步，从 0 起）、`actualCount?`、`actual?: TargetKey`
+
+原生层沿路径逐层读取子节点：子节点总数不等于 `siblings`、下标越界或角色不同，则返回 `stale`；
+到达目标后核对 `TargetKey`，不等则返回 `stale`。`AXPress` 失败时返回 `failure`：
+目标不支持该动作为 `unsupported_operation`，其他平台错误为 `action_failed`。
 
 ## 握手与版本
 
@@ -70,8 +89,9 @@ agent 侧的会话 API 见[协议总览](protocol_overview.md)，两者是不同
    消息中同时给出双方版本，然后关闭连接。不降级运行。
 4. 版本号是编译期常量，来源见实现中的 `scuNativeProtocolVersion`。
 
-当前版本 **2**。版本 1 → 2：`dumpTree` 增加 `budgetMs`，`tree` 应答增加 `truncated`，
-`AXNode` 增加 `description`。
+当前版本 **3**。版本 1 → 2：`dumpTree` 增加 `budgetMs`，`tree` 应答增加 `truncated`，
+`AXNode` 增加 `description`。版本 2 → 3：`AXNode` 增加 `childCount`；新增请求 `performAction`，
+新增应答 `acted`、`located`、`stale`（[ADR-0015](../decisions/adr_0015_handle_resolution_by_path.md)）。
 
 线格式本身的任何不兼容变更（字段改名、`type` 增删、语义变化）都要提升版本号。
 
@@ -124,7 +144,11 @@ agent 侧的会话 API 见[协议总览](protocol_overview.md)，两者是不同
 ## 当前实现范围
 
 已实现并有测试：帧编解码、超长头、半帧、畸形 JSON、未知类型、缺字段、握手前请求、
-版本错配、越界深度与预算、对端关闭后写入、无人连接超时、读取应答超时、遍历预算耗尽。
+版本错配、越界深度与预算、对端关闭后写入、无人连接超时、读取应答超时、遍历预算耗尽、
+`childCount` 的真实性（预算耗尽时记真实数量）、定位器每一类失效（子节点数、角色、核对键、下标越界、
+子节点读不到）、畸形定位器被拒绝且连接保持、`performAction` 对真实访达的 `verify` 与篡改检测。
 
-消息目录只覆盖 P0 需要的四种请求。动作注入、屏幕捕获、变更通知等随 P0 推进增加，
+`press` 对真实应用的投递尚未在自动化测试中覆盖（需要夹具应用，见 ADR-0013 追加记录）。
+
+消息目录只覆盖 P0 需要的五种请求。屏幕捕获、变更通知等随 P0 推进增加，
 每增加一种都要在此登记并视情况提升版本号。

@@ -90,6 +90,32 @@ public struct NativeServer: Sendable {
             } catch {
                 return .failure(.internalError("\(error)"))
             }
+        case .performAction(let pid, let locator, let action):
+            if let problem = validate(locator) { return .failure(.internalError(problem)) }
+            do {
+                switch try AXBackend.performAction(pid: pid, locator: locator, action: action) {
+                case .acted: return .acted
+                case .located: return .located
+                case .stale(let detail): return .stale(detail)
+                }
+            } catch let e as WireError {
+                return .failure(e)
+            } catch {
+                return .failure(.internalError("\(error)"))
+            }
         }
+    }
+
+    /// 定位器的结构检查。深度上限与读树一致：路径不可能比能读到的树更深。
+    func validate(_ locator: ElementLocator) -> String? {
+        guard locator.path.count <= scuMaxTreeDepth else {
+            return "路径过长：\(locator.path.count)，上限 \(scuMaxTreeDepth)"
+        }
+        for (i, step) in locator.path.enumerated() {
+            guard step.siblings >= 1, (0..<step.siblings).contains(step.index) else {
+                return "路径第 \(i) 步无效：index \(step.index)，siblings \(step.siblings)"
+            }
+        }
+        return nil
     }
 }

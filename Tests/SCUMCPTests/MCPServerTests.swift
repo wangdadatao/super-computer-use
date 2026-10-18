@@ -12,12 +12,18 @@ final class FakeReader: DesktopReader {
     var tree: Result<TreeReading, WireError> = .success(
         TreeReading(root: AXNode(role: "AXWindow", title: "主窗口"), truncated: false))
     private(set) var treeCalls: [(pid: Int32, depth: Int, budget: Int)] = []
+    var action: Result<ActionOutcome, WireError> = .success(.acted)
+    private(set) var actionCalls: [(pid: Int32, locator: ElementLocator, action: ActionKind)] = []
 
     func checkPermissions() throws -> Bool { try permissions.get() }
     func listApps() throws -> [AppInfo] { try apps.get() }
     func readTree(pid: Int32, maxDepth: Int, budgetMs: Int) throws -> TreeReading {
         treeCalls.append((pid, maxDepth, budgetMs))
         return try tree.get()
+    }
+    func performAction(pid: Int32, locator: ElementLocator, action kind: ActionKind) throws -> ActionOutcome {
+        actionCalls.append((pid, locator, kind))
+        return try action.get()
     }
 }
 
@@ -202,8 +208,9 @@ struct ToolReply: Equatable {
         let r = callTool(server, "get_ax_state", ["pid": 42])
         #expect(!r.isError)
         let lines = r.text.split(separator: "\n").map(String.init)
-        #expect(lines[0].hasPrefix("# pid=42 元素 3"))
+        #expect(lines[0].hasPrefix("# pid=42 令牌 s"))
         #expect(lines[0].contains("没有工具接受句柄"))
+        #expect(lines[0].contains("元素 3"))
         #expect(lines[1] == #"[AXWindow#1] "主窗口""#)
         #expect(lines[2] == #"  [AXButton#2] "确定""#)
         #expect(lines[3] == #"  [AXTextField#3] value="abc""#)

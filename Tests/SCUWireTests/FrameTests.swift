@@ -134,11 +134,64 @@ import Testing
         let all: [Response] = [
             .hello(protocolVersion: 1), .permissions(accessibility: false), .apps([]),
             .tree(AXNode(role: "AXWindow"), truncated: false), .failure(.internalError("x")),
+            .acted, .located, .stale(StaleDetail(reason: .target, actual: TargetKey(role: "AXButton"))),
         ]
         for r in all {
             let data = try JSONEncoder().encode(ResponseFrame(id: 1, response: r))
             #expect(!String(decoding: data, as: UTF8.self).contains("\"_0\""))
         }
+    }
+
+    static let locator = ElementLocator(
+        path: [PathStep(index: 2, siblings: 5, role: "AXWindow"), PathStep(index: 0, siblings: 1, role: "AXButton")],
+        target: TargetKey(role: "AXButton", title: "好"))
+
+    @Test func performActionShape() throws {
+        let f = try Self.json(
+            RequestFrame(id: 3, request: .performAction(pid: 7, locator: Self.locator, action: .press)))
+        let r = f["request"] as! [String: Any]
+        #expect(r["type"] as? String == "performAction")
+        #expect(r["pid"] as? Int == 7)
+        #expect(r["action"] as? String == "press")
+        let l = r["locator"] as! [String: Any]
+        let path = l["path"] as! [[String: Any]]
+        #expect(path.count == 2)
+        #expect(Set(path[0].keys) == ["index", "siblings", "role"])
+        #expect(path[0]["siblings"] as? Int == 5)
+        #expect((l["target"] as! [String: Any])["title"] as? String == "好")
+    }
+
+    @Test func actionResponsesShapeAndRoundTrip() throws {
+        let stale = StaleDetail(reason: .childCount, step: 1, actualCount: 4)
+        let cases: [Response] = [.acted, .located, .stale(stale)]
+        for c in cases {
+            let body = try JSONEncoder().encode(ResponseFrame(id: 1, response: c))
+            #expect(try Frame.decode(ResponseFrame.self, body: body).response == c)
+        }
+        let j = try Self.json(ResponseFrame(id: 1, response: .stale(stale)))
+        let r = j["response"] as! [String: Any]
+        #expect(r["type"] as? String == "stale")
+        let d = r["stale"] as! [String: Any]
+        #expect(d["reason"] as? String == "childCount")
+        #expect(d["step"] as? Int == 1)
+        #expect(d["actualCount"] as? Int == 4)
+        let acted = try Self.json(ResponseFrame(id: 1, response: .acted))["response"] as! [String: Any]
+        #expect(acted["type"] as? String == "acted")
+    }
+
+    @Test func childCountIsOptionalOnTheWire() throws {
+        let withCount = try Self.json(AXNode(role: "AXList", childCount: 12))
+        #expect(withCount["childCount"] as? Int == 12)
+        // 旧形状（没有该字段）仍可解码为 nil：深度上限处的节点就是这样。
+        let node = try JSONDecoder().decode(AXNode.self, from: Data(#"{"role":"AXList","children":[]}"#.utf8))
+        #expect(node.childCount == nil)
+    }
+
+    @Test func unknownActionKindFailsToDecode() {
+        let body = Data(
+            #"{"id":1,"request":{"type":"performAction","pid":1,"action":"explode","locator":{"path":[],"target":{"role":"AXApplication"}}}}"#
+                .utf8)
+        #expect(throws: DecodingError.self) { try Frame.decode(RequestFrame.self, body: body) }
     }
 
     @Test func unknownMessageTypeFailsToDecode() {

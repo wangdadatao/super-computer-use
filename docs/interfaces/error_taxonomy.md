@@ -84,6 +84,7 @@ interface ScuError {
 | `confirmation_timeout` | policy | `after_user_action` | 审批提示超时未响应 |
 | `system_permission_missing` | platform | `after_user_action` | 系统权限未授予（辅助功能 / 屏幕录制） |
 | `platform_unavailable` | platform | `immediate` | 原生层不可达或崩溃 |
+| `action_failed` | platform | `immediate` | 目标仍在、定位核对通过，但平台拒绝或未能完成动作（如 `AXPress` 返回 `cannotComplete`）。P0 新增，见 [ADR-0015](../decisions/adr_0015_handle_resolution_by_path.md) |
 | `protocol_version_mismatch` | boundary | `no` | 两侧协议版本不一致 |
 | `internal_error` | boundary | `immediate` | 未归类的内部故障 |
 

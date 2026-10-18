@@ -19,6 +19,16 @@ public protocol DesktopReader {
     func checkPermissions() throws -> Bool
     func listApps() throws -> [AppInfo]
     func readTree(pid: Int32, maxDepth: Int, budgetMs: Int) throws -> TreeReading
+    func performAction(pid: Int32, locator: ElementLocator, action: ActionKind) throws -> ActionOutcome
+}
+
+/// 一次动作请求的结果。定位器与界面不符时**没有执行任何动作**。
+public enum ActionOutcome: Equatable, Sendable {
+    /// 动作已投递给平台（平台未报错），不代表界面已经变化。
+    case acted
+    /// `verify` 通过。
+    case located
+    case stale(StaleDetail)
 }
 
 /// 长驻服务用的原生进程会话：**首次使用时才启动** sidecar，连接断开后下次调用自动重建。
@@ -88,6 +98,17 @@ public final class NativeSession: DesktopReader {
                 throw WireError.internalError("读树的应答类型错误")
             }
             return TreeReading(root: root, truncated: truncated)
+        }
+    }
+
+    public func performAction(pid: Int32, locator: ElementLocator, action: ActionKind) throws -> ActionOutcome {
+        try withClient { c in
+            switch try c.call(.performAction(pid: pid, locator: locator, action: action), timeoutMs: 30_000) {
+            case .acted: return .acted
+            case .located: return .located
+            case .stale(let d): return .stale(d)
+            default: throw WireError.internalError("动作的应答类型错误")
+            }
         }
     }
 

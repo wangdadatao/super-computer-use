@@ -15,11 +15,11 @@ public final class MCPServer {
     /// 按新到旧排列。客户端请求的版本在列表内则原样回显，否则回复第一项（规范的协商规则）。
     public static let supportedProtocolVersions = ["2025-06-18", "2025-03-26", "2024-11-05"]
 
-    private let reader: DesktopReader
+    private let session: DesktopSession
     private let serverVersion: String
 
     public init(reader: DesktopReader, serverVersion: String) {
-        self.reader = reader
+        self.session = DesktopSession(reader: reader)
         self.serverVersion = serverVersion
     }
 
@@ -89,7 +89,7 @@ public final class MCPServer {
     static let instructions = """
         SCU（SuperComputerUse）当前是只读档：只能读取 macOS 应用的无障碍树，不能点击、输入或改变任何东西。\
         典型流程：list_apps 取得 pid，再用 get_ax_state 读取元素表。\
-        元素表里的句柄只在该次输出内有效。读取不到时先用 check_permissions 确认宿主应用的辅助功能权限。
+        元素表里的句柄与标题行的令牌配对，令牌失效后不可用。读取不到时先用 check_permissions 确认宿主应用的辅助功能权限。
         """
 
     private func callTool(id: JSONValue, params: JSONValue?) -> String {
@@ -99,7 +99,7 @@ public final class MCPServer {
         guard let tool = ScuTool(rawValue: name) else {
             return error(id: id, code: -32602, "未知工具：\(name)")
         }
-        let outcome = tool.run(arguments: params?["arguments"], reader: reader)
+        let outcome = tool.run(arguments: params?["arguments"], session: session)
         return result(id: id, [
             "content": [["type": "text", "text": .string(outcome.text)]],
             "isError": .bool(outcome.isError),

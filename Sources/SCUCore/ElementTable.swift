@@ -4,7 +4,7 @@ import SCUWire
 ///
 /// **这是元素寻址格式的只读子集，不是完整实现**：
 /// - 句柄是**本次读取内**的先序编号（从 1 起，按完整树编号，与是否显示无关），
-///   不跨快照延续，也没有任何动作接受它（句柄注册表暂缓，见 ADR-0013）。
+///   不跨快照延续；动作经 `DesktopSession` 把它解析成定位器（ADR-0015），句柄注册表暂缓（ADR-0013）。
 /// - 没有 `actions=[...]` 与 `state=focused,selected`：原生层目前不读取动作与焦点。
 /// - 没有"与上次的差异"，每次都是完整表。
 ///
@@ -67,17 +67,18 @@ public enum ElementTable {
         var depth: Int
         var parent: Int  // -1 表示根
         var size: Int  // 子树元素数，含自身
+        var indexInParent: Int  // 在父节点子列表中的下标；根为 0
     }
 
     static func flatten(_ root: AXNode) -> [Entry] {
         var out: [Entry] = []
-        func walk(_ n: AXNode, depth: Int, parent: Int) {
+        func walk(_ n: AXNode, depth: Int, parent: Int, index: Int) {
             let i = out.count
-            out.append(Entry(node: n, depth: depth, parent: parent, size: 1))
-            for c in n.children { walk(c, depth: depth + 1, parent: i) }
+            out.append(Entry(node: n, depth: depth, parent: parent, size: 1, indexInParent: index))
+            for (k, c) in n.children.enumerated() { walk(c, depth: depth + 1, parent: i, index: k) }
             out[i].size = out.count - i
         }
-        walk(root, depth: 0, parent: -1)
+        walk(root, depth: 0, parent: -1, index: 0)
         return out
     }
 

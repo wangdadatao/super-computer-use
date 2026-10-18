@@ -101,7 +101,9 @@ public enum AXBackend {
             head += 1
             let index = slots.count
             let wantChildren = depth < maxDepth
-            let (node, kids) = read(el, wantChildren)
+            var (node, kids) = read(el, wantChildren)
+            // 记录平台报告的真实子节点数：预算耗尽时 children 会短于它（ADR-0015）。
+            node.childCount = wantChildren ? kids.count : nil
             slots.append(TraversalSlot(node: node))
             if parent >= 0 { slots[parent].kids.append(index) }
             if wantChildren {
