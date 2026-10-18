@@ -196,7 +196,7 @@ public enum ElementTable {
 
     /// 带引号的单行字符串：转义反斜杠、双引号与控制字符，过长则截断。
     /// 输出永远不含换行，保证"一行一个元素"的结构不被元素文本破坏。
-    static func quote(_ s: String) -> String {
+    public static func quote(_ s: String) -> String {
         var out = ""
         var count = 0
         for ch in s {

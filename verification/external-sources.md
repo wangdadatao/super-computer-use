@@ -45,6 +45,7 @@ SCU 的设计决策引用了一批对两套已发布实现的观察结论。本�
 | 链接框架 | 判断依赖的框架 | `otool -L <binary>` |
 | 属性列表 | 版本、bundle id、权限声明 | `plutil -extract <key> raw <Info.plist>` |
 | 源码直读 | JS 包的类型定义、文档、配置 | 直接读取文件 |
+| REA 静态分析 | 对 ASAR 做结构化重建（应用图、Electron 边界、完整性核对），给出可引用的证据 ID | `rea analyze-javascript-application <asar> --integrity-policy record-and-continue --format json --full-output`（REA 6.5.0）。完整性不符时默认失败，见下文「2026-10-18 复核记录」 |
 
 **方法注意事项（会直接影响结论的正确性）**
 
@@ -110,6 +111,22 @@ SCU 的设计决策引用了一批对两套已发布实现的观察结论。本�
 | Grok 用硬编码应用黑名单 | `GB-ASAR` | 字符串 `runsShellCommands`、`runsScripts`、`holdsPasswords`、`hostsTerminalsAndAgents`、`changesSystemSettings`、`hostsGrokBot` 及其应用清单；拒绝文案 "…never drives a terminal, an app that runs scripts, an app that holds passwords, System Settings, Cursor, Sand, or its computer-use helper." **位于 asar（Electron 侧），不在原生二进制**（见纠正 C-3） |
 | Grok 有逐应用三态决策 | `GB-ASAR` | 字符串 `decideAppUse` 与其分支 `allow` / `ask` / `refused` |
 
+### 拒绝清单的内容（2026-10-18 复核）
+
+| 结论 | 来源 | 证据 |
+| --- | --- | --- |
+| Grok 的拒绝清单按 6 个类目组织，每个类目是"bundle id → 显示名"的映射 | `GB-ASAR` | 压缩后的 JS 中对象 `lAt`，类目 `runsShellCommands`、`runsScripts`、`holdsPasswords`、`hostsTerminalsAndAgents`、`changesSystemSettings`、`hostsGrokBot`（采集方法：`strings`，见复核记录） |
+| `runsShellCommands` 含 9 个 bundle id | `GB-ASAR` | `com.apple.terminal`、`com.googlecode.iterm2`、`dev.warp.warp-stable`、`net.kovidgoyal.kitty`、`org.alacritty`、`io.alacritty`、`com.github.wez.wezterm`、`com.mitchellh.ghostty`、`co.zeit.hyper` |
+| `runsScripts` 含 3 个 | `GB-ASAR` | `com.apple.scripteditor2`、`com.apple.automator`、`com.apple.shortcuts` |
+| `holdsPasswords` 含 2 个 | `GB-ASAR` | `com.apple.keychainaccess`、`com.apple.passwords` |
+| `hostsTerminalsAndAgents` 含 5 个，全是 Cursor 变体 | `GB-ASAR` | `com.todesktop.230313mzl4w4u92`、`co.anysphere.cursor.nightly`、`co.anysphere.cursor.lab`、`co.anysphere.cursor.alpha`、`co.anysphere.cursor.dev` |
+| `changesSystemSettings` 含 1 个 | `GB-ASAR` | `com.apple.systempreferences` |
+| `hostsGrokBot` 含 1 个，另有两个**前缀**同样被拒 | `GB-ASAR` | `com.anysphere.sand`；前缀 `com.anysphere.sand.`、`co.anysphere.grok-bot-` |
+| 匹配规则：bundle id 去空白后**转小写**再比对；按应用名解析时同样转小写，且一个类目可有多个别名 | `GB-ASAR` | 函数 `$Ae`（`trim().toLowerCase()` 后查集合或前缀）与 `zAe`（`app_name` 经小写后查别名表） |
+| **只读状态读取同样被拒**，不止点击和输入 | `GB-ASAR` | 工具分类表 `Lee` 把 `computer_app_state` 归为 `"app"` 范围，`qAe` 对 `"app"` 范围先调用 `Mee`，`Mee` 首先 `$Ae(bundleId)` 判断 |
+| 拒绝文案告诉模型"让用户自己做这一步" | `GB-ASAR` | 函数 `Dee`："… is off limits to computer use. … Ask the user to do this step themselves." |
+| 拒绝发生在 asar（宿主）侧，在转发给原生服务**之前** | `GB-ASAR` | `qAe` 返回 `{kind:"relay"}` 才转发；`refused` 不转发（与纠正 C-3 一致） |
+
 ### 范围与平台
 
 | 结论 | 来源 | 证据 |
@@ -144,6 +161,29 @@ shasum -a 256 "<binary>"
 | C-1 | 用 `strings` 查 `AXObserverCreateWithInfoCallback` 得 0 命中，先误以为"缺少该 API"；后又误以为 Grok 使用了 `AXObserver` | 用 `nm -u -arch arm64` 确认：**Grok 确实没有 `AXObserver`**，Codex 有完整 `AXObserver*` | 修正了「Grok 用通知驱动」的隐含假设。这反而支持了 SCU 设计里"通知不可靠需要兜底"的判断——另一套实现干脆完全不用通知 |
 | C-2 | 未记录 `CU-APP` 的哈希 | 该二进制在 **2026-10-16 10:31:24** 被替换（同版本号 `26.1013.1001501`，但大小由 24583472 变为 24934560，哈希由 `ac8bfe40…` 变为 `f21c31c0…`） | 本次复核在**新二进制**上重跑了全部 Codex 侧证据，结论均仍成立。若无哈希记录，这一点无法确认 |
 | C-3 | 在原生二进制里找硬编码黑名单 | 黑名单在 `GB-ASAR`（Electron 侧），不在 `GB-NATIVE` | 说明 Grok 的策略判断在宿主进程而非原生服务进程。这影响"策略层放在哪一层"的参考判断 |
+
+## 2026-10-18 复核记录：Grok 拒绝清单
+
+**目的**：写 SCU 的最小拒绝清单之前，先复核 `GB-ASAR` 里的拒绝类目，不凭记忆写。
+本次读取经用户在对话中明确允许（只读，`/Applications/Grok Bot.app/Contents/Resources/app.asar`）。
+
+| 项 | 结果 |
+| --- | --- |
+| 工件版本 | Grok Bot `0.71.2`（`Info.plist` 的 `CFBundleShortVersionString`） |
+| SHA-256 | `055b087a9bacc3be4e5f80c468edf2fd031dd5b928ab2e7da7e01dd10de0e860`，**与工件清单一致**，证据基础未变 |
+| 清单内容的采集方法 | `strings -n 6 app.asar`，在压缩后的 JS 里读取对象 `lAt` 及相关函数。**这是文本读取，不是执行**；REA 的结构化重建（下一行）没有展开该对象字面量，所以清单内容的证据是 `strings` 而不是 REA |
+| REA 6.5.0 静态分析 | 证据 ID `ev_e3ae3c7b0f4b4a4fc8dbfe197e0863032751a59759e9a171db57e1d1cdaf389f`；`derived`、`shipped-artifact`；主体 SHA-256 与上行一致；耗时约 90 秒，输出 242 MB（未入库，只记摘要） |
+| REA 摘要 | 4 个窗口、11 项显式 web 偏好、6 个 context bridge API、18 个 IPC 操作、2 个原生插件绑定。与拒绝清单无关，只是确认 REA 能完整解析该工件 |
+| **完整性不符** | 默认策略直接失败（`artifact_integrity_mismatch`）：ASAR 头声明的哈希与 6 个**未打包的原生文件**实际内容不符。逐一为 `dist/deps/cursor-proclist/…/cursor_proclist.node`、`dist/deps/sand-notification-settings/…/sand_notification_settings.node`、`dist/deps/tree-sitter-bash/prebuilds/darwin-arm64/tree-sitter-bash.node`、`dist/deps/tree-sitter/build/Release/tree_sitter_runtime_binding.node`、`dist/native/sand-op-launcher`、`dist/native/sand-webauthn-signer`。REA 的说明是打包工具常在写完归档后给未打包的原生二进制重新签名或剥离。**判断**：这是推断，没有做逐文件的签名核对；这 6 个文件不是 JS，与拒绝清单无关。用 `--integrity-policy record-and-continue` 继续，REA 把这些字节记为不可信 |
+| 未做的事 | 没有在运行中观察拒绝行为；只读了静态代码，不能说明运行时是否还有别的分支改变结果 |
+
+**对 SCU 的启示（设计选择，不是 Grok 的事实）**：
+
+- Grok 的清单**同时挡住读取和操作**。SCU P0 的清单**只挡动作**，读取保持开放——这是有意的差别：
+  只读档已经在对 Cursor、终端等应用做读取验证，拒绝读取会让"读 Cursor 自己的界面来定位问题"这类用法失效。
+  这一点是否要收紧，待定，在 `docs/architecture/policy_layer.md` 记为待决。
+- `hostsTerminalsAndAgents` 里**只有 Cursor**。其他代理宿主（Codex、ChatGPT、VS Code 系）在 Grok 的清单里没有，
+  SCU 若要覆盖，需要自己核实它们的 bundle id，不能照抄。
 
 ## 采集时的新发现
 

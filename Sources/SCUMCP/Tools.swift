@@ -2,18 +2,27 @@ import Foundation
 import SCUCore
 import SCUWire
 
-/// 只读档的工具目录。**没有任何工具会改变桌面状态**；每个工具都带 `readOnlyHint`。
+/// 工具目录。只读工具恒有；**会改变桌面状态的工具（`isAction`）只在启动时显式开启动作档才暴露**，
+/// 未开启时它们不出现在 `tools/list`，调用也按未知工具处理。每个工具都带 `readOnlyHint` 如实声明。
 // @project-doc docs/interfaces/mcp_surface.md#tool_catalog
 enum ScuTool: String, CaseIterable {
     case checkPermissions = "check_permissions"
     case listApps = "list_apps"
     case getAXState = "get_ax_state"
+    case click
+
+    var isAction: Bool { self == .click }
+
+    static func available(actions: Bool) -> [ScuTool] {
+        allCases.filter { actions || !$0.isAction }
+    }
 
     var title: String {
         switch self {
         case .checkPermissions: return "检查辅助功能权限"
         case .listApps: return "列出应用"
         case .getAXState: return "读取无障碍树"
+        case .click: return "点击元素"
         }
     }
 
@@ -29,11 +38,21 @@ enum ScuTool: String, CaseIterable {
                 列出可读取的正在运行的应用，每行 pid、名称、bundle id（制表符分隔）。只读。\
                 get_ax_state 需要这里的 pid。
                 """
+        case .click:
+            return """
+                点击元素：对 get_ax_state 输出里的某个句柄执行 AXPress（无障碍的"按下"，不移动真实鼠标）。会改变应用的状态。\
+                必须同时给出该输出的令牌与句柄；令牌失效（界面结构变了）、目标已不是读取时的那个、\
+                或应用属于拒绝类目（终端、脚本运行器、密码管理器、系统设置、Cursor 等）时，动作不会执行，并返回分类的错误。\
+                返回的是**观察到的效果**，不是"成功"的保证：已投递只表示系统没有报错；\
+                之后会重读界面直到稳定（最多约 3 秒），报告结构是否变化。\
+                "疑似空操作"表示界面稳定后结构没有任何变化，请核实后再继续。\
+                结构变化时旧令牌作废，需重新 get_ax_state。不支持 AXPress 的元素返回 unsupported_operation。
+                """
         case .getAXState:
             return """
                 读取指定应用的无障碍树，返回文本化元素表。只读，不会操作应用。\
                 每行一个元素，缩进表示层级，格式 [角色#句柄] "标题" 属性…。\
-                输出带一个令牌，句柄与令牌配对、只在该令牌有效期内可用（界面结构变化后令牌失效）；目前没有任何工具接受句柄（SCU 尚不能操作元素）。\
+                输出带一个令牌，句柄与令牌配对、只在该令牌有效期内可用（界面结构变化后令牌失效）；click 工具（仅动作档提供）接受它们。\
                 读取有总时间预算，耗尽时输出会明确标注"已截断"。\
                 元素多于 max_elements 时按层级优先显示（先看整体结构，不是先序的前 N 个），\
                 被折叠的元素行尾标 (折叠 N)，表示其下还有 N 个后代未显示。\
@@ -50,6 +69,16 @@ enum ScuTool: String, CaseIterable {
         switch self {
         case .checkPermissions, .listApps:
             return ["type": "object", "properties": [:], "additionalProperties": false]
+        case .click:
+            return [
+                "type": "object",
+                "properties": [
+                    "token": ["type": "string", "description": "get_ax_state 标题行里的令牌"],
+                    "handle": ["type": "integer", "minimum": 1, "description": "该输出元素表里的句柄编号（[角色#句柄] 的数字）"],
+                ],
+                "required": ["token", "handle"],
+                "additionalProperties": false,
+            ]
         case .getAXState:
             return [
                 "type": "object",
@@ -92,10 +121,10 @@ enum ScuTool: String, CaseIterable {
             "inputSchema": inputSchema,
             "annotations": [
                 "title": .string(title),
-                "readOnlyHint": true,
-                "destructiveHint": false,
-                "idempotentHint": true,
-                "openWorldHint": false,
+                "readOnlyHint": .bool(!isAction),
+                "destructiveHint": .bool(isAction),
+                "idempotentHint": .bool(!isAction),
+                "openWorldHint": .bool(isAction),
             ],
         ]
     }
@@ -113,7 +142,11 @@ enum ScuTool: String, CaseIterable {
         var isError: Bool
     }
 
-    func run(arguments: JSONValue?, session: DesktopSession) -> Outcome {
+    func run(arguments: JSONValue?, session: DesktopSession, actionsEnabled: Bool = false) -> Outcome {
+        // 纵深防御：接入层本就不会把动作工具派发到这里。
+        if isAction, !actionsEnabled {
+            return Outcome(text: "[tool_unavailable] 动作档未开启（启动 scu mcp 时加 --actions）。", isError: true)
+        }
         do {
             let args = try Self.objectArguments(arguments)
             switch self {
@@ -155,8 +188,18 @@ enum ScuTool: String, CaseIterable {
                 let table = ElementTable.render(reading.root, maxElements: maxElements, focus: focus)
                 let head = Self.header(
                     pid: pid, table: table, depthLimit: depth, budgetMs: budget,
-                    truncated: reading.truncated, focused: focus != nil, token: state.token)
+                    truncated: reading.truncated, focused: focus != nil, token: state.token,
+                    policy: state.policy, appName: state.appName, actionsEnabled: actionsEnabled)
                 return Outcome(text: table.text.isEmpty ? head : head + "\n" + table.text, isError: false)
+
+            case .click:
+                try Self.requireNoExtra(args, allowed: ["token", "handle"])
+                guard let token = try Self.string(args, "token") else { throw ArgumentError(message: "缺少参数 token") }
+                guard let handle = try Self.int(args, "handle", range: 1...Int(Int32.max), required: true) else {
+                    throw ArgumentError(message: "缺少参数 handle")
+                }
+                let report = try session.click(token: token, handle: handle)
+                return Outcome(text: Self.clickText(report, handle: handle), isError: false)
             }
         } catch let e as ArgumentError {
             return Outcome(text: "[invalid_argument] \(e.message)", isError: true)
@@ -169,7 +212,7 @@ enum ScuTool: String, CaseIterable {
 
     static func header(
         pid: Int, table: ElementTable.Result, depthLimit: Int, budgetMs: Int, truncated: Bool, focused: Bool,
-        token: SnapshotToken
+        token: SnapshotToken, policy: PolicyGate.Decision = .allow, appName: String? = nil, actionsEnabled: Bool = false
     ) -> String {
         var h = "# pid=\(pid) 令牌 \(token) 元素 \(table.total)"
         if focused {
@@ -190,7 +233,11 @@ enum ScuTool: String, CaseIterable {
         if table.shown < table.scope {
             h += "按层级优先显示；行尾 (折叠 N) 表示其下还有 N 个后代未显示。用 focus 看某一部分，或调大 max_elements。"
         }
-        h += "句柄只在该令牌有效期内可用（界面结构变化后令牌失效）；目前没有工具接受句柄。"
+        h += "句柄只在该令牌有效期内可用（界面结构变化后令牌失效）；"
+        h += actionsEnabled ? "用 click(token, handle) 点击。" : "目前没有工具接受句柄（动作档未开启）。"
+        if case .deny(let category) = policy {
+            h += "\n⚠️ 策略：\(appName ?? "该应用") 属于拒绝类目 \(category)，对它的动作会被拒绝（读取不受限）。"
+        }
         if truncated { h += "\n⚠️ 已截断：\(budgetMs) 毫秒的读取预算耗尽，树不完整。" }
         if table.depth >= depthLimit { h += "\n⚠️ 已达深度上限 \(depthLimit)：更深的节点未读取。" }
         return h
@@ -199,10 +246,56 @@ enum ScuTool: String, CaseIterable {
     /// 按 `code` 分支给出提示，不解析 `message`（error_taxonomy.md）。
     static func describe(_ e: WireError) -> String {
         var s = "[\(e.code)] \(e.message)（retry=\(e.retry)）"
+        switch e.code {
+        case "stale_snapshot", "element_gone":
+            s += "\n请重新调用 get_ax_state 取得新令牌与句柄；用 focus 按文本重新定位目标。"
+        case "target_switched":
+            s += "\n令牌属于之前读取的另一个应用：请对要操作的应用重新 get_ax_state。"
+        case "unsupported_operation":
+            s += "\n该元素不能被点击；可尝试它的父元素或子元素，或换一个元素。"
+        case "policy_denied":
+            s += "\n这是不可协商的拒绝，不要重试或换用别的方式绕过；请告知用户由他自己完成这一步。"
+        default:
+            break
+        }
         if e.code == "system_permission_missing" {
             s += "\n权限按宿主应用归属：请给启动本服务的应用授予辅助功能权限，可用 check_permissions 确认。"
         }
         return s
+    }
+
+    /// 点击结果的文本：先一行机器可读的摘要，再用人话解释。只陈述观察到的事实。
+    static func clickText(_ r: DesktopSession.ClickReport, handle: Int) -> String {
+        func flag(_ b: Bool?) -> String { b.map { $0 ? "true" : "false" } ?? "unknown" }
+        let label = [r.target.title, r.target.description].compactMap { $0 }.first { !$0.isEmpty }
+        var name = "\(r.target.role)#\(handle)"
+        if let label { name += " " + ElementTable.quote(label) }
+        let secs = String(format: "%.1f", r.elapsed)
+        var lines = [
+            "已对 \(name)（pid \(r.pid)）投递点击。",
+            "effect: delivered=\(flag(r.delivered)) observed=\(flag(r.observed)) converged=\(flag(r.converged)) "
+                + "treeChanged=\(flag(r.treeChanged)) targetChanged=\(flag(r.targetChanged)) "
+                + "noOpSuspected=\(flag(r.noOpSuspected)) polls=\(r.polls) elapsed=\(secs)s",
+        ]
+        if !r.observed {
+            lines.append(
+                "⚠️ 动作已投递，但事后读不到界面（\(r.observationError ?? "未知原因")），不知道效果；请用 get_ax_state 确认。")
+        } else if r.treeChanged == true {
+            lines.append("界面结构已变化，旧令牌已作废，请重新 get_ax_state。")
+        } else if r.noOpSuspected == true {
+            lines.append(
+                "⚠️ 疑似空操作：界面稳定后结构没有任何变化。也可能动作只改变了无障碍树之外的东西（剪贴板、文件、窗口外状态），"
+                    + "请核实后再继续。令牌仍有效。")
+        } else if r.treeChanged == nil {
+            lines.append("读取被截断，无法判断结构是否变化；令牌未作废，下一次动作会由原生层再核对一遍目标。")
+        }
+        if r.observed, !r.converged {
+            lines.append("⚠️ 界面在 \(secs) 秒上限内没有稳定，读到的可能是中间状态；稍后再读。")
+        }
+        if r.targetChanged == true, r.treeChanged != true {
+            lines.append("目标元素已不在原位置（已消失或被替换）。")
+        }
+        return lines.joined(separator: "\n")
     }
 
     // MARK: - 参数校验

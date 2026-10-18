@@ -17,10 +17,16 @@ public final class MCPServer {
 
     private let session: DesktopSession
     private let serverVersion: String
+    private let actionsEnabled: Bool
 
-    public init(reader: DesktopReader, serverVersion: String) {
-        self.session = DesktopSession(reader: reader)
+    /// - Parameter actionsEnabled: 是否暴露会改变桌面状态的工具。**默认关闭**，由启动参数显式开启。
+    public init(
+        reader: DesktopReader, serverVersion: String, actionsEnabled: Bool = false,
+        policy: PolicyGate = PolicyGate(), settle: DesktopSession.Settle = DesktopSession.Settle()
+    ) {
+        self.session = DesktopSession(reader: reader, policy: policy, settle: settle)
         self.serverVersion = serverVersion
+        self.actionsEnabled = actionsEnabled
     }
 
     /// 读到 EOF 返回。`write` 返回 false 表示输出端已断开，同样结束。
@@ -58,7 +64,7 @@ public final class MCPServer {
         switch method {
         case "initialize": return initialize(id: id, params: params)
         case "ping": return result(id: id, [:])
-        case "tools/list": return result(id: id, ["tools": .array(ScuTool.allCases.map(\.definition))])
+        case "tools/list": return result(id: id, ["tools": .array(ScuTool.available(actions: actionsEnabled).map(\.definition))])
         case "tools/call": return callTool(id: id, params: params)
         default: return error(id: id, code: -32601, "不支持的方法：\(method)")
         }
@@ -81,7 +87,7 @@ public final class MCPServer {
             "protocolVersion": .string(version),
             "capabilities": ["tools": ["listChanged": false]],
             "serverInfo": ["name": "scu", "version": .string(serverVersion)],
-            "instructions": .string(Self.instructions),
+            "instructions": .string(actionsEnabled ? Self.actionInstructions : Self.instructions),
         ])
     }
 
@@ -92,14 +98,22 @@ public final class MCPServer {
         元素表里的句柄与标题行的令牌配对，令牌失效后不可用。读取不到时先用 check_permissions 确认宿主应用的辅助功能权限。
         """
 
+    static let actionInstructions = """
+        SCU（SuperComputerUse）动作档：可以读取 macOS 应用的无障碍树，也可以用 click 点击元素。\
+        典型流程：list_apps 取得 pid，get_ax_state 读取元素表（标题行有令牌），再用 click(token, handle) 点击。\
+        动作前会核对目标仍是读取时的那个，不是就拒绝并告诉你原因；点击后会报告观察到的效果，\
+        结构变化时令牌作废需重读，"疑似空操作"需要你核实。终端、脚本运行器、密码管理器、系统设置、Cursor 等属于拒绝类目，\
+        拒绝不可协商，请让用户自己完成。读取不到时先用 check_permissions 确认宿主应用的辅助功能权限。
+        """
+
     private func callTool(id: JSONValue, params: JSONValue?) -> String {
         guard let name = params?["name"]?.stringValue else {
             return error(id: id, code: -32602, "tools/call 缺少 name")
         }
-        guard let tool = ScuTool(rawValue: name) else {
+        guard let tool = ScuTool(rawValue: name), actionsEnabled || !tool.isAction else {
             return error(id: id, code: -32602, "未知工具：\(name)")
         }
-        let outcome = tool.run(arguments: params?["arguments"], session: session)
+        let outcome = tool.run(arguments: params?["arguments"], session: session, actionsEnabled: actionsEnabled)
         return result(id: id, [
             "content": [["type": "text", "text": .string(outcome.text)]],
             "isError": .bool(outcome.isError),

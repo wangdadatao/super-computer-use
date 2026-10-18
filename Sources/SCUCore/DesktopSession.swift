@@ -16,6 +16,10 @@ public struct SessionState: Sendable {
     public var reused: Bool
     /// 读取的是哪个进程。
     public var pid: Int32
+    /// 对该应用的动作是否会被策略拒绝。读取本身不受策略限制。
+    public var policy: PolicyGate.Decision
+    /// 应用显示名；身份查询失败或没有该进程时为 nil。
+    public var appName: String?
 }
 
 /// 会话：保存快照与令牌状态，把"令牌 + 句柄"解析成动作定位器，并在失效时给出分类的错误。
@@ -25,13 +29,21 @@ public struct SessionState: Sendable {
 public final class DesktopSession {
     enum Status { case current, stale, switched }
 
+    struct Identity {
+        var name: String?
+        var bundleId: String?
+    }
+
     final class Record {
         let pid: Int32
+        /// nil 表示身份查询**失败**（不是"没有 bundle id"）；动作时必须重查，查不到就不执行。
+        var identity: Identity?
         var status: Status
         /// 只有当前令牌保留整棵树；失效后释放，避免长期持有大树。
         var snapshot: Snapshot?
-        init(pid: Int32, status: Status, snapshot: Snapshot?) {
+        init(pid: Int32, identity: Identity?, status: Status, snapshot: Snapshot?) {
             self.pid = pid
+            self.identity = identity
             self.status = status
             self.snapshot = snapshot
         }
@@ -41,9 +53,33 @@ public final class DesktopSession {
         var entries: [ElementTable.Entry]
         var digest: Int
         var truncated: Bool
+        /// 读取参数：动作之后重读用同样的深度与预算，才能与动作前的摘要比较。
+        var maxDepth: Int
+        var budgetMs: Int
+    }
+
+    /// 动作之后等待界面稳定的参数。启发式初值，见 ADR-0011 的追加记录。
+    public struct Settle {
+        public var interval: TimeInterval
+        public var cap: TimeInterval
+        public var sleep: (TimeInterval) -> Void
+        public var now: () -> Date
+
+        public init(
+            interval: TimeInterval = 0.2, cap: TimeInterval = 3.0,
+            sleep: @escaping (TimeInterval) -> Void = { Thread.sleep(forTimeInterval: $0) },
+            now: @escaping () -> Date = { Date() }
+        ) {
+            self.interval = interval
+            self.cap = cap
+            self.sleep = sleep
+            self.now = now
+        }
     }
 
     public let reader: DesktopReader
+    private let policy: PolicyGate
+    private let settle: Settle
     private let retained: Int
     private let nonce: String
     private var counter = 0
@@ -54,8 +90,13 @@ public final class DesktopSession {
     /// 令牌从当前变为失效（含目标切换）的次数。同一令牌只迁移一次，重复使用不再增加。
     public private(set) var invalidations = 0
 
-    public init(reader: DesktopReader, retainedTokens: Int = 16) {
+    public init(
+        reader: DesktopReader, policy: PolicyGate = PolicyGate(), retainedTokens: Int = 16,
+        settle: Settle = Settle()
+    ) {
         self.reader = reader
+        self.policy = policy
+        self.settle = settle
         self.retained = max(2, retainedTokens)
         self.nonce = String(UInt32.random(in: 0..<0x1000_0000), radix: 36)
     }
@@ -71,8 +112,9 @@ public final class DesktopSession {
             snap.digest == digest, snap.truncated == reading.truncated
         {
             // 结构没有变化：沿用令牌。几何不进摘要，窗口移动不会让令牌失效。
-            r.snapshot = Snapshot(entries: entries, digest: digest, truncated: reading.truncated)
-            return SessionState(token: SnapshotToken(t), reading: reading, reused: true, pid: pid)
+            r.snapshot = Snapshot(
+                entries: entries, digest: digest, truncated: reading.truncated, maxDepth: maxDepth, budgetMs: budgetMs)
+            return state(token: t, record: r, reading: reading, reused: true)
         }
 
         if let t = currentToken, let old = records[t] {
@@ -80,15 +122,30 @@ public final class DesktopSession {
         }
         counter += 1
         let token = "s\(nonce).\(counter)"
-        records[token] = Record(
-            pid: pid, status: .current,
-            snapshot: Snapshot(entries: entries, digest: digest, truncated: reading.truncated))
+        let record = Record(
+            pid: pid, identity: try? lookupIdentity(pid: pid), status: .current,
+            snapshot: Snapshot(
+                entries: entries, digest: digest, truncated: reading.truncated, maxDepth: maxDepth, budgetMs: budgetMs))
+        records[token] = record
         order.append(token)
         while order.count > retained {
             records[order.removeFirst()] = nil
         }
         currentToken = token
-        return SessionState(token: SnapshotToken(token), reading: reading, reused: false, pid: pid)
+        return state(token: token, record: record, reading: reading, reused: false)
+    }
+
+    private func state(token: String, record: Record, reading: TreeReading, reused: Bool) -> SessionState {
+        SessionState(
+            token: SnapshotToken(token), reading: reading, reused: reused, pid: record.pid,
+            policy: policy.evaluate(pid: record.pid, bundleId: record.identity?.bundleId),
+            appName: record.identity?.name)
+    }
+
+    /// 查进程的 bundle id 与名称。列表里没有该进程时返回空身份（不是失败）；列表本身读不到则抛错。
+    private func lookupIdentity(pid: Int32) throws -> Identity {
+        let app = try reader.listApps().first { $0.pid == pid }
+        return Identity(name: app?.name, bundleId: app?.bundleId)
     }
 
     private func invalidate(_ r: Record, to status: Status) {
@@ -159,6 +216,21 @@ public final class DesktopSession {
 
     /// 对令牌里的句柄执行动作。会话已知失效的令牌不会联系原生层。
     public func act(token: String, handle: Int, action: ActionKind) throws -> ActionOutcome {
+        // 策略先于令牌：被拒绝的动作不消耗令牌，也不因令牌状态而改变结论（ADR-0015 §5）。
+        // 令牌未知时没有进程可判定，由 resolve 按 stale_snapshot 处理。
+        if let r = records[token] {
+            let identity: Identity
+            if let known = r.identity {
+                identity = known
+            } else {
+                // 读取时身份查询失败：这里重查；仍然失败就不执行（无法确认策略，不放行）。
+                identity = try lookupIdentity(pid: r.pid)
+                r.identity = identity
+            }
+            if case .deny(let category) = policy.evaluate(pid: r.pid, bundleId: identity.bundleId) {
+                throw WireError.policyDenied(category: category, app: identity.name ?? "pid \(r.pid)")
+            }
+        }
         let (pid, locator) = try resolve(token: token, handle: handle)
         let outcome = try reader.performAction(pid: pid, locator: locator, action: action)
         if case .stale(let d) = outcome, let r = records[token] {
@@ -166,6 +238,104 @@ public final class DesktopSession {
             throw WireError.staleSnapshot("句柄 #\(handle) 已失效：\(Self.describe(d))。请重新读取界面。")
         }
         return outcome
+    }
+
+    // MARK: - 点击与效果
+
+    /// 点击的效果摘要。**只陈述观察到的事实**，不声称动作"成功"：`delivered` 只表示平台没有报错。
+    public struct ClickReport: Equatable, Sendable {
+        public var pid: Int32
+        public var target: TargetKey
+        /// 动作已投递给平台。返回报告就意味着它为真；保留字段是为了与对外的摘要格式一致。
+        public var delivered: Bool
+        /// 动作之后成功重读过界面。重读失败时为 false，下面三项均为 nil。
+        public var observed: Bool
+        /// 连续两次重读的结构一致。上限内一直在变化则为 false。
+        public var converged: Bool
+        /// 与动作前相比结构是否变化。动作前或动作后的读取被截断时无法比较，为 nil。
+        public var treeChanged: Bool?
+        /// 目标元素在稳定后的树里是否已不是原来那个（路径对不上或核对键不同）。树被截断时为 nil。
+        public var targetChanged: Bool?
+        /// 已投递、界面已收敛、结构没有任何变化：**疑似**空操作（也可能动作只改变了无障碍树之外的东西）。
+        public var noOpSuspected: Bool?
+        public var polls: Int
+        public var elapsed: TimeInterval
+        /// 因树变化，调用时所用的令牌已被会话作废。
+        public var tokenInvalidated: Bool
+        public var observationError: String?
+    }
+
+    /// 点击：执行 `AXPress`，再轮询重读界面，直到连续两次一致或达到总上限（动作收敛，ADR-0011）。
+    /// 树确实变化时作废调用所用的令牌（不签发新令牌，调用方需要重读）。
+    // @project-doc docs/interfaces/mcp_surface.md#click_tool
+    public func click(token: String, handle: Int) throws -> ClickReport {
+        // 先于动作取走动作前的快照信息：动作中途令牌可能被作废并释放快照。
+        let pre = records[token]?.snapshot
+        let outcome = try act(token: token, handle: handle, action: .press)
+        guard case .acted = outcome else {
+            throw WireError.internalError("点击得到了非预期的应答：\(outcome)")
+        }
+        // act 已经通过解析，记录与快照必然存在。
+        guard let record = records[token], let pre else { throw WireError.internalError("点击后令牌记录丢失") }
+        let locator = Self.locator(for: handle - 1, in: pre.entries)
+        var report = ClickReport(
+            pid: record.pid, target: locator.target, delivered: true, observed: false, converged: false,
+            treeChanged: nil, targetChanged: nil, noOpSuspected: nil, polls: 0, elapsed: 0,
+            tokenInvalidated: false, observationError: nil)
+
+        let start = settle.now()
+        var previous: Int?
+        var settled: TreeReading?
+        var settledDigest = 0
+        do {
+            while true {
+                settle.sleep(settle.interval)
+                let reading = try reader.readTree(pid: record.pid, maxDepth: pre.maxDepth, budgetMs: pre.budgetMs)
+                report.polls += 1
+                let digest = Self.structuralDigest(ElementTable.flatten(reading.root))
+                settled = reading
+                settledDigest = digest
+                if let p = previous, p == digest, !reading.truncated {
+                    report.converged = true
+                    break
+                }
+                previous = digest
+                if settle.now().timeIntervalSince(start) >= settle.cap { break }
+            }
+        } catch let e as WireError {
+            report.observationError = "[\(e.code)] \(e.message)"
+        }
+        report.elapsed = settle.now().timeIntervalSince(start)
+
+        guard let settled else { return report }
+        report.observed = true
+        if !pre.truncated, !settled.truncated {
+            let changed = settledDigest != pre.digest
+            report.treeChanged = changed
+            report.noOpSuspected = report.converged && !changed
+            if changed, let r = records[token], r.status == .current {
+                invalidate(r, to: .stale)
+                report.tokenInvalidated = true
+            }
+        }
+        if !settled.truncated {
+            report.targetChanged = !Self.targetPresent(locator, in: settled.root)
+        }
+        return report
+    }
+
+    /// 在树里沿定位器的路径找目标，并核对其核对键。路径对不上视为目标已不是原来那个。
+    static func targetPresent(_ locator: ElementLocator, in root: AXNode) -> Bool {
+        var current = root
+        for step in locator.path {
+            guard (current.childCount ?? current.children.count) == step.siblings,
+                current.children.indices.contains(step.index)
+            else { return false }
+            let next = current.children[step.index]
+            guard next.role == step.role else { return false }
+            current = next
+        }
+        return TargetKey(current) == locator.target
     }
 
     static func describe(_ d: StaleDetail) -> String {

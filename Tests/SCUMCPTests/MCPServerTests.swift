@@ -324,4 +324,140 @@ extension JSONValue {
         if case .array(let a) = self { return a.first }
         return nil
     }
+    var arrayValues: [JSONValue]? {
+        if case .array(let a) = self { return a }
+        return nil
+    }
+}
+
+/// 动作档：`click` 默认不暴露，开启后经令牌与句柄执行，返回观察到的效果。
+@Suite struct ActionToolTests {
+    final class Clock {
+        var now = Date(timeIntervalSince1970: 0)
+        var settle: DesktopSession.Settle {
+            DesktopSession.Settle(interval: 0.2, cap: 3.0, sleep: { self.now += $0 }, now: { self.now })
+        }
+    }
+
+    static let tree = TreeReading(
+        root: AXNode(
+            role: "AXWindow", title: "主窗口", childCount: 2,
+            children: [AXNode(role: "AXButton", title: "确定"), AXNode(role: "AXTextField", value: "abc")]),
+        truncated: false)
+
+    func rig(actions: Bool, apps: [AppInfo]? = nil) -> (MCPServerTests, MCPServer, FakeReader) {
+        let t = MCPServerTests()
+        let reader = FakeReader()
+        reader.tree = .success(Self.tree)
+        if let apps { reader.apps = .success(apps) }
+        let server = MCPServer(
+            reader: reader, serverVersion: "test", actionsEnabled: actions, policy: PolicyGate(),
+            settle: Clock().settle)
+        return (t, server, reader)
+    }
+
+    func token(from reply: ToolReply) -> String {
+        let head = reply.text.split(separator: "\n").first.map(String.init) ?? ""
+        let parts = head.split(separator: " ").map(String.init)
+        guard let i = parts.firstIndex(of: "令牌"), i + 1 < parts.count else { return "" }
+        return parts[i + 1]
+    }
+
+    func toolNames(_ t: MCPServerTests, _ s: MCPServer) -> [String] {
+        let r = t.request(s, "tools/list")
+        return r["result"]?["tools"]?.arrayValues?.compactMap { $0["name"]?.stringValue } ?? []
+    }
+
+    @Test func clickIsHiddenAndRejectedByDefault() {
+        let (t, s, reader) = rig(actions: false)
+        #expect(toolNames(t, s) == ["check_permissions", "list_apps", "get_ax_state"])
+        let r = t.request(s, "tools/call", params: ["name": "click", "arguments": ["token": "x", "handle": 1]])
+        #expect(r["error"]?["code"] == .int(-32602))  // 与未知工具同样处理
+        #expect(reader.actionCalls.isEmpty)
+        let hello = t.request(s, "initialize", params: ["protocolVersion": "2025-06-18"])
+        #expect(hello["result"]?["instructions"]?.stringValue?.contains("只读档") == true)
+    }
+
+    @Test func clickIsExposedWithTruthfulAnnotationsWhenEnabled() {
+        let (t, s, _) = rig(actions: true)
+        #expect(toolNames(t, s).contains("click"))
+        let tools = t.request(s, "tools/list")["result"]?["tools"]?.arrayValues ?? []
+        let click = tools.first { $0["name"]?.stringValue == "click" }
+        #expect(click?["annotations"]?["readOnlyHint"] == .bool(false))
+        #expect(click?["annotations"]?["destructiveHint"] == .bool(true))
+        let read = tools.first { $0["name"]?.stringValue == "get_ax_state" }
+        #expect(read?["annotations"]?["readOnlyHint"] == .bool(true))
+        let hello = t.request(s, "initialize", params: ["protocolVersion": "2025-06-18"])
+        #expect(hello["result"]?["instructions"]?.stringValue?.contains("动作档") == true)
+    }
+
+    @Test func readThenClickReportsTheObservedEffect() {
+        let (t, s, reader) = rig(actions: true)
+        let read = t.callTool(s, "get_ax_state", ["pid": 42])
+        let tok = token(from: read)
+        #expect(tok.hasPrefix("s"))
+        #expect(read.text.contains("用 click(token, handle) 点击"))
+        let r = t.callTool(s, "click", ["token": .string(tok), "handle": 2])
+        #expect(!r.isError)
+        #expect(r.text.contains("AXButton#2"))
+        #expect(r.text.contains("effect: delivered=true observed=true converged=true treeChanged=false"))
+        #expect(r.text.contains("疑似空操作"))
+        #expect(reader.actionCalls.count == 1)
+        #expect(reader.actionCalls[0].locator.target.title == "确定")
+    }
+
+    @Test func staleTokenGivesAClassifiedErrorWithGuidance() {
+        let (t, s, reader) = rig(actions: true)
+        let r = t.callTool(s, "click", ["token": "nope", "handle": 1])
+        #expect(r.isError)
+        #expect(r.text.hasPrefix("[stale_snapshot]"))
+        #expect(r.text.contains("重新调用 get_ax_state"))
+        #expect(reader.actionCalls.isEmpty)
+    }
+
+    @Test func handleOutsideTheSnapshotIsElementGone() {
+        let (t, s, _) = rig(actions: true)
+        let tok = token(from: t.callTool(s, "get_ax_state", ["pid": 42]))
+        let r = t.callTool(s, "click", ["token": .string(tok), "handle": 99])
+        #expect(r.isError && r.text.hasPrefix("[element_gone]"))
+    }
+
+    @Test func deniedAppIsExplainedUpFrontAndRefusedOnClick() {
+        let terminal = [AppInfo(pid: 42, name: "终端", bundleId: "com.apple.Terminal")]
+        let (t, s, reader) = rig(actions: true, apps: terminal)
+        let read = t.callTool(s, "get_ax_state", ["pid": 42])
+        #expect(!read.isError)  // 读取不受策略限制
+        #expect(read.text.contains("⚠️ 策略：终端 属于拒绝类目 runs_shell_commands"))
+        let r = t.callTool(s, "click", ["token": .string(token(from: read)), "handle": 2])
+        #expect(r.isError && r.text.hasPrefix("[policy_denied]"))
+        #expect(r.text.contains("retry=no"))
+        #expect(r.text.contains("不要重试"))
+        #expect(reader.actionCalls.isEmpty)
+    }
+
+    @Test func unsupportedElementIsReportedAsSuch() {
+        let (t, s, reader) = rig(actions: true)
+        reader.action = .failure(.unsupportedOperation("不支持 AXPress"))
+        let tok = token(from: t.callTool(s, "get_ax_state", ["pid": 42]))
+        let r = t.callTool(s, "click", ["token": .string(tok), "handle": 3])
+        #expect(r.isError && r.text.hasPrefix("[unsupported_operation]"))
+    }
+
+    @Test func argumentsAreValidated() {
+        let (t, s, _) = rig(actions: true)
+        for args: JSONValue in [
+            [:], ["token": "x"], ["handle": 1], ["token": "x", "handle": 0], ["token": "x", "handle": "1"],
+            ["token": "x", "handle": 1, "extra": true], ["token": "", "handle": 1],
+        ] {
+            let r = t.callTool(s, "click", args)
+            #expect(r.isError && r.text.hasPrefix("[invalid_argument]"), "\(args)")
+        }
+    }
+
+    @Test func readOnlyToolDescriptionsStayReadOnly() {
+        // 读取工具的描述不得暗示会改变状态；动作工具的描述必须如实说明。
+        #expect(ScuTool.getAXState.description.contains("只读"))
+        #expect(ScuTool.click.description.contains("会改变应用的状态"))
+        #expect(ScuTool.click.isAction && !ScuTool.getAXState.isAction)
+    }
 }

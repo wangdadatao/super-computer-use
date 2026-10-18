@@ -57,7 +57,7 @@ git config core.hooksPath scripts/hooks
 | 无障碍树读取：广度优先遍历、每节点一次批量属性读取，单次 AX 调用超时 + 整棵树总时间预算（截断时明确标注，丢弃的是最深的节点）+ 客户端读取超时 | `AXBackend.dumpTree`、`NativeClient.call` | 已实现，有测试 |
 | 树的文本输出与字段覆盖率统计 | `TreeFormatter`、`FieldCoverage` | 已实现，覆盖率有测试 |
 | 文本化元素表（本次读取内的句柄、转义、层级优先的元素数上限、`focus` 展开） | `ElementTable` | 已实现，有测试 |
-| 只读 MCP stdio 服务：`check_permissions`、`list_apps`、`get_ax_state`（见 [MCP 接入面](../interfaces/mcp_surface.md)） | `SCUMCP`、`scu mcp`、`NativeSession` | 已实现，有单元测试与真实管道的端到端测试；已在 Cursor 一个宿主里跑通（见 [MCP 接入面的未验证项](../interfaces/mcp_surface.md#未验证项)） |
+| MCP stdio 服务：只读的 `check_permissions`、`list_apps`、`get_ax_state`；加 `--actions` 额外提供 `click`（见 [MCP 接入面](../interfaces/mcp_surface.md)） | `SCUMCP`、`scu mcp`、`NativeSession` | 已实现，有单元测试与真实管道的端到端测试；只读工具已在 Cursor 一个宿主里跑通。**`click` 只有假读取器与管道层面的测试，还没有在真实应用上点过**（夹具与真实点击验证在 P0 的后续步骤）（见 [MCP 接入面的未验证项](../interfaces/mcp_surface.md#未验证项)） |
 | 进程被信号终止或 SIGKILL 时回收原生进程与 socket 目录 | `NativeClient.terminateAllForShutdown`、`scu-native` 退出清理 | 已实现，由 `scripts/check.sh` 冒烟覆盖 |
 | K1~K4 候选键与匹配键计算（纯函数，无状态） | `IdentityAnalyzer` | 已实现，有测试（含唯一性的伪随机性质测试） |
 | 各档位分布统计（整树 / 窗口内可交互 / 菜单栏 / 按 role），K1 与标签的多种口径 | `IdentityReport`、`scu identity` | 已实现。**只呈现分布，不给成败结论**（ADR-0013「基线先行」） |
@@ -68,7 +68,7 @@ git config core.hooksPath scripts/hooks
 命令行：
 
 ```bash
-scu mcp                             # MCP stdio 服务（只读档）；stdout 只有协议消息，诊断写 stderr
+scu mcp [--actions]                 # MCP stdio 服务；默认只读，--actions 额外暴露 click；stdout 只有协议消息，诊断写 stderr
 scu permissions                     # 检查辅助功能权限
 scu apps                            # 列出可绑定的应用与 pid
 scu dump --pid <pid> [--depth N] [--budget-ms M]

@@ -7,12 +7,25 @@ import Testing
 /// 可编排的假读取器：每次读树返回当前的 `tree`，动作返回当前的 `action`。
 final class ScriptedReader: DesktopReader {
     var tree = TreeReading(root: SessionTests.sampleTree(), truncated: false)
+    /// 非空时，每次读树按顺序取一项，取完后一直返回最后一项；`Error` 项让那次读取失败。
+    var script: [Result<TreeReading, WireError>] = []
+    private(set) var readCount = 0
+    func readCountReset() { readCount = 0 }
+    var apps: Result<[AppInfo], WireError> = .success([AppInfo(pid: 10, name: "演示", bundleId: "com.example.demo")])
+    private(set) var listAppsCalls = 0
     var action: Result<ActionOutcome, WireError> = .success(.acted)
     private(set) var actionCalls: [(pid: Int32, locator: ElementLocator, action: ActionKind)] = []
 
     func checkPermissions() throws -> Bool { true }
-    func listApps() throws -> [AppInfo] { [] }
-    func readTree(pid: Int32, maxDepth: Int, budgetMs: Int) throws -> TreeReading { tree }
+    func listApps() throws -> [AppInfo] {
+        listAppsCalls += 1
+        return try apps.get()
+    }
+    func readTree(pid: Int32, maxDepth: Int, budgetMs: Int) throws -> TreeReading {
+        defer { readCount += 1 }
+        guard !script.isEmpty else { return tree }
+        return try script[min(readCount, script.count - 1)].get()
+    }
     func performAction(pid: Int32, locator: ElementLocator, action kind: ActionKind) throws -> ActionOutcome {
         actionCalls.append((pid, locator, kind))
         return try action.get()
@@ -33,6 +46,14 @@ final class ScriptedReader: DesktopReader {
 
     func session(_ r: ScriptedReader = ScriptedReader()) -> (DesktopSession, ScriptedReader) {
         (DesktopSession(reader: r), r)
+    }
+
+    /// 虚拟时钟：`sleep` 只推进时间，测试不真的等待。
+    final class Clock {
+        var now = Date(timeIntervalSince1970: 0)
+        var settle: DesktopSession.Settle {
+            DesktopSession.Settle(interval: 0.2, cap: 3.0, sleep: { self.now += $0 }, now: { self.now })
+        }
     }
 
     func read(_ s: DesktopSession, pid: Int32 = 10) throws -> SessionState {
@@ -300,4 +321,130 @@ final class ScriptedReader: DesktopReader {
         #expect(stale.isEmpty, "界面未变却判失效：\(stale)")
         #expect(checked > 1)
     }
+}
+
+/// 点击之后的效果摘要与收敛判定。时间用虚拟时钟，不真的等待。
+@Suite struct ClickEffectTests {
+    typealias R = Result<TreeReading, WireError>
+
+    static func tree(okTitle: String = "确定", extra: Bool = false) -> TreeReading {
+        var root = SessionTests.sampleTree(okTitle: okTitle)
+        if extra {
+            root.children[1].children = [AXNode(role: "AXStaticText", title: "已完成")]
+            root.children[1].childCount = 1
+        }
+        return TreeReading(root: root, truncated: false)
+    }
+
+    func make(_ script: [R], preTruncated: Bool = false) throws
+        -> (DesktopSession, ScriptedReader, SessionState, SessionTests.Clock)
+    {
+        let clock = SessionTests.Clock()
+        let r = ScriptedReader()
+        r.tree = TreeReading(root: SessionTests.sampleTree(), truncated: preTruncated)
+        let s = DesktopSession(reader: r, settle: clock.settle)
+        let state = try s.readState(pid: 10, maxDepth: 12, budgetMs: 1000)
+        r.script = script
+        r.resetReadCount()
+        return (s, r, state, clock)
+    }
+
+    @Test func unchangedUiIsReportedAsSuspectedNoOpAndKeepsTheToken() throws {
+        let (s, r, st, _) = try make([.success(Self.tree())])
+        let rep = try s.click(token: st.token.value, handle: 3)
+        #expect(rep.delivered && rep.observed && rep.converged)
+        #expect(rep.treeChanged == false && rep.targetChanged == false && rep.noOpSuspected == true)
+        #expect(rep.polls == 2)  // 至少要两次一致的读取才算收敛
+        #expect(!rep.tokenInvalidated)
+        _ = try s.resolve(token: st.token.value, handle: 3)
+        #expect(r.actionCalls.count == 1 && r.actionCalls[0].action == .press)
+    }
+
+    @Test func structuralChangeThatSettlesInvalidatesTheOldTokenOnly() throws {
+        // 第一次重读已经变化，第二次与之一致：收敛，树变化。
+        let (s, _, st, _) = try make([.success(Self.tree(extra: true)), .success(Self.tree(extra: true))])
+        let rep = try s.click(token: st.token.value, handle: 3)
+        #expect(rep.converged && rep.treeChanged == true && rep.noOpSuspected == false)
+        #expect(rep.targetChanged == false)  // 目标按钮还在原位
+        #expect(rep.tokenInvalidated)
+        #expect(s.invalidations == 1)
+        do {
+            _ = try s.resolve(token: st.token.value, handle: 3)
+            Issue.record("旧令牌应失效")
+        } catch let e as WireError {
+            #expect(e.code == "stale_snapshot")
+        }
+        // 不签发新令牌：下一次读取才会签发。
+        let next = try s.readState(pid: 10, maxDepth: 12, budgetMs: 1000)
+        #expect(next.token != st.token && !next.reused)
+    }
+
+    @Test func uiThatKeepsChangingStopsAtTheCapAndIsNotConverged() throws {
+        let frames: [R] = (0..<100).map { .success(Self.tree(okTitle: "t\($0)")) }
+        let (s, r, st, clock) = try make(frames)
+        let rep = try s.click(token: st.token.value, handle: 4)
+        #expect(!rep.converged && rep.observed)
+        #expect(rep.treeChanged == true && rep.noOpSuspected == false)
+        #expect(rep.elapsed >= 3.0 && rep.elapsed < 3.5)
+        #expect(rep.polls == r.readCount && rep.polls >= 14 && rep.polls <= 16)
+        #expect(clock.now.timeIntervalSince1970 >= 3.0)
+    }
+
+    @Test func targetReplacedIsReported() throws {
+        var changed = SessionTests.sampleTree()
+        changed.children[0].children[0] = AXNode(role: "AXButton", title: "删除")
+        let r: R = .success(TreeReading(root: changed, truncated: false))
+        let (s, _, st, _) = try make([r])
+        let rep = try s.click(token: st.token.value, handle: 3)
+        #expect(rep.targetChanged == true && rep.treeChanged == true)
+    }
+
+    @Test func truncatedReadingsMeanUnknownNotChanged() throws {
+        var t = Self.tree()
+        t.truncated = true
+        let (s, _, st, _) = try make([.success(t)])
+        let rep = try s.click(token: st.token.value, handle: 3)
+        #expect(rep.treeChanged == nil && rep.noOpSuspected == nil && rep.targetChanged == nil)
+        #expect(!rep.tokenInvalidated)  // 无法判断就不作废；下一次动作由原生层核对
+        _ = try s.resolve(token: st.token.value, handle: 3)
+    }
+
+    @Test func truncatedBeforeActionAlsoMeansUnknown() throws {
+        let (s, _, st, _) = try make([.success(Self.tree())], preTruncated: true)
+        let rep = try s.click(token: st.token.value, handle: 3)
+        #expect(rep.treeChanged == nil && rep.noOpSuspected == nil)
+    }
+
+    @Test func readFailureAfterDeliveryIsReportedNotThrown() throws {
+        // 动作已经投递，不能因为事后读不到界面就报"失败"让调用方重试一次点击。
+        let (s, _, st, _) = try make([.failure(.platformUnavailable("原生进程崩溃"))])
+        let rep = try s.click(token: st.token.value, handle: 3)
+        #expect(rep.delivered && !rep.observed && !rep.converged)
+        #expect(rep.treeChanged == nil && rep.noOpSuspected == nil)
+        #expect(rep.observationError?.contains("platform_unavailable") == true)
+    }
+
+    @Test func staleOrUnsupportedClickDoesNotPollOrAct() throws {
+        let (s, r, st, _) = try make([.success(Self.tree())])
+        r.action = .failure(.unsupportedOperation("不支持"))
+        #expect(throws: WireError.self) { _ = try s.click(token: st.token.value, handle: 3) }
+        r.action = .success(.stale(StaleDetail(reason: .target)))
+        #expect(throws: WireError.self) { _ = try s.click(token: st.token.value, handle: 3) }
+        #expect(r.readCount == 0)  // 动作没发生，就不做事后重读
+    }
+
+    @Test func targetPresentMatchesPathAndKey() {
+        let root = SessionTests.sampleTree()
+        let loc = DesktopSession.locator(for: 2, in: ElementTable.flatten(root))  // 确定
+        #expect(DesktopSession.targetPresent(loc, in: root))
+        var moved = root
+        moved.children[0].children.insert(AXNode(role: "AXButton", title: "新"), at: 0)
+        moved.children[0].childCount = 3
+        #expect(!DesktopSession.targetPresent(loc, in: moved))
+    }
+}
+
+extension ScriptedReader {
+    /// 把读取计数清零：测试里读取状态那一次不算点击之后的轮询。
+    func resetReadCount() { readCountReset() }
 }

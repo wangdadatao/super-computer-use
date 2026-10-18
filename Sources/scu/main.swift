@@ -5,7 +5,7 @@ import SCUMCP
 import SCUWire
 
 // 命令行入口：诊断命令，以及 `scu mcp`（MCP stdio 服务）。
-//   scu mcp                            以 MCP stdio 服务运行（只读档），见 docs/interfaces/mcp_surface.md
+//   scu mcp [--actions]                以 MCP stdio 服务运行；默认只读档，--actions 额外暴露 click，见 docs/interfaces/mcp_surface.md
 //   scu permissions
 //   scu apps
 //   scu dump --pid <pid> [--depth <n>] [--json]
@@ -51,7 +51,7 @@ func treeTimeoutMs(_ budgetMs: Int) -> Int32 { Int32(budgetMs + 10_000) }
 let scuVersion = "0.0.1-p0"
 
 /// 以 MCP stdio 服务运行。**stdout 只允许出现协议消息**：任何诊断都写 stderr。
-func runMCP() {
+func runMCP(actions: Bool) {
     // 宿主关闭管道后继续写会触发 SIGPIPE；改为让 write 返回错误，由循环正常退出并清理。
     signal(SIGPIPE, SIG_IGN)
 
@@ -70,7 +70,9 @@ func runMCP() {
 
     let session = NativeSession(nativeExecutable: nativeExecutableURL())
     defer { session.close() }
-    let server = MCPServer(reader: session, serverVersion: scuVersion)
+    // 策略的宿主判定：SCU 自身与启动它的进程链都是拒绝目标（policy_layer.md）。
+    let server = MCPServer(
+        reader: session, serverVersion: scuVersion, actionsEnabled: actions, policy: PolicyGate.forCurrentProcess())
     server.run(
         readLine: { Swift.readLine(strippingNewline: true) },
         write: { line in
@@ -119,7 +121,10 @@ func run(command: String, args: [String]) throws {
         }
         budgetMs = try parseBudget(args)
     } else if command == "mcp" {
-        runMCP()
+        // 先校验参数再启动：用法错误不应拉起子进程。
+        let unknown = args.filter { $0 != "--actions" }
+        if let bad = unknown.first { throw usage("scu mcp 不认识的参数：\(bad)（只支持 --actions）") }
+        runMCP(actions: args.contains("--actions"))
         return
     } else if command != "permissions" && command != "apps" {
         throw usage("未知命令：\(command)")
@@ -194,7 +199,7 @@ func main() -> Int32 {
     let argv = Array(CommandLine.arguments.dropFirst())
     guard let command = argv.first else {
         FileHandle.standardError.write(
-            Data("用法：scu mcp | permissions | apps | dump|identity --pid <pid> [--depth <n>] [--budget-ms <n>] [--json|--show-k4|--by-role]\n".utf8))
+            Data("用法：scu mcp [--actions] | permissions | apps | dump|identity --pid <pid> [--depth <n>] [--budget-ms <n>] [--json|--show-k4|--by-role]\n".utf8))
         return 64
     }
     do {

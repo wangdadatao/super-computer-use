@@ -1,7 +1,7 @@
-# MCP 接入面（只读档）
+# MCP 接入面（只读档与动作档）
 
-`scu mcp` 以 MCP stdio 服务运行，是接入层的第一个实现。**本档只读**：
-能读取应用与无障碍树，不能点击、输入或改变任何东西。
+`scu mcp` 以 MCP stdio 服务运行，是接入层的第一个实现。**默认只读**：
+能读取应用与无障碍树，不能改变任何东西。**`scu mcp --actions` 额外暴露 `click`**（动作档，P0 只有点击）。
 完整的会话 API 与 `js` 工具面是拟实施设计，见[协议总览](protocol_overview.md)。
 
 ## 导航
@@ -19,20 +19,59 @@
 只读档因此先用**少量普通 MCP 工具**：协议层不依赖尚未选定的 JS 运行时，工具描述也更容易写清。
 这是**实施顺序**的调整，不改变 ADR-0002 的方向；code mode 在运行时选定后再加，届时本文的工具目录需要重新评估。
 
-只读档**没有**策略层、会话与租约、动作与效果摘要——这些随动作档引入。
-因此它不需要拒绝清单：读取不改变桌面状态。
+只读档不需要拒绝清单：读取不改变桌面状态。动作档引入了**最小策略层**（拒绝类目，见
+[策略层的 P0 实现](../architecture/policy_layer.md#p0_denylist)）、令牌会话与动作后的效果摘要；
+仍然**没有**审批、授权作用域、租约与审计。
+
+**动作档默认关闭，由启动参数显式开启。** 未开启时 `click` 不出现在 `tools/list`，直接调用按未知工具处理
+（JSON-RPC `-32602`）。这样默认接入的宿主即使被诱导也没有可调用的动作。
 
 <a id="tool_catalog"></a>
 
 ## 工具目录
 
-三个工具，全部带 `readOnlyHint: true`、`destructiveHint: false`。
+只读工具三个，带 `readOnlyHint: true`、`destructiveHint: false`；动作工具（仅 `--actions`）如实声明
+`readOnlyHint: false`、`destructiveHint: true`、`openWorldHint: true`。
 
 | 工具 | 参数 | 作用 |
 | --- | --- | --- |
 | `check_permissions` | 无 | 报告启动本服务的宿主是否有辅助功能权限。权限未授予不算工具错误，是对状态的如实报告 |
 | `list_apps` | 无 | 每行 `pid<TAB>名称<TAB>bundle id`（无 bundle id 时为 `-`） |
 | `get_ax_state` | `pid`（必填）、`max_depth`、`budget_ms`、`max_elements`、`focus`、`focus_role` | 读取应用的无障碍树，返回文本化元素表；`focus` 系列只展开一部分 |
+| `click`（仅 `--actions`） | `token`、`handle`（均必填） | 对句柄执行 `AXPress`；见下 |
+
+<a id="click_tool"></a>
+
+### `click`
+
+动作的完整顺序：**策略 → 令牌 → 原生层核对 → 投递 → 事后观察**。前一步拒绝，后面都不执行。
+
+1. 策略：目标应用命中拒绝类目 → `policy_denied`（`retry=no`，不可协商）。先于令牌检查，所以失效令牌的受限应用仍报策略拒绝。
+2. 令牌：未知或已失效 → `stale_snapshot`；属于已切换走的目标 → `target_switched`；句柄不在快照里 → `element_gone`。
+3. 原生层沿路径核对（[ADR-0015](../decisions/adr_0015_handle_resolution_by_path.md)），不符 → `stale_snapshot`，**不执行**。
+4. 投递 `AXPress`。目标不支持 → `unsupported_operation`；平台报错 → `action_failed`。
+5. 事后观察：每 200 毫秒重读一次界面，**连续两次结构一致即收敛**，总上限 3 秒；与动作前比较。
+
+**返回的是观察到的效果，不是"成功"。** 第一行人话；第二行固定格式、可解析：
+
+```text
+effect: delivered=true observed=true converged=true treeChanged=false targetChanged=false noOpSuspected=true polls=2 elapsed=0.4s
+```
+
+| 字段 | 含义 | `unknown` 的情形 |
+| --- | --- | --- |
+| `delivered` | 平台没有报错。**不代表界面已经变化** | 恒为 true（失败时抛错，不返回摘要） |
+| `observed` | 事后成功重读过界面 | 重读失败时为 false（动作已投递，不报失败，免得调用方重复点击） |
+| `converged` | 连续两次重读结构一致 | 上限内一直在变化则为 false，此时读到的是中间状态 |
+| `treeChanged` | 与动作前相比结构是否变化 | 动作前或动作后的读取被截断，无法比较 |
+| `targetChanged` | 目标元素在稳定后的树里已不是原来那个 | 动作后的读取被截断 |
+| `noOpSuspected` | 已收敛且结构完全没变：**疑似**空操作 | 同 `treeChanged` |
+
+结构变化时**调用所用的令牌作废**，但不签发新令牌，需要重新 `get_ax_state`；
+结构没变（含疑似空操作）时令牌仍有效。无法判断时（截断）不作废，下一次动作由原生层再核对一遍目标。
+
+"疑似空操作"的含义有限：动作只改变了无障碍树之外的东西（剪贴板、文件、窗口外状态）时同样会触发，
+所以它是"请核实"的提示，不是失败判定。
 
 `get_ax_state` 的参数范围：
 
@@ -80,7 +119,7 @@
 
 标题行携带**快照令牌**：不透明字符串，由会话签发（[ADR-0015](../decisions/adr_0015_handle_resolution_by_path.md)）。
 令牌的失效类别、复用规则与"重复使用失效令牌"的语义见[快照生命周期](../architecture/snapshot_lifecycle.md#p0_implementation)。
-令牌目前只出现在 `get_ax_state` 的输出里；接受它的动作工具见下方目录（只读档没有）。
+令牌出现在 `get_ax_state` 的输出里；接受它的动作工具是 [`click`](#click_tool)（仅动作档）。
 
 ### 完整性标注
 
@@ -133,7 +172,7 @@
 | 空行 | 忽略 |
 
 `id` 的类型原样回传（字符串回字符串，整数回整数）。
-`initialize` 的应答带 `instructions`：整体使用说明（只读档、典型流程、句柄与令牌配对）。
+`initialize` 的应答带 `instructions`：整体使用说明（只读档或动作档、典型流程、句柄与令牌配对）；两档各有一份，动作档的说明提到拒绝类目与"疑似空操作"。
 工具的细节在各自的 `description` 里。
 
 不检查"是否已 `initialize`"：宽松处理，先收到 `tools/list` 也会回复。

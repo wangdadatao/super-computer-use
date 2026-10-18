@@ -25,10 +25,12 @@ import Testing
     }
 
     /// 写入全部请求后关闭 stdin（EOF），等待进程退出。带看门狗：挂住时终止并让断言失败，而不是卡住测试。
-    static func run(_ requests: [String], tmpdir: String? = nil, env extra: [String: String] = [:]) throws -> Run {
+    static func run(
+        _ requests: [String], arguments: [String] = ["mcp"], tmpdir: String? = nil, env extra: [String: String] = [:]
+    ) throws -> Run {
         let p = Process()
         p.executableURL = try scuURL()
-        p.arguments = ["mcp"]
+        p.arguments = arguments
         var env = ProcessInfo.processInfo.environment
         if let tmpdir { env["TMPDIR"] = tmpdir }
         for (k, v) in extra { env[k] = v }
@@ -79,6 +81,28 @@ import Testing
         // 正常退出（stdin EOF）后不遗留 socket 目录。
         let leftovers = try FileManager.default.contentsOfDirectory(atPath: tmp.path)
         #expect(leftovers.isEmpty, "泄漏：\(leftovers)")
+    }
+
+    static let listTools = #"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#
+
+    @Test func actionToolIsOnlyExposedWhenTheFlagIsGivenOnTheRealBinary() throws {
+        let plain = try Self.run([Self.listTools])
+        #expect(plain.status == 0)
+        #expect(plain.lines.count == 1 && !plain.lines[0].contains("\"click\""))
+        let actions = try Self.run([Self.listTools], arguments: ["mcp", "--actions"])
+        #expect(actions.status == 0)
+        #expect(actions.lines.count == 1 && actions.lines[0].contains("\"click\""))
+        // 没有开启时直接调用也不可用。
+        let call = #"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"click","arguments":{"token":"x","handle":1}}}"#
+        let denied = try Self.run([call])
+        #expect(JSONValue.parse(denied.lines.first ?? "")?["error"]?["code"] == .int(-32602))
+    }
+
+    @Test func unknownFlagIsAUsageErrorAndNothingIsStarted() throws {
+        let r = try Self.run([], arguments: ["mcp", "--action"])  // 少了 s：拼错的开关不能被静默忽略
+        #expect(r.status == 64)
+        #expect(r.lines.isEmpty)
+        #expect(r.stderr.contains("--action"))
     }
 
     @Test func protocolOnlyRequestsDoNotSpawnTheNativeProcess() throws {
