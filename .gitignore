@@ -13,3 +13,7 @@ Package.resolved
 
 # 覆盖率产物
 *.profraw
+
+# Python
+__pycache__/
+*.pyc

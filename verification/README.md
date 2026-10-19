@@ -44,3 +44,6 @@ verification/
 令牌语义成立、收敛有缺口）。元素身份的 K4 正式验证已执行（[2026-10-18-identity-k4.md](2026-10-18-identity-k4.md)），冻结规则下不成立。
 门槛见 [ADR-0013](../docs/decisions/adr_0013_p0_vertical_slice.md)；
 权限状态见 [docs/operations/permissions.md](../docs/operations/permissions.md)。
+
+令牌误拒率的测量脚本已就绪（[scripts/measure_token_reject.py](../scripts/measure_token_reject.py)），
+口径见 ADR-0013 的 2026-10-19 追加记录；**尚未执行**，因此还没有对应的记录文件。

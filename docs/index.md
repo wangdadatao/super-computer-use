@@ -19,7 +19,7 @@
 拒绝类目（`PolicyGate`），以及 MCP stdio 服务（`scu mcp`，见 [MCP 接入面](interfaces/mcp_surface.md)）。
 **默认只读，`scu mcp --actions` 才暴露 `click`。**
 **未实现**：句柄注册表（跨快照延续，按 K4 验证结果不实现）、输入与设值、坐标动作与坐标令牌、审批与租约、屏幕捕获、指示层、code mode。
-验证状态：令牌、效果、收敛、策略已在自制夹具上验证，收敛有已知缺口，身份 K4 按冻结规则不成立，见[测试策略](operations/testing.md#当前状态)。
+验证状态：令牌语义成立但真实应用上的误拒率未度量；效果摘要按修订后的口径满足；收敛有已知缺口、不列为出口门槛；策略在夹具上满足；身份 K4 按冻结规则不成立。见[测试策略](operations/testing.md#当前状态)。
 范围与出口门槛见 [ADR-0013](decisions/adr_0013_p0_vertical_slice.md)，
 已实现内容见[本地环境](operations/local_setup.md)。
 
