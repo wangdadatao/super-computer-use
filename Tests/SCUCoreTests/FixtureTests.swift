@@ -8,7 +8,8 @@ import Testing
 ///
 /// 需要辅助功能权限，且会在屏幕上短暂出现夹具窗口（不抢焦点）。没有权限时**明确失败**，
 /// 不静默跳过——静默跳过会让这些测试在没有权限的机器上变成空检查。
-/// 确实要跳过时设置环境变量 `SCU_SKIP_LIVE=1`。
+/// 确实要跳过时设置环境变量 `SCU_SKIP_LIVE=1`：整个套件被标为跳过（不计失败），
+/// 此时这些验证**没有被执行**，提交说明里应写明。
 final class FixtureApp {
     let process: Process
     var pid: Int32 { process.processIdentifier }
@@ -51,7 +52,6 @@ final class Rig {
     let session: DesktopSession
 
     init(policy: PolicyGate = PolicyGate(), hostPidsIncludeFixture: Bool = false) throws {
-        guard ProcessInfo.processInfo.environment["SCU_SKIP_LIVE"] == nil else { throw LiveError.message("SCU_SKIP_LIVE") }
         native = NativeSession(nativeExecutable: try HandshakeTests.nativeURL())
         guard try native.checkPermissions() else {
             throw LiveError.message("没有辅助功能权限：夹具测试无法运行（设置 SCU_SKIP_LIVE=1 可跳过）")
@@ -120,7 +120,8 @@ final class Rig {
 }
 
 /// 动作效果、收敛判定、令牌、策略的端到端验证。串行：每个用例拉起自己的夹具。
-@Suite(.serialized) struct FixtureTests {
+@Suite(.serialized, .enabled(if: ProcessInfo.processInfo.environment["SCU_SKIP_LIVE"] == nil))
+struct FixtureTests {
     // MARK: - 动作效果（testing.md「动作效果验证」）
 
     @Test func clickingAnEnabledButtonChangesTheTree() throws {

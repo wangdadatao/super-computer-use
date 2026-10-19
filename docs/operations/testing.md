@@ -216,7 +216,10 @@ verification/
 
 ### 当前状态
 
-**尚无任何假设被整体验证通过。** 辅助功能权限已授予，不再是阻塞项（见 [macOS 权限](permissions.md)）。
+**尚无任何假设被整体验证通过。** 权限按宿主归属，不是机器级事实（见 [macOS 权限](permissions.md)）：
+2026-10-18 的验证是在 Cursor 的 agent 会话里跑的，该宿主当时已授予辅助功能；换一个宿主要先用 `scu permissions` 确认。
+没有权限的宿主上，`scripts/check.sh` 会失败并提示；显式设置 `SCU_SKIP_LIVE=1` 才会跳过夹具与访达上的真实应用测试
+（这些验证此时**没有被执行**，不能当作通过）。
 
 执行时机与出口门槛见 [ADR-0013](../decisions/adr_0013_p0_vertical_slice.md)：
 验证内嵌在 P0 中，而不是单独的阶段。

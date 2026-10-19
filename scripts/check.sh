@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # 提交前统一检查：文档、构建、测试、命令行与 MCP 冒烟（含 SIGKILL 后的回收）。前面任一步失败则冒烟不再执行。
+# 真实应用测试需要宿主有辅助功能权限；没有权限时本脚本失败并提示，显式设置 SCU_SKIP_LIVE=1 才会跳过这些测试。
 #
 # 用法：scripts/check.sh
 # 退出码：0 全部通过，1 任一项失败。
@@ -21,6 +22,18 @@ swift build 2>&1 | tail -3
 [ "${PIPESTATUS[0]}" -eq 0 ] || fail=1
 
 step "3/4 测试"
+# 真实应用测试（夹具、访达）需要宿主有辅助功能权限。没有权限时在这里就说清楚，而不是让十几个测试各自失败。
+if [ -z "${SCU_SKIP_LIVE:-}" ]; then
+  "$(swift build --show-bin-path)/scu" permissions >/dev/null 2>&1
+  if [ $? -ne 0 ]; then
+    echo "❌ 当前宿主没有辅助功能权限，真实应用测试无法运行。"
+    echo "   授权后重试（见 docs/operations/permissions.md），或明确跳过：SCU_SKIP_LIVE=1 scripts/check.sh"
+    echo "   （跳过时夹具与访达上的验证没有被执行，提交说明里应写明）"
+    echo "   本次仍运行不依赖权限的测试，供参考，但整体记为失败。"
+    export SCU_SKIP_LIVE=1
+    fail=1
+  fi
+fi
 swift test 2>&1 | grep -E "✘|error:|Test run with" | tail -20
 [ "${PIPESTATUS[0]}" -eq 0 ] || fail=1
 

@@ -36,10 +36,11 @@ P0 是一条**最小竖切**：从读取真实应用的无障碍树，到身份�
 | target | 层 | 承载进程 |
 | --- | --- | --- |
 | `SCUWire` | 两进程间的线协议：帧、版本、消息类型 | 两者共用 |
-| `SCUNative` | 原生层：AX 读取、权限检测 | `scu-native` |
-| `SCUCore` | 协议层：句柄注册表、令牌、失效检测 | `scu` |
-| `SCUMCP` | 接入层：MCP stdio 服务（只读档），只依赖协议层 | `scu` |
+| `SCUNative` | 原生层：AX 读取、权限检测、沿路径定位与 `AXPress`（`AXLocator`） | `scu-native` |
+| `SCUCore` | 协议层：会话与令牌、按路径定位句柄、失效检测、拒绝类目、收敛与效果摘要（句柄注册表**不实现**，见下） | `scu` |
+| `SCUMCP` | 接入层：MCP stdio 服务（默认只读，`--actions` 加 `click`），只依赖协议层 | `scu` |
 | `scu` | 命令行入口：诊断命令与 `scu mcp` | `scu` |
+| `scu-fixture` | 验证用夹具应用，不是产品的一部分，不是 product | 独立进程 |
 
 依赖方向单向：`SCUCore` 不依赖 `SCUNative`，`SCUNative` 不依赖 `SCUCore`，
 两者只通过 `SCUWire` 通信。这条约束由 `Package.swift` 强制。
@@ -86,7 +87,7 @@ P0 是一条**最小竖切**：从读取真实应用的无障碍树，到身份�
 | 契约 | P0 实现 | 补齐时机 |
 | --- | --- | --- |
 | [`ScuError`](../interfaces/error_taxonomy.md#error_structure) | 只有 `code`、`layer`、`retry`、`message`；无 `details`、`candidates` | 出现需要它们的错误（如目标歧义）时 |
-| [原生层线协议](../interfaces/native_wire_protocol.md)消息目录 | 4 种请求（握手、权限、应用列表、读树） | 随 P0 动作与令牌工作增加 |
+| [原生层线协议](../interfaces/native_wire_protocol.md)消息目录 | 5 种请求（握手、权限、应用列表、读树、`performAction`；协议版本 3） | 随 P0 动作与令牌工作增加 |
 | 未知字段 | 解码时被忽略，版本相等规则兜底 | 待定 |
 
 ## 出口门槛
