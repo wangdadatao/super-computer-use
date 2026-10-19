@@ -107,37 +107,28 @@ def swift_bin_dir():
     return path
 
 
-def list_apps(mcp):
-    _, text = mcp.tool("list_apps", {})
-    apps = []
-    for line in text.splitlines():
-        parts = line.split("\t")
-        if len(parts) >= 2 and parts[0].strip().isdigit():
-            apps.append((int(parts[0]), parts[1], parts[2] if len(parts) > 2 else "-"))
-    return apps
-
-
-def wait_fixture(mcp, fixture, stderr_file, deadline=30.0):
-    """等夹具出现在 list_apps 里。夹具提前退出或始终没出现时，把可诊断的信息一起报出来。"""
+def wait_ready(mcp, fixture, stderr_file, pid, deadline=30.0):
+    """等夹具的界面可读。不依赖 NSWorkspace 的 list_apps 注册，直接用启动时的 pid。"""
     start = time.time()
     announced = start
-    last_apps = []
+    last_error = None
     while time.time() - start < deadline:
-        last_apps = list_apps(mcp)
-        for pid, name, _ in last_apps:
-            if "fixture" in name.lower():
-                return pid
         if fixture.poll() is not None:
             raise MeasurementError(
                 f"夹具进程已退出（退出码 {fixture.returncode}）。{fixture_stderr(stderr_file)}")
+        try:
+            read_state(mcp, pid)
+            return pid
+        except MeasurementError as error:
+            if "system_permission_missing" in str(error):
+                raise
+            last_error = str(error)
         if time.time() - announced >= 5:
             announced = time.time()
-            print("  仍在等待夹具窗口出现…", flush=True)
+            print("  仍在等待夹具界面可读…", flush=True)
         time.sleep(0.3)
-    names = [name for _, name, _ in last_apps[-5:]]
     raise MeasurementError(
-        f"没有在 list_apps 里看到 scu-fixture（夹具 pid {fixture.pid} 仍在运行：{fixture.poll() is None}）。"
-        f"最近看到的应用：{names}。{fixture_stderr(stderr_file)}")
+        f"夹具在 30 秒内没有可读的界面（pid {pid}）。最后一次错误：{last_error}。{fixture_stderr(stderr_file)}")
 
 
 def fixture_stderr(handle):
@@ -305,7 +296,7 @@ def main():
         b = Mcp(scu)
         a.initialize()
         b.initialize()
-        pid = wait_fixture(a, fixture, fixture_stderr_file)
+        pid = wait_ready(a, fixture, fixture_stderr_file, fixture.pid)
         print(f"夹具 pid={pid}，每项 {args.rounds} 轮。窗口会在结束时关闭。\n", flush=True)
 
         result_a = phase_a(a, pid, args.rounds)
