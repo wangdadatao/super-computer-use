@@ -195,3 +195,20 @@ shasum -a 256 "<binary>"
 
 这与 SCU 已设计的 `retry` 字段语义接近，但更具体——`retry` 只有六种取值，
 而升级建议是按错误码逐条给出的。是否值得采用，待实现时评估。
+
+## 2026-10-19 REA 复核：工具面与原生入口
+
+**目的**：回答"同样的功能上 SCU 与两套实现差多少"。本轮只采信重新读到的字节，
+不重复 2026-10-18 的结论；方法为 REA 6.5 的 `open_binary` / `inspect_macho` / `inspect_analysis_view`（Mach-O），
+Codex 侧另直接读插件文本。
+
+| 项 | 结果 |
+| --- | --- |
+| 工件清单漂移 | 本机 Codex 插件缓存当前只有 `computer-use/1.0.1000366`（`plugin.json` 版本一致）；清单里的 `1.0.1001501` 与 `unified-computer-use/26.1013.31256` **在本机不存在**。`@oai/sky 0.7.8`、`@oai/cua 0.2.6`、`@oai/cua-repl 0.1.0` 在 ChatGPT.app 内，与清单一致 |
+| `CU-APP`（sha256 `f21c31c0…`，未变） | REA 证据 `ev_5a22f67e1b5c33c7116c5856aaae1583c76753ca90044feadd1aa493f0efb2c5`。导入含完整 `AXObserver*`（4 个）、`AXUIElementCopyMultipleAttributeValues`、参数化属性、`AXUIElementPerformAction`、`AXUIElementSetAttributeValue`、`AXUIElementCopyElementAtPosition`；截图相关 `CGImage*`、`CGWindowList*`、`SCStreamFrameInfo*`；**没有 `CGEventCreate*` / `CGEventPost` 输入注入符号**（只有 `CGEventGetFlags`），`NSEvent` 类被导入。判断（推断，未验证）：该二进制承担 AX 读取/动作与捕获，合成输入不在这一层 |
+| `GB-NATIVE`（sha256 `ebcb4aeb…`，未变） | REA 证据 `ev_04b02b686eff735c5161d53704faaf15e3c6535ddb65b39285e1965815b603e7`（摘要）与 `ev_d2d4027251f9c1bc284ccecb21292c9c2338aab754e07d98e3579cbd8ba2921d`（完整 Mach-O）。导入含 `AXUIElementSetAttributeValue`、`AXUIElementPerformAction`、`AXUIElementCopyElementAtPosition`、`AXUIElementIsAttributeSettable`；`CGEventCreateMouseEvent`、`CGEventCreateKeyboardEvent`、`CGEventCreateScrollWheelEvent2`、`CGEventKeyboardSetUnicodeString`；`SCStreamConfiguration`、`SCShareableContent`、`SCScreenshotManager`；**无 `AXObserver*`**（与纠正 C-1 的 `nm` 结论一致） |
+| Codex 工具面（1.0.1000366） | `skills/computer-use/SKILL.md` 的 API 类型：`click`（`element_index` 或 `x`/`y`）、`drag`、`get_app_state`（text + screenshot，默认 diff）、`list_apps`、`perform_secondary_action`、`press_key`、`scroll`、`select_text`、`set_value`、`type_text`；动作返回 `Promise<void>`；`get_app_state` 会自动启动未运行的应用；动作后自动等待约 1 秒，有加载指示时最多再加 5 秒 |
+| Grok 工具面 | 沿用 2026-10-16 的 `GB-NATIVE` 工具名清单（14 个，见上文）；本轮没有新的运行时观察 |
+
+**未做的事**：没有运行两套实现做任务对照；没有在运行中观察它们的动作与失效行为。
+因此本节的用途是**能力面对照**，不是效果对照。
