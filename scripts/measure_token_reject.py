@@ -107,22 +107,55 @@ def swift_bin_dir():
     return path
 
 
+def fixture_stderr(handle):
+    if handle is None:
+        return ""
+    handle.flush()
+    handle.seek(0)
+    text = handle.read().strip()
+    return f"夹具 stderr：{text[-800:]}" if text else "夹具没有输出 stderr"
+
+
 class SessionStale(MeasurementError):
     """MCP 会话读不到界面，但独立 dump 能看到：重启会话后重试。"""
 
 
 def direct_element_count(scu_path, pid, depth=2):
-    """不经过 MCP 会话，直接跑一次 scu dump，返回读到的元素数（失败为 0）。"""
+    """不经过 MCP 会话，直接跑一次 scu dump。返回 (元素数, 说明)；dump 失败时元素数为 0。"""
     try:
         dump = subprocess.run(
             [scu_path, "dump", "--pid", str(pid), "--depth", str(depth)], text=True,
-            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=20)
-    except (OSError, subprocess.TimeoutExpired):
-        return 0
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=20)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return 0, f"dump 失败：{error}"
+    first = dump.stdout.splitlines()[0] if dump.stdout.strip() else "（无输出）"
     if dump.returncode != 0:
-        return 0
+        return 0, f"dump 退出码 {dump.returncode}：{first}"
     match = re.search(r"元素 (\d+)；", dump.stdout)
-    return int(match.group(1)) if match else 0
+    if not match:
+        return 0, f"dump 输出没有元素数：{first}"
+    return int(match.group(1)), first
+
+
+def independent_check(scu_path, pid):
+    """失败时用一条独立路径再看一眼：进程状态 + `scu dump`（不经过 MCP 会话）。"""
+    lines = []
+    try:
+        status = subprocess.run(
+            ["ps", "-o", "ppid=,stat=,%cpu=", "-p", str(pid)], text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        lines.append(f"进程状态（ppid stat cpu）：{status.stdout.strip() or '进程不在了'}")
+    except OSError as error:
+        lines.append(f"ps 失败：{error}")
+    try:
+        dump = subprocess.run(
+            [scu_path, "dump", "--pid", str(pid), "--depth", "3"], text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=20)
+        head = "\n".join(dump.stdout.splitlines()[:12])
+        lines.append(f"独立 dump（退出码 {dump.returncode}）：\n{head}")
+    except (OSError, subprocess.TimeoutExpired) as error:
+        lines.append(f"独立 dump 失败：{error}")
+    return "\n" + "\n".join(lines)
 
 
 def wait_ready(mcp, fixture, stderr_file, pid, scu_path, deadline=60.0):
@@ -147,15 +180,15 @@ def wait_ready(mcp, fixture, stderr_file, pid, scu_path, deadline=60.0):
             last_error = str(error)
         if time.time() - announced >= 5:
             announced = time.time()
-            count = direct_element_count(scu_path, pid)
-            print(f"  等待中…（MCP 仍看不到控件；独立 dump 看到 {count} 个元素）", flush=True)
+            count, note = direct_element_count(scu_path, pid)
+            print(f"  等待中…（MCP：{last_error}；独立 dump：{note}）", flush=True)
             if count >= 3:
                 raise SessionStale("独立 dump 能看到界面，但 MCP 会话读不到")
         time.sleep(0.3)
-    count = direct_element_count(scu_path, pid)
+    count, note = direct_element_count(scu_path, pid)
     detail = (
         f"夹具在 {deadline:.0f} 秒内没有可读的界面（pid {pid}）。最后一次错误：{last_error}。"
-        f"独立 dump 看到 {count} 个元素。{fixture_stderr(stderr_file)}"
+        f"独立 dump：{note}。{fixture_stderr(stderr_file)}"
         f"{independent_check(scu_path, pid)}")
     if count >= 3:
         raise SessionStale(detail)
