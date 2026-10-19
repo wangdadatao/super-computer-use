@@ -107,7 +107,7 @@ def swift_bin_dir():
     return path
 
 
-def wait_ready(mcp, fixture, stderr_file, pid, deadline=30.0):
+def wait_ready(mcp, fixture, stderr_file, pid, scu_path, deadline=30.0):
     """等夹具的界面可读。不依赖 NSWorkspace 的 list_apps 注册，直接用启动时的 pid。"""
     start = time.time()
     announced = start
@@ -128,7 +128,29 @@ def wait_ready(mcp, fixture, stderr_file, pid, deadline=30.0):
             print("  仍在等待夹具界面可读…", flush=True)
         time.sleep(0.3)
     raise MeasurementError(
-        f"夹具在 30 秒内没有可读的界面（pid {pid}）。最后一次错误：{last_error}。{fixture_stderr(stderr_file)}")
+        f"夹具在 30 秒内没有可读的界面（pid {pid}）。最后一次错误：{last_error}。{fixture_stderr(stderr_file)}"
+        f"{independent_check(scu_path, pid)}")
+
+
+def independent_check(scu_path, pid):
+    """失败时用一条独立路径再看一眼：进程状态 + `scu dump`（不经过 MCP 会话）。"""
+    lines = []
+    try:
+        status = subprocess.run(
+            ["ps", "-o", "ppid=,stat=,%cpu=", "-p", str(pid)], text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        lines.append(f"进程状态（ppid stat cpu）：{status.stdout.strip() or '进程不在了'}")
+    except OSError as error:
+        lines.append(f"ps 失败：{error}")
+    try:
+        dump = subprocess.run(
+            [scu_path, "dump", "--pid", str(pid), "--depth", "3"], text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=20)
+        head = "\n".join(dump.stdout.splitlines()[:12])
+        lines.append(f"独立 dump（退出码 {dump.returncode}）：\n{head}")
+    except (OSError, subprocess.TimeoutExpired) as error:
+        lines.append(f"独立 dump 失败：{error}")
+    return "\n" + "\n".join(lines)
 
 
 def fixture_stderr(handle):
@@ -297,7 +319,7 @@ def main():
         a.initialize()
         b.initialize()
         print(f"已启动夹具 pid={fixture.pid}，等待它的界面可读…", flush=True)
-        pid = wait_ready(a, fixture, fixture_stderr_file, fixture.pid)
+        pid = wait_ready(a, fixture, fixture_stderr_file, fixture.pid, scu)
         print(f"夹具 pid={pid}，每项 {args.rounds} 轮。窗口会在结束时关闭。\n", flush=True)
 
         result_a = phase_a(a, pid, args.rounds)
