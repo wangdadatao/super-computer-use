@@ -195,9 +195,13 @@ def wait_ready(mcp, fixture, stderr_file, pid, scu_path, deadline=60.0):
     raise MeasurementError(detail)
 
 
-def read_state(mcp, pid):
-    """返回 (令牌, {标题: 句柄})。标题在夹具上唯一。"""
-    is_error, text = mcp.tool("get_ax_state", {"pid": pid, "max_depth": 12, "max_elements": 2000})
+def read_state(mcp, pid, depth=12):
+    """返回 (令牌, {标题: 句柄})。标题在夹具上唯一。
+
+    深度 12 读不到控件时退回深度 4 再试一次：夹具只需要到按钮那一层。
+    两种深度都读不到时，把深度 12 的头部带进错误信息。
+    """
+    is_error, text = mcp.tool("get_ax_state", {"pid": pid, "max_depth": depth, "max_elements": 2000})
     if is_error:
         raise MeasurementError("get_ax_state 失败：" + text.splitlines()[0])
     token_match = TOKEN_RE.search(text)
@@ -211,9 +215,14 @@ def read_state(mcp, pid):
             handles.setdefault(title, int(found.group(1)))
     missing = [t for t in TARGETS if t not in handles]
     if missing:
+        if depth > 4:
+            try:
+                return read_state(mcp, pid, depth=4)
+            except MeasurementError:
+                pass
         head = "\n".join(text.splitlines()[:6])
         raise MeasurementError(
-            f"夹具里找不到控件：{missing}（句柄：{handles}）。get_ax_state 前 6 行：\n{head}")
+            f"夹具里找不到控件：{missing}（句柄：{handles}，深度 {depth}）。get_ax_state 前 6 行：\n{head}")
     return token_match.group(1), handles
 
 
