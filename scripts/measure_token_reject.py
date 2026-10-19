@@ -296,6 +296,7 @@ def main():
         b = Mcp(scu)
         a.initialize()
         b.initialize()
+        print(f"已启动夹具 pid={fixture.pid}，等待它的界面可读…", flush=True)
         pid = wait_ready(a, fixture, fixture_stderr_file, fixture.pid)
         print(f"夹具 pid={pid}，每项 {args.rounds} 轮。窗口会在结束时关闭。\n", flush=True)
 
