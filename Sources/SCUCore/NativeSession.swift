@@ -20,6 +20,19 @@ public protocol DesktopReader {
     func listApps() throws -> [AppInfo]
     func readTree(pid: Int32, maxDepth: Int, budgetMs: Int) throws -> TreeReading
     func performAction(pid: Int32, locator: ElementLocator, action: ActionKind) throws -> ActionOutcome
+    func typeText(pid: Int32, locator: ElementLocator, text: String) throws -> ActionOutcome
+    func pressKey(pid: Int32, locator: ElementLocator, key: String) throws -> ActionOutcome
+}
+
+extension DesktopReader {
+    /// 测试替身默认不支持输入；真实读取器实现它。
+    public func typeText(pid: Int32, locator: ElementLocator, text: String) throws -> ActionOutcome {
+        throw WireError.unsupportedOperation("这个读取器不支持逐字输入")
+    }
+
+    public func pressKey(pid: Int32, locator: ElementLocator, key: String) throws -> ActionOutcome {
+        throw WireError.unsupportedOperation("这个读取器不支持按键")
+    }
 }
 
 /// 一次动作请求的结果。定位器与界面不符时**没有执行任何动作**。
@@ -108,6 +121,26 @@ public final class NativeSession: DesktopReader {
             case .located: return .located
             case .stale(let d): return .stale(d)
             default: throw WireError.internalError("动作的应答类型错误")
+            }
+        }
+    }
+
+    public func typeText(pid: Int32, locator: ElementLocator, text: String) throws -> ActionOutcome {
+        try withClient { c in
+            switch try c.call(.typeText(pid: pid, locator: locator, text: text), timeoutMs: 30_000) {
+            case .acted: return .acted
+            case .stale(let d): return .stale(d)
+            default: throw WireError.internalError("输入应答类型错误")
+            }
+        }
+    }
+
+    public func pressKey(pid: Int32, locator: ElementLocator, key: String) throws -> ActionOutcome {
+        try withClient { c in
+            switch try c.call(.pressKey(pid: pid, locator: locator, key: key), timeoutMs: 30_000) {
+            case .acted: return .acted
+            case .stale(let d): return .stale(d)
+            default: throw WireError.internalError("按键应答类型错误")
             }
         }
     }

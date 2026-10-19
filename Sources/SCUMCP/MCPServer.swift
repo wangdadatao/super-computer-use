@@ -99,8 +99,9 @@ public final class MCPServer {
         """
 
     static let actionInstructions = """
-        SCU（SuperComputerUse）动作档：可以读取 macOS 应用的无障碍树，也可以用 click 点击元素。\
-        典型流程：list_apps 取得 pid，get_ax_state 读取元素表（标题行有令牌），再用 click(token, handle) 点击。\
+        SCU（SuperComputerUse）动作档：可以读取 macOS 应用的无障碍树，用 click 点击元素，\
+        用 type_text 逐字输入文本，用 press_key 发送按键或组合键。\
+        典型流程：list_apps 取得 pid，get_ax_state 读取元素表（标题行有令牌），再用 click / type_text / press_key（都要 token 与 handle）。\
         动作前会核对目标仍是读取时的那个，不是就拒绝并告诉你原因；点击后会报告观察到的效果，\
         结构变化时令牌作废需重读，"疑似空操作"需要你核实。终端、脚本运行器、密码管理器、系统设置、Cursor 等属于拒绝类目，\
         拒绝不可协商，请让用户自己完成。读取不到时先用 check_permissions 确认宿主应用的辅助功能权限。

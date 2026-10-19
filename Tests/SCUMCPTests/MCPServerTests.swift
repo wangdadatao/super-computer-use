@@ -14,6 +14,8 @@ final class FakeReader: DesktopReader {
     private(set) var treeCalls: [(pid: Int32, depth: Int, budget: Int)] = []
     var action: Result<ActionOutcome, WireError> = .success(.acted)
     private(set) var actionCalls: [(pid: Int32, locator: ElementLocator, action: ActionKind)] = []
+    private(set) var typed: [(pid: Int32, locator: ElementLocator, text: String)] = []
+    private(set) var pressed: [(pid: Int32, locator: ElementLocator, key: String)] = []
 
     func checkPermissions() throws -> Bool { try permissions.get() }
     func listApps() throws -> [AppInfo] { try apps.get() }
@@ -23,6 +25,14 @@ final class FakeReader: DesktopReader {
     }
     func performAction(pid: Int32, locator: ElementLocator, action kind: ActionKind) throws -> ActionOutcome {
         actionCalls.append((pid, locator, kind))
+        return try action.get()
+    }
+    func typeText(pid: Int32, locator: ElementLocator, text: String) throws -> ActionOutcome {
+        typed.append((pid, locator, text))
+        return try action.get()
+    }
+    func pressKey(pid: Int32, locator: ElementLocator, key: String) throws -> ActionOutcome {
+        pressed.append((pid, locator, key))
         return try action.get()
     }
 }
@@ -396,7 +406,7 @@ extension JSONValue {
         let read = t.callTool(s, "get_ax_state", ["pid": 42])
         let tok = token(from: read)
         #expect(tok.hasPrefix("s"))
-        #expect(read.text.contains("用 click(token, handle) 点击"))
+        #expect(read.text.contains("用 click(token, handle) 点击，或用 type_text / press_key 输入"))
         let r = t.callTool(s, "click", ["token": .string(tok), "handle": 2])
         #expect(!r.isError)
         #expect(r.text.contains("AXButton#2"))
@@ -404,6 +414,61 @@ extension JSONValue {
         #expect(r.text.contains("疑似空操作"))
         #expect(reader.actionCalls.count == 1)
         #expect(reader.actionCalls[0].locator.target.title == "确定")
+    }
+
+    @Test func inputToolsAreExposedWithTruthfulAnnotations() {
+        let (t, s, _) = rig(actions: true)
+        let names = toolNames(t, s)
+        #expect(names.contains("type_text"))
+        #expect(names.contains("press_key"))
+        let tools = t.request(s, "tools/list")["result"]?["tools"]?.arrayValues ?? []
+        for name in ["type_text", "press_key"] {
+            let tool = tools.first { $0["name"]?.stringValue == name }
+            #expect(tool?["annotations"]?["readOnlyHint"] == .bool(false))
+            #expect(tool?["annotations"]?["destructiveHint"] == .bool(true))
+        }
+    }
+
+    @Test func typeTextUsesTokenAndReportsTheObservedEffect() {
+        let (t, s, reader) = rig(actions: true)
+        let read = t.callTool(s, "get_ax_state", ["pid": 42])
+        let r = t.callTool(s, "type_text", [
+            "token": .string(token(from: read)), "handle": 3, "text": "hello",
+        ])
+        #expect(!r.isError)
+        #expect(r.text.contains("AXTextField#3"))
+        #expect(r.text.contains("投递输入"))
+        #expect(r.text.contains("effect: delivered=true"))
+        #expect(reader.typed.count == 1)
+        #expect(reader.typed[0].text == "hello")
+    }
+
+    @Test func pressKeyUsesTokenAndReportsTheObservedEffect() {
+        let (t, s, reader) = rig(actions: true)
+        let read = t.callTool(s, "get_ax_state", ["pid": 42])
+        let r = t.callTool(s, "press_key", [
+            "token": .string(token(from: read)), "handle": 3, "key": "Return",
+        ])
+        #expect(!r.isError)
+        #expect(r.text.contains("投递按键"))
+        #expect(reader.pressed.count == 1)
+        #expect(reader.pressed[0].key == "Return")
+    }
+
+    @Test func inputArgumentsAreValidated() {
+        let (t, s, _) = rig(actions: true)
+        let tok = token(from: t.callTool(s, "get_ax_state", ["pid": 42]))
+        for (name, args): (String, JSONValue) in [
+            ("type_text", ["token": .string(tok), "handle": 3]),
+            ("type_text", ["token": .string(tok), "handle": 3, "text": ""]),
+            ("type_text", ["token": .string(tok), "handle": 3, "text": "x", "extra": true]),
+            ("press_key", ["token": .string(tok), "handle": 3]),
+            ("press_key", ["token": .string(tok), "handle": 3, "key": ""]),
+            ("press_key", ["token": .string(tok), "handle": 0, "key": "Return"]),
+        ] {
+            let r = t.callTool(s, name, args)
+            #expect(r.isError && r.text.hasPrefix("[invalid_argument]"), "\(name) \(args)")
+        }
     }
 
     @Test func staleTokenGivesAClassifiedErrorWithGuidance() {

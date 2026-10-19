@@ -76,7 +76,7 @@ interface ScuError {
 | `target_missing` | protocol | `no` | 目标不存在或已退出 |
 | `element_gone` | protocol | `after_refresh` | 引用在新快照中无法匹配 |
 | `ambiguous_reference` | protocol | `after_disambiguation` | **目标**引用歧义（同名应用 / 同 URL 标签页），携带 `candidates` |
-| `unsupported_operation` | protocol | `no` | 元素不支持该操作（如不可写元素设值） |
+| `unsupported_operation` | protocol | `no` | 元素或参数不支持该操作（如不可写元素设值、元素不接受焦点、不认识的键名） |
 | `policy_denied` | policy | `no` | 命中拒绝类目，不可协商 |
 | `authorization_denied` | policy | `no` | 用户在授权提示中明确拒绝 |
 | `authorization_timeout` | policy | `after_user_action` | 授权提示超时未响应 |

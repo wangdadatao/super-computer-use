@@ -12,6 +12,7 @@ import AppKit
 //   Animate     点击后状态标签每 100 毫秒变化一次，持续 20 秒（模拟无限动画）
 //   Busy        点击后后台忙 3 秒，界面不变（已知局限的场景）
 //   Covered     被一个不透明视图盖住；点击它同样让计数加一
+//   input       可编辑文本框；按 Return 后把 status 改为 "status: submitted: <内容>"
 //
 // 安全网：父进程消失或 3 分钟后自行退出，不会遗留窗口。
 
@@ -20,6 +21,7 @@ final class Fixture: NSObject, NSApplicationDelegate {
     var window: NSWindow!
     let count = NSTextField(labelWithString: "count: 0")
     let status = NSTextField(labelWithString: "status: idle")
+    let input = NSTextField(string: "")
     let rows = NSStackView()
     var n = 0
     var rowN = 0
@@ -35,13 +37,17 @@ final class Fixture: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         count.setAccessibilityIdentifier("count")
         status.setAccessibilityIdentifier("status")
+        input.setAccessibilityIdentifier("input")
+        input.placeholderString = "type here"
+        input.target = self
+        input.action = #selector(submit)
         rows.orientation = .vertical
         rows.alignment = .leading
 
         let disabled = makeButton("Disabled", id: "disabled", action: #selector(noop))
         disabled.isEnabled = false
         let stack = NSStackView(views: [
-            count, status,
+            count, status, input,
             makeButton("Increment", id: "inc", action: #selector(inc)),
             makeButton("NoOp", id: "noop", action: #selector(noop)),
             disabled,
@@ -90,6 +96,10 @@ final class Fixture: NSObject, NSApplicationDelegate {
     }
 
     @objc func noop() {}
+
+    @objc func submit() {
+        status.stringValue = "status: submitted: \(input.stringValue)"
+    }
 
     @objc func addRow() {
         rowN += 1

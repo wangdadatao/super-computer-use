@@ -92,18 +92,35 @@ public struct NativeServer: Sendable {
             }
         case .performAction(let pid, let locator, let action):
             if let problem = validate(locator) { return .failure(.internalError(problem)) }
-            do {
-                switch try AXBackend.performAction(pid: pid, locator: locator, action: action) {
-                case .acted: return .acted
-                case .located: return .located
-                case .stale(let detail): return .stale(detail)
-                }
-            } catch let e as WireError {
-                return .failure(e)
-            } catch {
-                return .failure(.internalError("\(error)"))
+            return actionResponse {
+                try AXBackend.performAction(pid: pid, locator: locator, action: action)
+            }
+        case .typeText(let pid, let locator, let text):
+            if let problem = validate(locator) { return .failure(.internalError(problem)) }
+            return actionResponse {
+                try AXBackend.typeText(pid: pid, locator: locator, text: text)
+            }
+        case .pressKey(let pid, let locator, let key):
+            if let problem = validate(locator) { return .failure(.internalError(problem)) }
+            return actionResponse {
+                try AXBackend.pressKey(pid: pid, locator: locator, key: key)
             }
         }
+
+    /// 把动作结果或错误统一映射为应答，避免三类动作各写一遍。
+    func actionResponse(_ body: () throws -> AXBackend.ActionResult) -> Response {
+        do {
+            switch try body() {
+            case .acted: return .acted
+            case .located: return .located
+            case .stale(let detail): return .stale(detail)
+            }
+        } catch let e as WireError {
+            return .failure(e)
+        } catch {
+            return .failure(.internalError("\(error)"))
+        }
+    }
     }
 
     /// 定位器的结构检查。深度上限与读树一致：路径不可能比能读到的树更深。

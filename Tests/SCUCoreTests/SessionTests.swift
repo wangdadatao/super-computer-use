@@ -15,6 +15,10 @@ final class ScriptedReader: DesktopReader {
     private(set) var listAppsCalls = 0
     var action: Result<ActionOutcome, WireError> = .success(.acted)
     private(set) var actionCalls: [(pid: Int32, locator: ElementLocator, action: ActionKind)] = []
+    private(set) var typed: [(pid: Int32, locator: ElementLocator, text: String)] = []
+    private(set) var pressed: [(pid: Int32, locator: ElementLocator, key: String)] = []
+    /// 动作发生时执行，用来模拟"界面被这次动作改变了"。
+    var onAction: (() -> Void)?
 
     func checkPermissions() throws -> Bool { true }
     func listApps() throws -> [AppInfo] {
@@ -28,6 +32,19 @@ final class ScriptedReader: DesktopReader {
     }
     func performAction(pid: Int32, locator: ElementLocator, action kind: ActionKind) throws -> ActionOutcome {
         actionCalls.append((pid, locator, kind))
+        onAction?()
+        return try action.get()
+    }
+
+    func typeText(pid: Int32, locator: ElementLocator, text: String) throws -> ActionOutcome {
+        typed.append((pid, locator, text))
+        onAction?()
+        return try action.get()
+    }
+
+    func pressKey(pid: Int32, locator: ElementLocator, key: String) throws -> ActionOutcome {
+        pressed.append((pid, locator, key))
+        onAction?()
         return try action.get()
     }
 }
@@ -70,6 +87,36 @@ final class ScriptedReader: DesktopReader {
         } catch {
             Issue.record("意外的错误 \(error)")
         }
+    }
+
+    // MARK: - 输入与按键（ADR-0016）
+
+    @Test func typeTextObservesTheChangeAndInvalidatesTheToken() throws {
+        let (s, r) = session()
+        let a = try read(s)
+        r.onAction = { r.tree = TreeReading(root: Self.sampleTree(okTitle: "确定!"), truncated: false) }
+        let report = try s.typeText(token: a.token.value, handle: 3, text: "hi")
+        #expect(report.delivered)
+        #expect(report.treeChanged == true)
+        #expect(report.tokenInvalidated)
+        #expect(r.typed.count == 1)
+        #expect(r.typed[0].text == "hi")
+        // 令牌已作废：下一次输入在联系原生层之前就被拒绝。
+        expectError("stale_snapshot", retry: "after_refresh") {
+            _ = try s.pressKey(token: a.token.value, handle: 3, key: "Return")
+        }
+        #expect(r.pressed.isEmpty)
+    }
+
+    @Test func pressKeyUsesTheSameTargetAndReportsTheEffect() throws {
+        let (s, r) = session()
+        let a = try read(s)
+        let report = try s.pressKey(token: a.token.value, handle: 3, key: "Return")
+        #expect(report.delivered)
+        #expect(report.noOpSuspected == true)  // 树没变
+        #expect(r.pressed.count == 1)
+        #expect(r.pressed[0].key == "Return")
+        #expect(r.pressed[0].locator.target.title == "确定")
     }
 
     // MARK: - 签发与复用

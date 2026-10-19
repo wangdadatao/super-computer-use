@@ -2,7 +2,7 @@ import Foundation
 
 /// 协议层 ↔ 原生层的协议版本。单调递增整数，两侧必须完全相等（ADR-0012）。
 /// 编译期常量：不是运行时可变状态。
-public let scuNativeProtocolVersion = 3
+public let scuNativeProtocolVersion = 4
 
 /// `dumpTree` 允许的最大深度。超出时原生层拒绝，不做静默截断。
 public let scuMaxTreeDepth = 64
@@ -251,6 +251,10 @@ public enum Request: Sendable, Equatable {
     case listApps
     case dumpTree(pid: Int32, maxDepth: Int, budgetMs: Int)
     case performAction(pid: Int32, locator: ElementLocator, action: ActionKind)
+    /// 把文本逐字输入到目标元素（先聚焦）。
+    case typeText(pid: Int32, locator: ElementLocator, text: String)
+    /// 向目标元素发送一个按键或组合键（先聚焦）。
+    case pressKey(pid: Int32, locator: ElementLocator, key: String)
 }
 
 public enum Response: Sendable, Equatable {
@@ -268,8 +272,12 @@ public enum Response: Sendable, Equatable {
 }
 
 extension Request: Codable {
-    private enum Key: String, CodingKey { case type, protocolVersion, pid, maxDepth, budgetMs, locator, action }
-    private enum Kind: String, Codable { case hello, checkPermissions, listApps, dumpTree, performAction }
+    private enum Key: String, CodingKey {
+        case type, protocolVersion, pid, maxDepth, budgetMs, locator, action, text, key
+    }
+    private enum Kind: String, Codable {
+        case hello, checkPermissions, listApps, dumpTree, performAction, typeText, pressKey
+    }
 
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: Key.self)
@@ -286,6 +294,16 @@ extension Request: Codable {
                 pid: try c.decode(Int32.self, forKey: .pid),
                 locator: try c.decode(ElementLocator.self, forKey: .locator),
                 action: try c.decode(ActionKind.self, forKey: .action))
+        case .typeText:
+            self = .typeText(
+                pid: try c.decode(Int32.self, forKey: .pid),
+                locator: try c.decode(ElementLocator.self, forKey: .locator),
+                text: try c.decode(String.self, forKey: .text))
+        case .pressKey:
+            self = .pressKey(
+                pid: try c.decode(Int32.self, forKey: .pid),
+                locator: try c.decode(ElementLocator.self, forKey: .locator),
+                key: try c.decode(String.self, forKey: .key))
         }
     }
 
@@ -307,6 +325,16 @@ extension Request: Codable {
             try c.encode(pid, forKey: .pid)
             try c.encode(locator, forKey: .locator)
             try c.encode(action, forKey: .action)
+        case .typeText(let pid, let locator, let text):
+            try c.encode(Kind.typeText, forKey: .type)
+            try c.encode(pid, forKey: .pid)
+            try c.encode(locator, forKey: .locator)
+            try c.encode(text, forKey: .text)
+        case .pressKey(let pid, let locator, let key):
+            try c.encode(Kind.pressKey, forKey: .type)
+            try c.encode(pid, forKey: .pid)
+            try c.encode(locator, forKey: .locator)
+            try c.encode(key, forKey: .key)
         }
     }
 }

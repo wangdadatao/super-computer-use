@@ -1,7 +1,7 @@
 # MCP 接入面（只读档与动作档）
 
 `scu mcp` 以 MCP stdio 服务运行，是接入层的第一个实现。**默认只读**：
-能读取应用与无障碍树，不能改变任何东西。**`scu mcp --actions` 额外暴露 `click`**（动作档，P0 只有点击）。
+能读取应用与无障碍树，不能改变任何东西。**`scu mcp --actions` 额外暴露 `click`、`type_text`、`press_key`**（动作档）。
 完整的会话 API 与 `js` 工具面是拟实施设计，见[协议总览](protocol_overview.md)。
 
 ## 导航
@@ -40,12 +40,15 @@
 | `list_apps` | 无 | 每行 `pid<TAB>名称<TAB>bundle id`（无 bundle id 时为 `-`） |
 | `get_ax_state` | `pid`（必填）、`max_depth`、`budget_ms`、`max_elements`、`focus`、`focus_role` | 读取应用的无障碍树，返回文本化元素表；`focus` 系列只展开一部分 |
 | `click`（仅 `--actions`） | `token`、`handle`（均必填） | 对句柄执行 `AXPress`；见下 |
+| `type_text`（仅 `--actions`） | `token`、`handle`、`text`（均必填） | 先聚焦元素，再把文本逐字输入；见下 |
+| `press_key`（仅 `--actions`） | `token`、`handle`、`key`（均必填） | 先聚焦元素，再发送按键或组合键；见下 |
 
 <a id="click_tool"></a>
 
 ### `click`
 
 动作的完整顺序：**策略 → 令牌 → 原生层核对 → 投递 → 事后观察**。前一步拒绝，后面都不执行。
+`click`、`type_text`、`press_key` 走同一条路径，只有第 4 步的投递方式不同。
 
 1. 策略：目标应用命中拒绝类目 → `policy_denied`（`retry=no`，不可协商）。先于令牌检查，所以失效令牌的受限应用仍报策略拒绝。
 2. 令牌：未知或已失效 → `stale_snapshot`；属于已切换走的目标 → `target_switched`；句柄不在快照里 → `element_gone`。
@@ -76,6 +79,25 @@ effect: delivered=true observed=true converged=true treeChanged=false targetChan
 
 "疑似空操作"的含义有限：动作只改变了无障碍树之外的东西（剪贴板、文件、窗口外状态）时同样会触发，
 所以它是"请核实"的提示，不是失败判定。
+
+<a id="input_tools"></a>
+
+### `type_text` 与 `press_key`
+
+两者都要求**显式的目标元素**（`token` + `handle`），顺序与 `click` 相同：
+策略 → 令牌 → 原生层沿路径核对 → 聚焦该元素 → 投递键盘事件 → 事后观察。
+
+- **聚焦**：设置元素的 `AXFocused`，最多等约 300 毫秒被读回为 true。不接受"当前的焦点元素"这种隐式目标，
+  因为写错位置可能触发搜索、发送或提交，代价不可逆。
+- **投递**：`CGEvent` 键盘事件直接投递到目标进程（`postToPid`），
+  **不激活应用、不移动鼠标、不抢前台**。
+- `type_text` 逐字符投递 Unicode；换行与制表符分别按 Return 与 Tab 投递；文本上限 10000 字符。
+- `press_key` 的键名用 `+` 分隔，修饰键顺序无关：`Return`、`Tab`、`esc`、`cmd+c`、`shift+left`。
+  修饰键用事件 `flags` 表达；每次都是 down + up，**不跨动作保持按住状态**。
+- 不认识的键名、空键名、多个主键、空文本都会被拒绝，不猜测；元素不接受焦点时返回 `unsupported_operation`。
+- 效果摘要与令牌规则与 `click` 相同：输入会改值，所以**通常每次输入后都要重读**。
+
+两者的设计取舍见 [ADR-0016](../decisions/adr_0016_input_and_keys.md)。
 
 `get_ax_state` 的参数范围：
 
@@ -162,7 +184,7 @@ effect: delivered=true observed=true converged=true treeChanged=false targetChan
 | --- | --- |
 | `stale_snapshot`、`element_gone` | 重新 `get_ax_state` 取得新令牌与句柄；用 `focus` 按文本重新定位 |
 | `target_switched` | 令牌属于之前读取的另一个应用，对要操作的应用重新读取 |
-| `unsupported_operation` | 该元素不能被点击，可尝试父元素或子元素 |
+| `unsupported_operation` | 该元素不支持这个动作（不能点击、不接受焦点、或不认识键名）；可尝试父元素、子元素或改换方式 |
 | `policy_denied` | 不可协商，不要重试或绕过，告知用户由他自己完成 |
 | `system_permission_missing` | 权限按宿主应用归属，给启动本服务的应用授予辅助功能权限 |
 
@@ -215,6 +237,10 @@ socket 目录建在 `TMPDIR`（若设置且存在）或系统临时目录下。
 <a id="unverified"></a>
 
 ## 未验证项
+
+- **`type_text` / `press_key` 只在自制夹具上验证过**：夹具的输入框与 Return 提交成立；
+  没有在真实应用上输入过，也没有验证输入法（IME）、组合键在需要真实修饰键事件的应用里的行为。
+  设计见 [ADR-0016](../decisions/adr_0016_input_and_keys.md)。
 
 - **`click` 只在自制夹具 `scu-fixture` 上真实点击过，访达上只做过 `verify`（不点击）**；
   没有在 Electron 等第三方应用上点击过，也没有经 Cursor 宿主调用过。夹具验证的结论与缺口见

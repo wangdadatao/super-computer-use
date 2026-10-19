@@ -95,6 +95,14 @@ final class Rig {
         return i + 1
     }
 
+    func handle(identifier: String, in st: SessionState) throws -> Int {
+        let entries = ElementTable.flatten(st.reading.root)
+        guard let i = entries.firstIndex(where: { $0.node.identifier == identifier }) else {
+            throw LiveError.message("树里没有标识符为 \(identifier) 的元素")
+        }
+        return i + 1
+    }
+
     /// 标签当前的文本，如 `count: 3`。
     func label(startingWith prefix: String, in st: SessionState) -> String? {
         ElementTable.flatten(st.reading.root).compactMap(\.node.value).first { $0.hasPrefix(prefix) }
@@ -224,6 +232,38 @@ struct FixtureTests {
         Thread.sleep(forTimeInterval: 2.5)
         let st = try rig.read()
         #expect(rig.label(startingWith: "status:", in: st) == "status: loaded")
+    }
+
+    // MARK: - 输入与按键（ADR-0016）
+
+    @Test func typingIntoTheInputFieldChangesItsValue() throws {
+        let rig = try Rig()
+        defer { rig.stop() }
+        let st = try rig.read()
+        let field = try rig.handle(identifier: "input", in: st)
+        let report = try rig.session.typeText(token: st.token.value, handle: field, text: "hello")
+        #expect(report.delivered)
+        #expect(report.observed)
+        #expect(report.treeChanged == true)
+        #expect(report.tokenInvalidated)
+        let after = try rig.read()
+        let value = ElementTable.flatten(after.reading.root).first { $0.node.identifier == "input" }?.node.value
+        #expect(value == "hello")
+    }
+
+    @Test func pressingReturnInTheFieldSubmitsIt() throws {
+        let rig = try Rig()
+        defer { rig.stop() }
+        let st = try rig.read()
+        _ = try rig.session.typeText(
+            token: st.token.value, handle: try rig.handle(identifier: "input", in: st), text: "abc")
+        let st2 = try rig.read()
+        let report = try rig.session.pressKey(
+            token: st2.token.value, handle: try rig.handle(identifier: "input", in: st2), key: "Return")
+        #expect(report.delivered)
+        #expect(report.treeChanged == true)
+        let after = try rig.read()
+        #expect(ElementTable.flatten(after.reading.root).compactMap(\.node.value).contains("status: submitted: abc"))
     }
 
     // MARK: - 令牌（testing.md「令牌语义验证」）

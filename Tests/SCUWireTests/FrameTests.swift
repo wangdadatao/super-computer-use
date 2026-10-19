@@ -161,6 +161,29 @@ import Testing
         #expect((l["target"] as! [String: Any])["title"] as? String == "好")
     }
 
+    @Test func inputRequestShapes() throws {
+        let typed = try Self.json(
+            RequestFrame(id: 4, request: .typeText(pid: 7, locator: Self.locator, text: "hello")))
+        let t = typed["request"] as! [String: Any]
+        #expect(t["type"] as? String == "typeText")
+        #expect(t["pid"] as? Int == 7)
+        #expect(t["text"] as? String == "hello")
+
+        let pressed = try Self.json(
+            RequestFrame(id: 5, request: .pressKey(pid: 7, locator: Self.locator, key: "cmd+t")))
+        let p = pressed["request"] as! [String: Any]
+        #expect(p["type"] as? String == "pressKey")
+        #expect(p["key"] as? String == "cmd+t")
+
+        for request in [
+            Request.typeText(pid: 7, locator: Self.locator, text: "多行\n文本"),
+            Request.pressKey(pid: 7, locator: Self.locator, key: "shift+tab"),
+        ] {
+            let body = try JSONEncoder().encode(RequestFrame(id: 1, request: request))
+            #expect(try Frame.decode(RequestFrame.self, body: body).request == request)
+        }
+    }
+
     @Test func actionResponsesShapeAndRoundTrip() throws {
         let stale = StaleDetail(reason: .childCount, step: 1, actualCount: 4)
         let cases: [Response] = [.acted, .located, .stale(stale)]

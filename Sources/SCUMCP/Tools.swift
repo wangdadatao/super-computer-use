@@ -10,8 +10,10 @@ enum ScuTool: String, CaseIterable {
     case listApps = "list_apps"
     case getAXState = "get_ax_state"
     case click
+    case typeText = "type_text"
+    case pressKey = "press_key"
 
-    var isAction: Bool { self == .click }
+    var isAction: Bool { self != .checkPermissions && self != .listApps && self != .getAXState }
 
     static func available(actions: Bool) -> [ScuTool] {
         allCases.filter { actions || !$0.isAction }
@@ -23,6 +25,8 @@ enum ScuTool: String, CaseIterable {
         case .listApps: return "列出应用"
         case .getAXState: return "读取无障碍树"
         case .click: return "点击元素"
+        case .typeText: return "向元素输入文本"
+        case .pressKey: return "向元素发送按键"
         }
     }
 
@@ -48,11 +52,28 @@ enum ScuTool: String, CaseIterable {
                 "疑似空操作"表示界面稳定后结构没有任何变化，请核实后再继续。\
                 结构变化时旧令牌作废，需重新 get_ax_state。不支持 AXPress 的元素返回 unsupported_operation。
                 """
+        case .typeText:
+            return """
+                把文本逐字输入到指定元素：先聚焦它，再向目标进程投递按键事件。会改变应用的状态。\
+                必须同时给出 get_ax_state 输出的令牌与句柄；令牌失效、目标已不是读取时的那个、\
+                或应用属于拒绝类目时不会执行，并返回分类的错误。\
+                输入经过应用的按键处理（与"设值"不同），可以触发自动完成、实时校验与回车等行为。\
+                文本里的换行与制表符分别按 Return 与 Tab 投递。\
+                返回的是**观察到的效果**，不是"成功"的保证：之后会重读界面直到稳定，报告结构是否变化；\
+                结构变化时旧令牌作废，需重新 get_ax_state。
+                """
+        case .pressKey:
+            return """
+                向指定元素发送一个按键或组合键（先聚焦它）：如 Return、Tab、esc、cmd+c、shift+左方向键。\
+                键名用 + 分隔，修饰键顺序无关；不认识键名会拒绝，不猜测。会改变应用的状态。\
+                必须同时给出 get_ax_state 输出的令牌与句柄；令牌失效、目标对不上或应用属于拒绝类目时不会执行。\
+                返回的是**观察到的效果**，不是"成功"的保证；结构变化时旧令牌作废。
+                """
         case .getAXState:
             return """
                 读取指定应用的无障碍树，返回文本化元素表。只读，不会操作应用。\
                 每行一个元素，缩进表示层级，格式 [角色#句柄] "标题" 属性…。\
-                输出带一个令牌，句柄与令牌配对、只在该令牌有效期内可用（界面结构变化后令牌失效）；click 工具（仅动作档提供）接受它们。\
+                输出带一个令牌，句柄与令牌配对、只在该令牌有效期内可用（界面结构变化后令牌失效）；click / type_text / press_key（仅动作档提供）接受它们。\
                 读取有总时间预算，耗尽时输出会明确标注"已截断"。\
                 元素多于 max_elements 时按层级优先显示（先看整体结构，不是先序的前 N 个），\
                 被折叠的元素行尾标 (折叠 N)，表示其下还有 N 个后代未显示。\
@@ -77,6 +98,31 @@ enum ScuTool: String, CaseIterable {
                     "handle": ["type": "integer", "minimum": 1, "description": "该输出元素表里的句柄编号（[角色#句柄] 的数字）"],
                 ],
                 "required": ["token", "handle"],
+                "additionalProperties": false,
+            ]
+        case .typeText:
+            return [
+                "type": "object",
+                "properties": [
+                    "token": ["type": "string", "description": "get_ax_state 标题行里的令牌"],
+                    "handle": ["type": "integer", "minimum": 1, "description": "要输入到的元素句柄"],
+                    "text": ["type": "string", "minLength": 1, "maxLength": 10000, "description": "要输入的文本"],
+                ],
+                "required": ["token", "handle", "text"],
+                "additionalProperties": false,
+            ]
+        case .pressKey:
+            return [
+                "type": "object",
+                "properties": [
+                    "token": ["type": "string", "description": "get_ax_state 标题行里的令牌"],
+                    "handle": ["type": "integer", "minimum": 1, "description": "接收按键的元素句柄（会先聚焦它）"],
+                    "key": [
+                        "type": "string", "minLength": 1,
+                        "description": "按键或组合键，如 Return、Tab、esc、cmd+c；修饰键可用 cmd/shift/alt/ctrl",
+                    ],
+                ],
+                "required": ["token", "handle", "key"],
                 "additionalProperties": false,
             ]
         case .getAXState:
@@ -199,7 +245,32 @@ enum ScuTool: String, CaseIterable {
                     throw ArgumentError(message: "缺少参数 handle")
                 }
                 let report = try session.click(token: token, handle: handle)
-                return Outcome(text: Self.clickText(report, handle: handle), isError: false)
+                return Outcome(text: Self.actionText(report, handle: handle, verb: "点击"), isError: false)
+
+            case .typeText:
+                try Self.requireNoExtra(args, allowed: ["token", "handle", "text"])
+                guard let token = try Self.string(args, "token") else { throw ArgumentError(message: "缺少参数 token") }
+                guard let handle = try Self.int(args, "handle", range: 1...Int(Int32.max), required: true) else {
+                    throw ArgumentError(message: "缺少参数 handle")
+                }
+                guard let text = try Self.string(args, "text"), !text.isEmpty else {
+                    throw ArgumentError(message: "text 不能为空")
+                }
+                guard text.count <= 10000 else { throw ArgumentError(message: "text 最长 10000 个字符") }
+                let typed = try session.typeText(token: token, handle: handle, text: text)
+                return Outcome(text: Self.actionText(typed, handle: handle, verb: "输入"), isError: false)
+
+            case .pressKey:
+                try Self.requireNoExtra(args, allowed: ["token", "handle", "key"])
+                guard let token = try Self.string(args, "token") else { throw ArgumentError(message: "缺少参数 token") }
+                guard let handle = try Self.int(args, "handle", range: 1...Int(Int32.max), required: true) else {
+                    throw ArgumentError(message: "缺少参数 handle")
+                }
+                guard let key = try Self.string(args, "key"), !key.isEmpty else {
+                    throw ArgumentError(message: "key 不能为空")
+                }
+                let pressed = try session.pressKey(token: token, handle: handle, key: key)
+                return Outcome(text: Self.actionText(pressed, handle: handle, verb: "按键"), isError: false)
             }
         } catch let e as ArgumentError {
             return Outcome(text: "[invalid_argument] \(e.message)", isError: true)
@@ -234,7 +305,7 @@ enum ScuTool: String, CaseIterable {
             h += "按层级优先显示；行尾 (折叠 N) 表示其下还有 N 个后代未显示。用 focus 看某一部分，或调大 max_elements。"
         }
         h += "句柄只在该令牌有效期内可用（界面结构变化后令牌失效）；"
-        h += actionsEnabled ? "用 click(token, handle) 点击。" : "目前没有工具接受句柄（动作档未开启）。"
+        h += actionsEnabled ? "用 click(token, handle) 点击，或用 type_text / press_key 输入。" : "目前没有工具接受句柄（动作档未开启）。"
         if case .deny(let category) = policy {
             h += "\n⚠️ 策略：\(appName ?? "该应用") 属于拒绝类目 \(category)，对它的动作会被拒绝（读取不受限）。"
         }
@@ -265,14 +336,14 @@ enum ScuTool: String, CaseIterable {
     }
 
     /// 点击结果的文本：先一行机器可读的摘要，再用人话解释。只陈述观察到的事实。
-    static func clickText(_ r: DesktopSession.ClickReport, handle: Int) -> String {
+    static func actionText(_ r: DesktopSession.ClickReport, handle: Int, verb: String) -> String {
         func flag(_ b: Bool?) -> String { b.map { $0 ? "true" : "false" } ?? "unknown" }
         let label = [r.target.title, r.target.description].compactMap { $0 }.first { !$0.isEmpty }
         var name = "\(r.target.role)#\(handle)"
         if let label { name += " " + ElementTable.quote(label) }
         let secs = String(format: "%.1f", r.elapsed)
         var lines = [
-            "已对 \(name)（pid \(r.pid)）投递点击。",
+            "已对 \(name)（pid \(r.pid)）投递\(verb)。",
             "effect: delivered=\(flag(r.delivered)) observed=\(flag(r.observed)) converged=\(flag(r.converged)) "
                 + "treeChanged=\(flag(r.treeChanged)) targetChanged=\(flag(r.targetChanged)) "
                 + "noOpSuspected=\(flag(r.noOpSuspected)) polls=\(r.polls) elapsed=\(secs)s",

@@ -214,10 +214,9 @@ public final class DesktopSession {
         return ElementLocator(path: steps.reversed(), target: TargetKey(entries[index].node))
     }
 
-    /// 对令牌里的句柄执行动作。会话已知失效的令牌不会联系原生层。
-    public func act(token: String, handle: Int, action: ActionKind) throws -> ActionOutcome {
-        // 策略先于令牌：被拒绝的动作不消耗令牌，也不因令牌状态而改变结论（ADR-0015 §5）。
-        // 令牌未知时没有进程可判定，由 resolve 按 stale_snapshot 处理。
+    /// 策略检查 + 令牌解析。策略先于令牌：被拒绝的动作不消耗令牌，
+    /// 也不因令牌状态而改变结论（ADR-0015 §5）。
+    private func authorizedTarget(token: String, handle: Int) throws -> (pid: Int32, locator: ElementLocator) {
         if let r = records[token] {
             let identity: Identity
             if let known = r.identity {
@@ -231,7 +230,12 @@ public final class DesktopSession {
                 throw WireError.policyDenied(category: category, app: identity.name ?? "pid \(r.pid)")
             }
         }
-        let (pid, locator) = try resolve(token: token, handle: handle)
+        return try resolve(token: token, handle: handle)
+    }
+
+    /// 对令牌里的句柄执行动作。会话已知失效的令牌不会联系原生层。
+    public func act(token: String, handle: Int, action: ActionKind) throws -> ActionOutcome {
+        let (pid, locator) = try authorizedTarget(token: token, handle: handle)
         let outcome = try reader.performAction(pid: pid, locator: locator, action: action)
         if case .stale(let d) = outcome, let r = records[token] {
             invalidate(r, to: .stale)
@@ -242,7 +246,8 @@ public final class DesktopSession {
 
     // MARK: - 点击与效果
 
-    /// 点击的效果摘要。**只陈述观察到的事实**，不声称动作"成功"：`delivered` 只表示平台没有报错。
+    /// 动作的效果摘要（点击、输入、按键共用）。**只陈述观察到的事实**，不声称动作"成功"：
+    /// `delivered` 只表示平台没有报错。
     public struct ClickReport: Equatable, Sendable {
         public var pid: Int32
         public var target: TargetKey
@@ -265,19 +270,48 @@ public final class DesktopSession {
         public var observationError: String?
     }
 
-    /// 点击：执行 `AXPress`，再轮询重读界面，直到连续两次一致或达到总上限（动作收敛，ADR-0011）。
-    /// 树确实变化时作废调用所用的令牌（不签发新令牌，调用方需要重读）。
+    /// 点击：执行 `AXPress`，再观察效果。
     // @project-doc docs/interfaces/mcp_surface.md#click_tool
     public func click(token: String, handle: Int) throws -> ClickReport {
+        try perform(token: token, handle: handle) { pid, locator in
+            try reader.performAction(pid: pid, locator: locator, action: .press)
+        }
+    }
+
+    /// 逐字输入到目标元素（先聚焦），再观察效果。
+    // @project-doc docs/interfaces/mcp_surface.md#input_tools
+    public func typeText(token: String, handle: Int, text: String) throws -> ClickReport {
+        try perform(token: token, handle: handle) { pid, locator in
+            try reader.typeText(pid: pid, locator: locator, text: text)
+        }
+    }
+
+    /// 向目标元素发送按键（先聚焦），再观察效果。
+    // @project-doc docs/interfaces/mcp_surface.md#input_tools
+    public func pressKey(token: String, handle: Int, key: String) throws -> ClickReport {
+        try perform(token: token, handle: handle) { pid, locator in
+            try reader.pressKey(pid: pid, locator: locator, key: key)
+        }
+    }
+
+    /// 动作的统一路径：策略 → 令牌 → 原生层核对 → 投递 → 事后观察。
+    /// 点击、输入、按键共用同一套效果摘要与令牌作废规则。
+    private func perform(
+        token: String, handle: Int, action: (Int32, ElementLocator) throws -> ActionOutcome
+    ) throws -> ClickReport {
         // 先于动作取走动作前的快照信息：动作中途令牌可能被作废并释放快照。
         let pre = records[token]?.snapshot
-        let outcome = try act(token: token, handle: handle, action: .press)
-        guard case .acted = outcome else {
-            throw WireError.internalError("点击得到了非预期的应答：\(outcome)")
+        let (pid, locator) = try authorizedTarget(token: token, handle: handle)
+        let outcome = try action(pid, locator)
+        if case .stale(let d) = outcome, let r = records[token] {
+            invalidate(r, to: .stale)
+            throw WireError.staleSnapshot("句柄 #\(handle) 已失效：\(Self.describe(d))。请重新读取界面。")
         }
-        // act 已经通过解析，记录与快照必然存在。
-        guard let record = records[token], let pre else { throw WireError.internalError("点击后令牌记录丢失") }
-        let locator = Self.locator(for: handle - 1, in: pre.entries)
+        guard case .acted = outcome else {
+            throw WireError.internalError("动作得到了非预期的应答：\(outcome)")
+        }
+        // authorizedTarget 已经通过解析，记录与快照必然存在。
+        guard let record = records[token], let pre else { throw WireError.internalError("动作后令牌记录丢失") }
         var report = ClickReport(
             pid: record.pid, target: locator.target, delivered: true, observed: false, converged: false,
             treeChanged: nil, targetChanged: nil, noOpSuspected: nil, polls: 0, elapsed: 0,
