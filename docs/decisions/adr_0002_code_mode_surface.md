@@ -55,6 +55,13 @@ JavaScript 调用只能靠运行时类型检查，错误发现更晚。
 - 需要提供运行时重置入口，否则模型可能积累不可预期的状态
 - 审计场景下需要额外的调用内追踪，不能只依赖工具调用日志
 
+## 追加记录（2026-10-19，v1 采用平铺工具）
+
+v1 用平铺 MCP 工具（`click` / `type_text` / `press_key` / `set_value` 等）交付，
+**没有引入本 ADR 的 code mode 运行时**。理由与范围见
+[ADR-0013 的 v1 收口记录](adr_0013_p0_vertical_slice.md#v1_close_2026_10_19)：
+平铺工具已满足最小工具面，code mode 需要 JS 沙箱与运行时设计，后置到 v2。本 ADR 的方向不变。
+
 ## 相关文档
 
 - [协议总览](../interfaces/protocol_overview.md)

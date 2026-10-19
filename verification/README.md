@@ -40,11 +40,12 @@ verification/
 
 ## 当前状态
 
-**P0 已完成（2026-10-19）：出口门槛全部满足或判定不适用。** 五份记录：元素身份基线
+**v1 已完成（0.1.0，2026-10-19）；P0 的出口门槛全部满足或判定不适用。** 六份记录：元素身份基线
 （[2026-10-16](2026-10-16-baseline-identity.md)，不是结论）、读树耗时
 （[2026-10-17](2026-10-17-read-latency.md)）、夹具验证（[2026-10-18](2026-10-18-fixture-validation.md)）、
 K4 正式验证（[2026-10-18](2026-10-18-identity-k4.md)，不成立）、令牌误拒与重读成本
-（[2026-10-19](2026-10-19-token-reject-rate.md)，A/B 0/8、C 8/8、D 8/8）。
+（[2026-10-19](2026-10-19-token-reject-rate.md)，A/B 0/8、C 8/8、D 8/8）、
+真实应用端到端（[2026-10-19](2026-10-19-real-app-netease.md)，网易云 CEF）。
 指示层隔离（需要屏幕录制）等 P0 之外的假设仍未验证。
 门槛见 [ADR-0013](../docs/decisions/adr_0013_p0_vertical_slice.md)；
 权限状态见 [docs/operations/permissions.md](../docs/operations/permissions.md)。
