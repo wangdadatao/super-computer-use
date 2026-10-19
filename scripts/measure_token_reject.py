@@ -211,7 +211,9 @@ def read_state(mcp, pid):
             handles.setdefault(title, int(found.group(1)))
     missing = [t for t in TARGETS if t not in handles]
     if missing:
-        raise MeasurementError(f"夹具里找不到控件：{missing}（句柄：{handles}）")
+        head = "\n".join(text.splitlines()[:6])
+        raise MeasurementError(
+            f"夹具里找不到控件：{missing}（句柄：{handles}）。get_ax_state 前 6 行：\n{head}")
     return token_match.group(1), handles
 
 
