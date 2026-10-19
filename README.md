@@ -82,6 +82,12 @@ swift build && swift test
 构建与命令说明见[本地环境](docs/operations/local_setup.md)。
 除其中「当前已实现」列出的内容外，请把文档读作设计意图，而不是已验证的系统行为。
 
+## 给 agent 用
+
+MCP 宿主接入后，让 agent 读 [skills/scu/SKILL.md](skills/scu/SKILL.md)：
+何时用 SCU、核心循环（读 → 一个动作 → 重读）、动作选择、效果摘要与错误处理。
+动作档（`--actions`）才有 `click` / `type_text` / `press_key` / `set_value`。
+
 ## 文档
 
 工程文档入口：[docs/index.md](docs/index.md)。它按分类路由到架构、领域、接口、运维和决策。

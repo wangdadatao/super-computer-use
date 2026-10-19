@@ -16,6 +16,8 @@
 
 [ADR-0002](../decisions/adr_0002_code_mode_surface.md) 决定对 agent 暴露 `js` / `js_reset` 的 code mode 工具面。
 [ADR-0013](../decisions/adr_0013_p0_vertical_slice.md) 把"v1 是否带 code mode 运行时"列为待定。
+接入后的使用指导（何时用、核心循环、动作选择、错误处理）见 [skills/scu/SKILL.md](../../skills/scu/SKILL.md)。
+
 只读档因此先用**少量普通 MCP 工具**：协议层不依赖尚未选定的 JS 运行时，工具描述也更容易写清。
 这是**实施顺序**的调整，不改变 ADR-0002 的方向；code mode 在运行时选定后再加，届时本文的工具目录需要重新评估。
 

@@ -109,6 +109,8 @@ scu identity --pid <pid> [--depth N] [--budget-ms M] [--by-role] [--show-k4]
 
 **辅助功能权限归属于启动 `scu mcp` 的宿主**，不是整台机器。接入后第一件事是让模型调用
 `check_permissions`；未授权时按[macOS 权限](permissions.md)给宿主授权。
+接入后让 agent 读 [skills/scu/SKILL.md](../../skills/scu/SKILL.md)：它在工具描述之外给出
+核心循环、动作选择、效果摘要与错误处理。
 该流程只在 Cursor 里验证过一次，见 [MCP 接入面的未验证项](../interfaces/mcp_surface.md#未验证项)。
 
 用管道手动驱动（不需要宿主）：

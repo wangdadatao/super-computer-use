@@ -1,0 +1,180 @@
+---
+name: scu
+description: 用 SCU（SuperComputerUse）读取和操作本机 macOS 应用的界面。当任务需要点击原生应用的按钮、填写表单、切换设置、按快捷键，且没有可用的 API/CLI 时使用；也用于读取某个应用当前界面结构。不适用于截图、坐标点击、启动应用或非 macOS 平台。
+---
+
+# SCU 使用指导（v1）
+
+SCU 是一个 MCP 服务：读取 macOS 应用的无障碍树，并用 `AXPress` / 键盘事件 / 无障碍设值操作界面。
+它是**兜底手段**：能用应用自己的 API、CLI 或插件完成的任务，不要用 SCU。
+
+## 能力边界（先看这个）
+
+| 能做 | 不能做 |
+| --- | --- |
+| 读取**已在运行**的应用的无障碍树（文本元素表） | 截图、看画面、坐标点击 |
+| 点击元素（`AXPress`） | 启动应用、切换前台应用 |
+| 逐字输入文本（`type_text`）、发送按键/组合键（`press_key`） | 滚动、拖拽、右键、长按 |
+| 直接写元素的值（`set_value`，要求元素可写） | 输入法（中文等）未验证；粘贴、剪贴板 |
+| 知道动作是否改变了界面、是否疑似空操作 | 审批/确认层：危险动作只能靠你与用户确认 |
+
+只读档只有 `check_permissions` / `list_apps` / `get_ax_state`；
+`click` / `type_text` / `press_key` / `set_value` 需要服务以 `--actions` 启动。
+如果调用这些工具返回"未知工具"（JSON-RPC `-32602`），说明动作档没开，请用户改启动参数。
+
+## 第一次使用
+
+1. 调用 `check_permissions`。**权限属于启动 MCP 服务的宿主应用**，不是整台机器。
+   未授予时让用户给宿主（Cursor、终端等）授权，然后重启该宿主。
+2. `list_apps` 取 `pid`。它只列出已在运行、激活策略为 regular 的应用。
+   用户说的应用不在列表里，就先请用户打开它（SCU 不能启动应用）。
+3. `get_ax_state(pid)` 读界面。
+
+## 核心循环
+
+```
+list_apps → get_ax_state(pid) → 用令牌与句柄执行一个动作 → 重新 get_ax_state
+```
+
+**每次会改变界面的动作之后都要重读。** 令牌与句柄只对一次读取有效；
+结构或取值一变，旧令牌作废（`stale_snapshot`），句柄编号也可能变。
+不要在一轮里连续点多个句柄——除非你确定界面没变（看效果摘要）。
+
+## 读状态：元素表怎么用
+
+`get_ax_state` 返回标题行加元素表：
+
+```text
+# pid=1234 令牌 s1abc.7 元素 42。句柄只在该令牌有效期内可用…用 click(token, handle) 点击…
+[AXApplication#1] "Safari"
+  [AXWindow#2] "起始页" subrole=AXStandardWindow
+    [AXButton#3] "返回" id="go-back"
+    [AXTextField#4] "地址与搜索" value="example.com"
+```
+
+- `[角色#句柄]`：句柄只在**本次读取与它的令牌**内有效。
+- 缩进表示层级；行尾 `(折叠 N)` 表示还有 N 个后代没显示。
+- 属性：`subrole=`、`desc=`、`value=`、`id=`、`state=disabled`；空值省略。
+- 元素太多时默认只显示 300 个（层级优先），用 `max_elements` 或 `focus` 展开：
+  - `focus`：按标题/描述/值/标识符的子串匹配，只展开命中的子树；
+  - `focus_role`：按角色过滤，如 `AXButton` 或 `Button`。
+- 标题行有 `⚠️ 已截断` / `⚠️ 已达深度上限` / `⚠️ 策略：…` 时，先读警告再决定下一步。
+- 推荐流程：先看概览 → 用 `focus` 展开目标区域 → 再有针对性地动作。
+
+## 选哪个动作
+
+| 意图 | 用 |
+| --- | --- |
+| 按按钮、复选、单选、菜单项、列表项 | `click` |
+| 填表单、设置已知的完整值 | `set_value`（**首选**） |
+| 需要在输入过程中触发搜索/校验/自动完成 | `type_text` |
+| 提交、Tab、Escape、快捷键 | `press_key` |
+
+**`set_value` 是默认写入路径**：快、不经过输入法、不触发按键处理。它要求元素声明 `AXValue` 可写；
+不可写时会返回 `unsupported_operation`，**不要**自己改成逐字输入再试一遍——那会改变副作用，
+需要向用户说明并确认。
+
+**`type_text`** 逐字符投递键盘事件：会触发应用的按键处理，也会触发输入法与快捷键。
+中文等输入法行为未验证；能设值就优先设值。
+换行与制表符分别按 Return 与 Tab 投递。
+
+**`press_key`** 的键名用 `+` 分隔，修饰键顺序无关：`Return`、`Tab`、`esc`、`cmd+c`、`shift+left`。
+会先把焦点设到目标元素，再发键。
+
+## 效果摘要怎么读
+
+动作返回两行：一句人话，一行可解析：
+
+```text
+effect: delivered=true observed=true converged=true treeChanged=false targetChanged=false noOpSuspected=true polls=2 elapsed=0.4s
+```
+
+| 字段 | 含义 | 你该做什么 |
+| --- | --- | --- |
+| `delivered=true` | 平台没有报错。**不代表生效** | 继续看下面的字段 |
+| `observed=false` | 事后读不到界面 | 不要重复点击；先 `get_ax_state` 确认 |
+| `converged=false` | 3 秒内界面还在变 | 稍后重读，可能读到中间状态 |
+| `treeChanged=true` | 界面结构或取值变了 | 旧令牌已作废，**必须重读** |
+| `treeChanged=false` | 没变 | 令牌仍有效，但见下一行 |
+| `noOpSuspected=true` | 已稳定且完全没变 | 核实动作是否真的生效（可能只改了树外状态） |
+| `targetChanged=true` | 目标已不在原位置 | 重新读取后重新定位 |
+| `unknown` | 树被截断，无法比较 | 当作"不知道"，重读确认 |
+
+**"投递成功"不等于"用户看得见"。** `AXPress` 不看遮挡，被盖住的按钮也会被按下。
+**"疑似空操作"不是失败**，是提示你去核实。
+
+## 错误码与下一步
+
+按 `code` 分支，不要解析 `message`：
+
+| 错误码 | 含义 | 下一步 |
+| --- | --- | --- |
+| `stale_snapshot` | 令牌失效（界面变了或超时） | 重新 `get_ax_state`，用新令牌与新句柄 |
+| `element_gone` | 句柄不在该令牌的快照里 | 同上；先用 `focus` 按文本定位 |
+| `target_switched` | 令牌属于另一个已切换走的目标 | 对当前目标重新读取 |
+| `unsupported_operation` | 元素不支持该动作 / 键名不认识 | 换元素（父/子）或换动作，不要猜 |
+| `policy_denied` | 命中拒绝类目 | **不可协商，不要绕过**；告知用户由他自己完成 |
+| `system_permission_missing` | 宿主没有辅助功能权限 | 让用户给宿主授权并重启宿主 |
+| `platform_unavailable` | 原生进程不可达 | 稍后重试一次；持续失败就报告 |
+| `internal_error` | 参数或边界问题 | 检查参数，不要盲目重试 |
+
+多个动作都成功、但界面始终没变时，停下来重读并核实，而不是继续点。
+
+## 安全与禁止
+
+- **拒绝类目不可绕过**：终端、脚本编辑器、密码管理器、系统设置、Cursor 及其宿主进程。
+  读取这些应用是允许的；动作会被拒绝。不要改用 `osascript` / System Events 去完成被拒绝的动作。
+- **不要在密码框、支付、删除、发送等不可逆步骤上自作主张。** v1 没有审批层；
+  这类动作前先向用户确认，并说明你点的是哪个元素、在哪个应用。
+- **不要把用户剪贴板、文件内容当作输入来源**，除非用户明确要求。
+- 只操作任务需要的应用；不要浏览无关窗口。
+- 输入内容会经过应用：可能触发自动完成、快捷键或提交。确认目标元素再输入。
+
+## 效率建议
+
+- 先概览再 `focus`，不要一上来就用很大的 `max_elements` 读全树。
+- 读树有 15 秒预算；访达大目录、Electron 大树可能被截断。截断时用 `focus` 定点读，而不是重试。
+- **每步动作后重读**是设计使然（令牌会被值变化作废）。不要为了省调用而复用旧句柄。
+- 只读档不会拉起原生进程；`initialize` / `tools/list` 不需要权限。
+
+## 已知限制与失败模式
+
+- **不能启动应用**：目标没在运行就请用户打开。
+- **没有截图/坐标**：纯视觉界面、画布、图片、游戏操作不了。
+- **输入法未验证**：`type_text` 对中文等输入法的行为不确定；表单优先 `set_value`。
+- **Electron 应用的树大小会变**：同一窗口不同时刻可能读到不同规模的树；读到明显偏小时可稍后重读。
+- **菜单**：菜单项可能在树里但未展开。点菜单栏项 → 重读 → 点菜单项；这条路径在真实应用上未充分验证。
+- **`AXPress` 不看遮挡**：看不见的按钮也可能被按下，报告"成功"不代表用户能看到。
+- **空操作判定有噪声**：动作只改了剪贴板/文件/窗口外状态时也会报 `noOpSuspected=true`。
+- **策略拒绝只挡动作不挡读取**：被拒绝类目的应用仍可读，读到的内容可以用于定位问题。
+
+## 示例：填写搜索框并提交
+
+```text
+1. list_apps → 找到目标应用 pid=1234
+2. get_ax_state(pid=1234) → 令牌 s1abc.7，找到 [AXTextField#4] "地址与搜索"
+3. set_value(token="s1abc.7", handle=4, value="example.com")
+   → treeChanged=true，旧令牌作废
+4. get_ax_state(pid=1234) → 新令牌 s1abc.8，输入框 value 已是 example.com
+5. press_key(token="s1abc.8", handle=4, key="Return")
+   → treeChanged=true
+6. get_ax_state(pid=1234) → 读取结果
+```
+
+## 示例：切换一个设置项
+
+```text
+1. get_ax_state(pid=…) → 找到 [AXCheckBox#12] "启用同步" value=0
+2. click(token, handle=12) → noOpSuspected=false / treeChanged=true
+3. get_ax_state(pid=…) → 确认 [AXCheckBox#12] 的 value 变成 1
+   如果 value 没变但 treeChanged=true，说明变化发生在别处，不要假定成功
+```
+
+## 相关文档
+
+- 工具与输出格式：[docs/interfaces/mcp_surface.md](../../docs/interfaces/mcp_surface.md)
+- 元素表格式：[docs/interfaces/element_addressing.md](../../docs/interfaces/element_addressing.md)
+- 输入与按键的设计：[docs/decisions/adr_0016_input_and_keys.md](../../docs/decisions/adr_0016_input_and_keys.md)
+- 错误码表：[docs/interfaces/error_taxonomy.md](../../docs/interfaces/error_taxonomy.md)
+- 权限与宿主归属：[docs/operations/permissions.md](../../docs/operations/permissions.md)
+- 当前能力与限制：[docs/index.md](../../docs/index.md)
