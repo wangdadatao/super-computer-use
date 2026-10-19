@@ -7,6 +7,9 @@ SCU 的会话状态、目标绑定关系，以及独占控制的获取与释放�
 本文涉及对两套已发布实现的观察结论。来源、具体证据与复核方法见
 [verification/external-sources.md](../../verification/external-sources.md)。
 
+> **P0 实际**：本文大部分是未实现的设计。已实现的只有：令牌的作用域是会话（`DesktopSession`，切换目标使旧令牌变为 `target_switched`）、
+> 会话内动作串行（约定，`DesktopSession` 非线程安全）。没有目标绑定 API、控制租约、坐标令牌、会话级审批与指示层。
+
 ## 导航
 
 - [会话](#会话)

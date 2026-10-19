@@ -93,7 +93,7 @@ func runMCP(actions: Bool) {
 func run(command: String, args: [String]) throws {
     // 先校验参数，再启动 sidecar：用法错误不应拉起子进程。
     var pid: Int32 = 0
-    var depth = 12
+    var depth = scuDefaultTreeDepth
     var budgetMs = scuDefaultTreeBudgetMs
     if command == "dump" {
         guard let pidText = option("--pid", in: args), let p = Int32(pidText) else {

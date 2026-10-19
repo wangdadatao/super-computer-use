@@ -28,7 +28,7 @@ public enum TreeFormatter {
     }
 }
 
-/// 字段覆盖率统计：回答 element_identity.md「待验证项」第 1、2 问。
+/// 字段覆盖率统计：回答 element_identity.md「待验证项」第 1 问（AXIdentifier 覆盖率）；第 2 问（祖先路径区分力）靠 `IdentityAnalyzer` 的档位分布。
 // @project-doc docs/architecture/element_identity.md#open_questions
 public struct FieldCoverage: Equatable, Sendable {
     public var total = 0

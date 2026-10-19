@@ -25,10 +25,11 @@ SCU 对 agent **只暴露少量工具**，核心是一个 JavaScript 执行入�
 能力全部通过 JavaScript API 提供，而不是每个能力一个工具。
 理由与代价见 [ADR-0002](../decisions/adr_0002_code_mode_surface.md)。
 
-首版只提供 MCP stdio 形态。是否需要独立 CLI 待定。
+首版只提供 MCP stdio 形态。是否需要面向 agent 会话的独立 CLI 待定；仓库里已有面向开发者的诊断命令（`scu permissions` / `apps` / `dump` / `identity`），它们不是这里讨论的接入形态。
 
-**已实现的只是其中的只读子集**，工具也不是 `js`：见 [MCP 接入面（只读档）](mcp_surface.md)。
-本文描述的 `js` 工具面、会话 API、动作与效果摘要仍是拟实施设计。
+**已实现的只是其中的一小部分**，工具也不是 `js`：见 [MCP 接入面](mcp_surface.md)——
+三个只读工具，加 `--actions` 时多一个 `click`（`AXPress`，带最小效果摘要）。
+本文描述的 `js` 工具面、会话 API、输入与设值、坐标动作、完整的效果摘要仍是拟实施设计。
 
 ## 会话 API
 
@@ -131,6 +132,10 @@ type Coordinates = { x: number; y: number; geometryToken: string };
 详见[编辑类操作语义](edit_semantics.md)。
 
 ## 动作效果
+
+> **P0 实际**：`click` 的效果摘要字段是 `delivered`、`observed`、`converged`、`treeChanged`、`targetChanged`、`noOpSuspected`、
+> `polls`、`elapsed`、`tokenInvalidated`，没有 `focusStolenBy` 与 `snapshotToken`（树变化后旧令牌失效，不发新令牌，由调用方重读）。
+> 见 [MCP 接入面](mcp_surface.md#click_tool)。下面的接口是拟实施设计。
 
 每个动作返回效果摘要，而不是空返回：
 

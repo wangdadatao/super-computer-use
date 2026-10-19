@@ -129,7 +129,7 @@ enum ScuTool: String, CaseIterable {
         ]
     }
 
-    static let defaultDepth = 12
+    static let defaultDepth = scuDefaultTreeDepth
 
     // MARK: - 执行
 

@@ -10,3 +10,6 @@ Package.resolved
 .idea/
 .vscode/
 *.swp
+
+# 覆盖率产物
+*.profraw

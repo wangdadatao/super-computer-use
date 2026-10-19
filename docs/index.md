@@ -14,8 +14,12 @@
 
 ## 当前阶段
 
-**P0 进行中：已有脚手架，核心机制尚未实现。** 仓库有一个 Swift package，
-实现了两进程通信、版本协商、权限检测、无障碍树读取，以及只读的 MCP stdio 服务（`scu mcp`，见 [MCP 接入面](interfaces/mcp_surface.md)）；元素身份注册、令牌、动作与效果摘要尚未实现，AI 目前只能读，不能操作。
+**P0 进行中：核心机制已有最小实现，出口门槛尚未全部通过。** 仓库有一个 Swift package，
+实现了两进程通信、版本协商、权限检测、无障碍树读取、快照令牌与按路径定位句柄、`AXPress` 点击与最小效果摘要、
+拒绝类目（`PolicyGate`），以及 MCP stdio 服务（`scu mcp`，见 [MCP 接入面](interfaces/mcp_surface.md)）。
+**默认只读，`scu mcp --actions` 才暴露 `click`。**
+**未实现**：句柄注册表（跨快照延续，按 K4 验证结果不实现）、输入与设值、坐标动作与坐标令牌、审批与租约、屏幕捕获、指示层、code mode。
+验证状态：令牌、效果、收敛、策略已在自制夹具上验证，收敛有已知缺口，身份 K4 按冻结规则不成立，见[测试策略](operations/testing.md#当前状态)。
 范围与出口门槛见 [ADR-0013](decisions/adr_0013_p0_vertical_slice.md)，
 已实现内容见[本地环境](operations/local_setup.md)。
 
@@ -37,4 +41,4 @@
 - [领域](domains/index.md)：核心术语与失效模型。读取时机：确认某个概念在 SCU 里的确切含义时。
 - [接口](interfaces/index.md)：协议面、目标发现与绑定、元素寻址格式、编辑类操作语义。读取时机：增删接口、写 agent 集成或客户端时。
 - [运维](operations/index.md)：本地开发环境、macOS 权限、测试策略。读取时机：搭建环境、排障、处理权限问题时。
-- [决策](decisions/index.md)：14 条 ADR，含对外部实现取舍的分析结论。读取时机：质疑「为什么这样设计」或要推翻某个既有选择时。
+- [决策](decisions/index.md)：15 条 ADR，含对外部实现取舍的分析结论。读取时机：质疑「为什么这样设计」或要推翻某个既有选择时。

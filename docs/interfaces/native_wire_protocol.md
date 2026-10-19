@@ -20,7 +20,7 @@ agent 侧的会话 API 见[协议总览](protocol_overview.md)，两者是不同
   （主体未被消费，已无法再对齐帧边界）。
 - **请求/应答**：每个请求帧带整数 `id`，应答帧回显同一个 `id`。当前同一连接上同时只有一个未决请求
   （动作在会话内串行，见[会话与控制租约](../architecture/session_and_lease.md)），
-  `id` 用于发现错位，而不是用于多路复用。
+  `id` 用于发现错位，而不是用于多路复用。**例外**：超长帧与无法解码的帧没有可回显的 `id`，原生层用 `id: 0` 回 `internal_error` 后关闭连接；能解码的请求（握手前、越界、畸形定位器）正常回显。
 - **写失败**：对端已关闭时写入必须失败为可处理的错误，**不得让进程死于 SIGPIPE**。
   实现上在每个 socket 上设置 `SO_NOSIGPIPE`。协议层把传输失败统一映射为
   `platform_unavailable`，不向调用方泄漏底层错误类型。
@@ -62,6 +62,8 @@ agent 侧的会话 API 见[协议总览](protocol_overview.md)，两者是不同
 | `stale` | `stale: StaleDetail` | `performAction`：定位器与界面现状不符，**没有执行任何动作** |
 | `failure` | `error: WireError` | 任意请求 |
 
+`frame` 是 `{x, y, width, height}`（均为浮点数）。
+
 `AXNode` 是原生层如实返回的平台事实：`role`、`subrole?`、`title?`、`identifier?`、`value?`、
 `roleDescription?`、`description?`、`enabled?`、`frame?`、`childCount?`、`children`。可选字段缺失时**省略**，不填空串。
 原生层不判断元素"是不是同一个"，那是协议层的职责。
@@ -100,9 +102,10 @@ agent 侧的会话 API 见[协议总览](protocol_overview.md)，两者是不同
 - 原生进程**只接受一条连接**，对端关闭即退出，不常驻。
   生命周期策略是否改为常驻，是[系统总览](../architecture/system_overview.md#尚未确定的部分)中的未定项。
 - 协议层启动原生进程后，原生进程等待连接有上限（默认 10 秒）。超时则自行退出，
-  避免协议层在连接前死亡时留下孤儿进程。
+  避免协议层在连接前死亡时留下孤儿进程。协议层这一侧最多重试连接约 3 秒（60 次、间隔 50 毫秒），
+  连不上就以连接超时失败，由会话层收成 `platform_unavailable`；两侧的等待时间并不对齐。
 - 对端在半帧之后关闭：视为正常关闭，原生进程退出。
-- 协议层等待应答有**超时**：读树的上限为 `budgetMs` + 10 秒，其他请求 30 秒。
+- 协议层等待应答有**超时**：读树的上限为 `budgetMs` + 10 秒（其中单次 AX 调用另有 2 秒的消息超时，在原生层内部），其他请求 30 秒。
   超时意味着原生进程无响应，连接无法再对齐帧边界，协议层关闭连接、终止子进程，
   以 `platform_unavailable` 失败。
 - 协议层的关闭路径必须终止子进程并清理 socket 目录，**包括失败退出的路径**。
@@ -126,7 +129,8 @@ agent 侧的会话 API 见[协议总览](protocol_overview.md)，两者是不同
 补齐时需同步本文与实现。
 
 原生层在本边界上产生的错误码：`system_permission_missing`、`target_missing`、
-`protocol_version_mismatch`、`internal_error`。`platform_unavailable` 由协议层在
+`protocol_version_mismatch`、`internal_error`，以及 `AXPress` 失败时的 `unsupported_operation`
+（平台报动作不支持、属性不支持或未实现）与 `action_failed`（其余平台错误，含 `apiDisabled`）。`platform_unavailable` 由协议层在
 **连接失败或对端消失**时本地生成，不经线路传输。
 
 越界参数、无法解析的帧、握手前的请求目前都归入 `internal_error`。
@@ -144,11 +148,13 @@ agent 侧的会话 API 见[协议总览](protocol_overview.md)，两者是不同
 ## 当前实现范围
 
 已实现并有测试：帧编解码、超长头、半帧、畸形 JSON、未知类型、缺字段、握手前请求、
-版本错配、越界深度与预算、对端关闭后写入、无人连接超时、读取应答超时、遍历预算耗尽、
+版本错配、越界深度与预算、对端关闭后写入、无人连接超时、读取应答的等待可读超时、遍历预算耗尽、
 `childCount` 的真实性（预算耗尽时记真实数量）、定位器每一类失效（子节点数、角色、核对键、下标越界、
 子节点读不到）、畸形定位器被拒绝且连接保持、`performAction` 对真实访达的 `verify` 与篡改检测。
 
-`press` 对真实应用的投递尚未在自动化测试中覆盖（需要夹具应用，见 ADR-0013 追加记录）。
+`press` 对真实应用的投递由 `FixtureTests` 覆盖（真实 `scu-native`、真实夹具进程 `scu-fixture`、真实 `AXPress`；见 [夹具验证](../../verification/2026-10-18-fixture-validation.md)）。第三方应用（如 Electron）上未覆盖。
+
+读取应答超时的**映射**（关闭连接、终止子进程、`platform_unavailable`）在 `NativeClient.call` 中实现；测试只覆盖到等待可读时抛出超时，没有覆盖后面的清理路径。
 
 消息目录只覆盖 P0 需要的五种请求。屏幕捕获、变更通知等随 P0 推进增加，
 每增加一种都要在此登记并视情况提升版本号。

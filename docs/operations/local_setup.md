@@ -19,8 +19,8 @@ macOS       arm64, macOS 26.x
 
 ```bash
 swift build          # 构建 scu 与 scu-native
-swift test           # 线协议、服务端否定路径、握手集成测试
-scripts/check.sh     # 提交前统一检查：文档 + 构建 + 测试 + 命令行冒烟
+swift test           # 线协议、原生否定路径与定位器、会话与策略、元素表与身份、MCP 管道，以及夹具上的真实点击验证（需要辅助功能权限）
+scripts/check.sh     # 提交前统一检查：文档 + 构建 + 测试 + 命令行与 MCP 冒烟
 ```
 
 启用 pre-commit，让每次提交自动运行统一检查：
@@ -41,8 +41,8 @@ git config core.hooksPath scripts/hooks
 
 ## 当前已实现（P0 脚手架）
 
-以下行为已实现并由测试或手动运行覆盖。**这不等于 P0 完成**，
-元素身份、令牌、点击与效果摘要尚未开始。
+以下行为已实现并由测试或手动运行覆盖。**这不等于 P0 完成**：出口门槛尚未全部通过，
+收敛有已知缺口，身份 K4 验证不成立（见[测试策略](testing.md#当前状态)）。
 
 | 内容 | 位置 | 状态 |
 | --- | --- | --- |
@@ -58,12 +58,18 @@ git config core.hooksPath scripts/hooks
 | 树的文本输出与字段覆盖率统计 | `TreeFormatter`、`FieldCoverage` | 已实现，覆盖率有测试 |
 | 文本化元素表（本次读取内的句柄、转义、层级优先的元素数上限、`focus` 展开） | `ElementTable` | 已实现，有测试 |
 | MCP stdio 服务：只读的 `check_permissions`、`list_apps`、`get_ax_state`；加 `--actions` 额外提供 `click`（见 [MCP 接入面](../interfaces/mcp_surface.md)） | `SCUMCP`、`scu mcp`、`NativeSession` | 已实现，有单元测试与真实管道的端到端测试；只读工具已在 Cursor 一个宿主里跑通。**`click` 已在自制夹具应用 `scu-fixture` 上用真实 `AXPress` 验证过（`swift test --filter FixtureTests`，见 [夹具验证](../../verification/2026-10-18-fixture-validation.md)），尚未在 Electron 等真实第三方应用上验证**（见 [MCP 接入面的未验证项](../interfaces/mcp_surface.md#未验证项)） |
+| 会话：快照令牌签发与复用、按路径加核对键定位句柄、`click`（`AXPress`）、轮询式收敛与效果摘要（[ADR-0015](../decisions/adr_0015_handle_resolution_by_path.md)） | `DesktopSession` | 已实现，有假读取器的单元测试、真实访达的 `verify` 测试与夹具上的真实点击测试 |
+| 定位器：沿路径逐层核对子节点数与角色，再核对目标核对键，通过后 `press` / `verify` | `AXLocator`、`NativeServer` | 已实现，有测试（线协议 v3 的 `performAction`） |
+| 拒绝类目与宿主祖先链（只拒绝动作，读取不受限） | `PolicyGate` | 已实现，有测试；真实终端用例仅在终端运行时才执行 |
+| 夹具应用（按钮、延迟变化、动画、被遮挡等场景），验证用，不是产品的一部分 | `scu-fixture`、`FixtureTests` | 已实现；见 [夹具验证](../../verification/2026-10-18-fixture-validation.md) |
 | 进程被信号终止或 SIGKILL 时回收原生进程与 socket 目录 | `NativeClient.terminateAllForShutdown`、`scu-native` 退出清理 | 已实现，由 `scripts/check.sh` 冒烟覆盖 |
 | K1~K4 候选键与匹配键计算（纯函数，无状态） | `IdentityAnalyzer` | 已实现，有测试（含唯一性的伪随机性质测试） |
 | 各档位分布统计（整树 / 窗口内可交互 / 菜单栏 / 按 role），K1 与标签的多种口径 | `IdentityReport`、`scu identity` | 已实现。**只呈现分布，不给成败结论**（ADR-0013「基线先行」） |
 
-**尚未实现**：动作（点击、输入、设值）、策略层、屏幕捕获；句柄注册表（跨快照延续，**暂缓**，见 [ADR-0013](../decisions/adr_0013_p0_vertical_slice.md#暂缓句柄注册表)）、
-快照令牌、动作注入、效果摘要。
+**尚未实现**：输入与设值、坐标动作与坐标令牌、审批与租约、屏幕捕获、指示层；
+句柄注册表（跨快照延续，K4 验证不成立，**不实现**，见 [ADR-0013](../decisions/adr_0013_p0_vertical_slice.md#暂缓句柄注册表)）。
+
+**`verify`（只定位核对、不执行）在原生层与会话层已实现，没有向 MCP 暴露。**
 
 命令行：
 
@@ -80,8 +86,8 @@ scu identity --pid <pid> [--depth N] [--budget-ms M] [--by-role] [--show-k4]
                                     # --by-role 按 role 拆分，--show-k4 列出落入 K4 的窗口内可交互元素
 ```
 
-`dump` 输出的是原始树，**不是**最终的元素表格式（见[元素寻址](../interfaces/element_addressing.md)）。
-此时还没有句柄。
+`dump` 输出的是原始树，**不是**最终的元素表格式（见[元素寻址](../interfaces/element_addressing.md)），没有句柄；
+句柄在 MCP `get_ax_state` 的元素表里。
 
 ### 接入 MCP 宿主
 
@@ -95,6 +101,8 @@ scu identity --pid <pid> [--depth N] [--budget-ms M] [--by-role] [--show-k4]
   }
 }
 ```
+
+要让 AI 能点击，把 `args` 改成 `["mcp", "--actions"]` 并重载（`click` 会真实作用于应用；第三方应用上的点击尚未验证，见 [MCP 接入面的未验证项](../interfaces/mcp_surface.md#unverified)）。
 
 **辅助功能权限归属于启动 `scu mcp` 的宿主**，不是整台机器。接入后第一件事是让模型调用
 `check_permissions`；未授权时按[macOS 权限](permissions.md)给宿主授权。
@@ -115,7 +123,7 @@ printf '%s\n' \
   也可能只是窗口状态不同）。正式验证前需要确定预热方式。若最终需要主动设置
   `AXManualAccessibility` / `AXEnhancedUserInterface`，那会改变目标应用的状态，属有副作用的操作，需先设计。
 - **`description` 是否纳入 K2 待定。** 后端已读取 `AXDescription`，分布统计并列两种口径；
-  基线显示它对 K4 比例的改善有限，见 [基线记录](../../verification/2026-10-16-baseline-identity.md)。
+  基线显示它对 K4 比例的改善有限（见 [基线记录](../../verification/2026-10-16-baseline-identity.md)）；2026-10-18 的正式验证里，计入后访达 54.2%→12.5%、活动监视器 48.4%→25.8%、Cursor 57.9%→39.5%（[K4 验证](../../verification/2026-10-18-identity-k4.md)），是否采用待定。
 - **客户端被终止时，原生进程若正在读树，会继续工作到时间预算耗尽**（最长 `budgetMs`），之后退出并回收 socket 目录。`scu mcp` 收到 SIGTERM / SIGINT / SIGHUP 时会立即终止原生进程；SIGKILL 则只能靠原生进程自行发现连接断开。
 
 ## 首次运行的顺序
@@ -125,11 +133,11 @@ printf '%s\n' \
 2. **`swift build`，然后 `scu permissions`** 确认原生进程能看到权限。
 3. **导出第一份无障碍树样本**，选一个原生应用（建议访达或系统设置），人工确认结构合理。
 4. **导出一个 Electron 应用**，对比两种技术栈暴露的字段差异。
-5. 进入 P0 的元素身份工作，门槛见 [ADR-0013](../decisions/adr_0013_p0_vertical_slice.md#出口门槛)
-   与[测试策略](testing.md)。
+5. 运行 `swift test`（含夹具验证，需要辅助功能权限），门槛与当前结果见
+   [ADR-0013](../decisions/adr_0013_p0_vertical_slice.md#出口门槛)与[测试策略](testing.md#当前状态)。
 
-第 3、4 步的产出是身份键设计的依据。在拿到真实样本前，
-[元素身份](../architecture/element_identity.md)的字段选择属于假设。
+第 3、4 步的产出是身份键设计的依据；K4 正式验证已执行（不成立），
+见 [verification/2026-10-18-identity-k4.md](../../verification/2026-10-18-identity-k4.md)。
 
 ## 仍待定
 

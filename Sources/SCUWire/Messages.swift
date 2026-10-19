@@ -6,6 +6,8 @@ public let scuNativeProtocolVersion = 3
 
 /// `dumpTree` 允许的最大深度。超出时原生层拒绝，不做静默截断。
 public let scuMaxTreeDepth = 64
+/// `get_ax_state` 与 `scu dump` 共用的默认读取深度。
+public let scuDefaultTreeDepth = 12
 
 /// `dumpTree` 总时间预算的允许范围（毫秒）。超出范围被拒绝。
 public let scuTreeBudgetMsRange = 100...120_000

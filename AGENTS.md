@@ -3,7 +3,8 @@
 ## 项目定位
 
 SuperComputerUse（SCU）是一个开源桌面自动化服务。当前处于 P0：
-已有 Swift 脚手架（`Package.swift`、`Sources/`、`Tests/`），核心机制仍在实现中。
+已有 Swift 实现（`Package.swift`、`Sources/`、`Tests/`）：令牌、点击、拒绝类目与最小收敛轮询已实现，
+句柄注册表、输入与设值、坐标动作、审批、指示层未实现；出口门槛尚未全部通过。
 验证内嵌在 P0 里作为出口门槛，见 `docs/decisions/adr_0013_p0_vertical_slice.md`。
 项目目标是做对 AI 更好用的桌面操作工具（以 Codex / Grok Computer Use 为参照），
 度量方式与"优于"的声称条件见 `docs/decisions/adr_0014_positioning_ai_usability.md`；
@@ -25,10 +26,11 @@ SuperComputerUse（SCU）是一个开源桌面自动化服务。当前处于 P0�
 - 参考外部实现时只借鉴设计模式，不复制代码。文档中注明灵感来源。
 - **图示用 mermaid 内联在 markdown 中**，不使用外部图片。理由：可 diff、可版本控制、
   人和 agent 都能直接读。
-- **提交前运行 `scripts/check.sh`**：文档检查 + `swift build` + `swift test` + 命令行冒烟，
+- **提交前运行 `scripts/check.sh`**：文档检查 + `swift build` + `swift test` + 命令行与 MCP 冒烟（含 SIGKILL 回收），
   是唯一的提交前入口。启用 pre-commit：`git config core.hooksPath scripts/hooks`。
-  其中的 `scripts/check_docs.sh` 检查命名、H1 唯一性、链接可达性（含锚点）、
-  分类路由、ADR 字段、废弃术语、mermaid 语法与代码侧 `@project-doc` 锚点；
+  其中的 `scripts/check_docs.sh` 检查 `docs/` 下文件命名、H1 唯一性、链接可达性（含锚点）、
+  分类路由（含根目录路由各分类）、ADR 字段、废弃术语、显式 `<a id>` 唯一与格式、mermaid 语法与代码侧 `@project-doc` 锚点
+  （根目录 `docs_audit_*.md` 历史审计报告只查链接）；
   若本机安装了 `mmdc` 则一并做渲染验证。
 - **代码锚点**：在实现某份文档所描述的契约的手写入口处，加一行
   `// @project-doc docs/<path>.md#<id>`。`<id>` 必须是目标文档里 `<a id="..."></a>` 的显式 ID，

@@ -30,8 +30,9 @@
 
 ## 工具目录
 
-只读工具三个，带 `readOnlyHint: true`、`destructiveHint: false`；动作工具（仅 `--actions`）如实声明
-`readOnlyHint: false`、`destructiveHint: true`、`openWorldHint: true`。
+每个工具都带 `title` 与 `annotations`（含 `title`、`readOnlyHint`、`destructiveHint`、`idempotentHint`、`openWorldHint`）。
+只读工具三个：`readOnlyHint: true`、`destructiveHint: false`、`idempotentHint: true`、`openWorldHint: false`；
+动作工具（仅 `--actions`）如实声明 `readOnlyHint: false`、`destructiveHint: true`、`idempotentHint: false`、`openWorldHint: true`。
 
 | 工具 | 参数 | 作用 |
 | --- | --- | --- |
@@ -50,7 +51,10 @@
 2. 令牌：未知或已失效 → `stale_snapshot`；属于已切换走的目标 → `target_switched`；句柄不在快照里 → `element_gone`。
 3. 原生层沿路径核对（[ADR-0015](../decisions/adr_0015_handle_resolution_by_path.md)），不符 → `stale_snapshot`，**不执行**。
 4. 投递 `AXPress`。目标不支持 → `unsupported_operation`；平台报错 → `action_failed`。
-5. 事后观察：每 200 毫秒重读一次界面，**连续两次结构一致即收敛**，总上限 3 秒；与动作前比较。
+5. 事后观察：每 200 毫秒重读一次界面，**连续两次结构一致且这次读取未被截断**才算收敛；与动作前比较。
+   总上限 3 秒是**时钟上限，在每次重读完成之后才检查**：单次重读仍受该次的 `budget_ms`（默认 15 秒）约束，
+   所以大树上一次点击的耗时可以远超 3 秒（访达列表视图约 1.5 万个元素时，一次重读约 5 秒，已超过上限，只做一次重读就停止）。
+   这些参数是启发式初值，见 [ADR-0011 追加记录](../decisions/adr_0011_convergence_over_fixed_delay.md)。
 
 **返回的是观察到的效果，不是"成功"。** 第一行人话；第二行固定格式、可解析：
 
@@ -62,9 +66,9 @@ effect: delivered=true observed=true converged=true treeChanged=false targetChan
 | --- | --- | --- |
 | `delivered` | 平台没有报错。**不代表界面已经变化** | 恒为 true（失败时抛错，不返回摘要） |
 | `observed` | 事后成功重读过界面 | 重读失败时为 false（动作已投递，不报失败，免得调用方重复点击） |
-| `converged` | 连续两次重读结构一致 | 上限内一直在变化则为 false，此时读到的是中间状态 |
+| `converged` | 连续两次重读结构一致，且这次读取未被截断 | 上限内一直在变化、或树被截断，则为 false；此时读到的是中间状态或不完整的树 |
 | `treeChanged` | 与动作前相比结构是否变化 | 动作前或动作后的读取被截断，无法比较 |
-| `targetChanged` | 目标元素在稳定后的树里已不是原来那个 | 动作后的读取被截断 |
+| `targetChanged` | 最后一次重读的树里，目标已不在原路径上或核对键不符（**不要求已收敛**） | 最后一次重读被截断 |
 | `noOpSuspected` | 已收敛且结构完全没变：**疑似**空操作 | 同 `treeChanged` |
 
 结构变化时**调用所用的令牌作废**，但不签发新令牌，需要重新 `get_ax_state`；
@@ -86,7 +90,7 @@ effect: delivered=true observed=true converged=true treeChanged=false targetChan
 
 - **拒绝未声明的参数。** 拼错的参数名被静默忽略，调用方会以为生效了。
 - 整数参数接受小数部分为 0 的浮点数（部分客户端把 `12` 序列化成 `12.0`）。
-- 范围与默认值的来源是 `SCUWire` 的常量与 `ElementTable`，工具描述里的数字由它们生成，不手写。
+- 范围与默认值的来源：`budget_ms`、`max_elements` 来自 `SCUWire` 的常量与 `ElementTable`；`max_depth` 默认值来自 `SCUWire` 的 `scuDefaultTreeDepth`（`scu dump` 共用）。工具描述里的数字由它们生成，不手写。
 
 <a id="element_table_output"></a>
 
@@ -105,13 +109,15 @@ effect: delivered=true observed=true converged=true treeChanged=false targetChan
 （角色，`Button` 与 `AXButton` 等价；两个同时给出时需同时满足）：
 
 - 只展开**最外层**命中的子树（命中元素的后代即使也匹配，也不另起一段），最多 20 处，超出的只计数。
-- 每段子树前有一行 `@ 祖先链`，说明它在树的哪里；缩进相对该子树根从 0 起。
+- 每段子树前有一行祖先链，说明它在树的哪里：`@ ` 加各级祖先的 `角色` 或 `角色 "标签"`（标签取 title，否则 description），用 ` > ` 连接；命中的是树根时写 `@ （树根）`。缩进相对该子树根从 0 起。
 - 配额在各段之间按层级优先共享。
 - 句柄仍是**完整树**里的先序编号，所以同一次读取内，带 `focus` 与不带 `focus` 的输出里同一元素的句柄相同。
-  每次调用都重新读取。句柄与**令牌**配对：界面结构没变时，再次读取沿用同一个令牌，句柄编号也相同；
-  结构变了（含树被预算截断、两次截断位置不同）则签发新令牌，**旧令牌的句柄不能带到新令牌**。
+  每次调用都重新读取。句柄与**令牌**配对：同一目标应用、结构摘要不变且截断标志相同时，再次读取沿用同一个令牌，句柄编号也相同；
+  否则签发新令牌，**旧令牌的句柄不能带到新令牌**。结构摘要覆盖 role、subrole、title、identifier、value、roleDescription、description、enabled、
+  子节点数、深度与节点数，**不含 frame**：所以取值或启用状态变化也会换令牌，窗口移动不会。
+  会话只保留最近 16 个令牌，更早的与从未签发过的一样按 `stale_snapshot` 拒绝。
   引用句柄时必须同时给令牌；不确定时用 `focus` 的文本条件重新定位。
-- 没有命中不是错误；标题行写明"没有元素匹配 focus"，树被截断时提醒"可能只是没读到"。
+- 没有命中不是错误；标题行写明"没有元素匹配 focus。"，树被截断时追加"树不完整（见下），匹配的元素可能没读到。"。
 
 `focus` 不缓存：每次调用都重新读取整棵树，所以展开一块的耗时与概览相同。
 
@@ -123,12 +129,14 @@ effect: delivered=true observed=true converged=true treeChanged=false targetChan
 
 ### 完整性标注
 
-标题行 `# pid=<pid> 令牌 <令牌> 元素 <总数>` 之后可能跟这些**警告行**，调用方据此判断输出是否完整：
+标题行 `# pid=<pid> 令牌 <令牌> 元素 <总数>` 之后是句柄与令牌的配对说明（动作档写"用 click(token, handle) 点击。"，默认档写"目前没有工具接受句柄（动作档未开启）。"），
+再之后可能跟这些**警告行**，调用方据此判断输出是否完整：
 
 | 情形 | 标注 |
 | --- | --- |
 | 读取预算耗尽 | `⚠️ 已截断：… 毫秒的读取预算耗尽，树不完整` |
 | 树达到深度上限 | `⚠️ 已达深度上限 N：更深的节点未读取` |
+| 目标应用属于拒绝类目 | `⚠️ 策略：<应用> 属于拒绝类目 <id>，对它的动作会被拒绝（读取不受限）。`（不是完整性问题，但同样在标题区） |
 | 元素数超过 `max_elements` | 标题行写明"显示 N"与"按层级优先显示"，被折叠的元素行尾标 `(折叠 N)` |
 
 截断**不是错误**：返回的是真实读到的部分，并明确标注不完整。静默返回残缺的树会让模型把"没读到"当成"不存在"。
@@ -146,11 +154,20 @@ effect: delivered=true observed=true converged=true treeChanged=false targetChan
 而协议错误通常只被宿主当作故障处理。
 
 工具错误文本形如 `[system_permission_missing] 未授予系统权限：辅助功能（retry=after_user_action）`，
-`code` 取自[错误码表](error_taxonomy.md)，参数错误用 `invalid_argument`。
-**权限类错误附加一句宿主归属的提示**，其他错误不附加；按 `code` 分支，不解析 `message`。
+`code` 取自[错误码表](error_taxonomy.md)，参数错误用 `invalid_argument`。协议层与原生层的错误文本带 `（retry=…）`；
+`invalid_argument`（接入层自己的码）与兜底的 `internal_error` 没有。
+按 `code` 追加一段处置提示（按 `code` 分支，不解析 `message`）：
 
-`invalid_argument` 是接入层自己的码，**尚未登记进错误码表**：只读档的错误面还很小，
-等动作档引入更多接入层错误时一起整理。
+| `code` | 追加的提示 |
+| --- | --- |
+| `stale_snapshot`、`element_gone` | 重新 `get_ax_state` 取得新令牌与句柄；用 `focus` 按文本重新定位 |
+| `target_switched` | 令牌属于之前读取的另一个应用，对要操作的应用重新读取 |
+| `unsupported_operation` | 该元素不能被点击，可尝试父元素或子元素 |
+| `policy_denied` | 不可协商，不要重试或绕过，告知用户由他自己完成 |
+| `system_permission_missing` | 权限按宿主应用归属，给启动本服务的应用授予辅助功能权限 |
+
+`invalid_argument` 是接入层自己的码，已登记进[错误码表](error_taxonomy.md)的接入层一节（见该文）。
+另有一个到不了的 `tool_unavailable`：动作档未开启时 `click` 在 `MCPServer` 就按未知工具走 JSON-RPC `-32602`，不会进到工具层。
 
 <a id="jsonrpc_handling"></a>
 
@@ -161,7 +178,7 @@ effect: delivered=true observed=true converged=true treeChanged=false targetChan
 
 | 输入 | 行为 |
 | --- | --- |
-| `initialize` | 客户端请求的协议版本在支持列表内则原样回显，否则回复列表第一项。列表：`2025-06-18`、`2025-03-26`、`2024-11-05` |
+| `initialize` | 客户端请求的协议版本在支持列表内则原样回显，否则回复列表第一项。列表：`2025-06-18`、`2025-03-26`、`2024-11-05`。缺少 `protocolVersion` 参数时 -32602。应答还带 `capabilities.tools.listChanged=false` 与 `serverInfo`（`name: scu`，`version: 0.0.1-p0`） |
 | `ping` | 回复空结果 |
 | `tools/list`、`tools/call` | 见上文 |
 | 不带 `id` 的消息（通知） | 不回复，包括未知通知 |
@@ -198,6 +215,11 @@ socket 目录建在 `TMPDIR`（若设置且存在）或系统临时目录下。
 <a id="unverified"></a>
 
 ## 未验证项
+
+- **`click` 只在自制夹具 `scu-fixture` 上真实点击过，访达上只做过 `verify`（不点击）**；
+  没有在 Electron 等第三方应用上点击过，也没有经 Cursor 宿主调用过。夹具验证的结论与缺口见
+  [verification/2026-10-18-fixture-validation.md](../../verification/2026-10-18-fixture-validation.md)：
+  `AXPress` 不看遮挡；两秒后才出现的变化会被判为已收敛；同一容器里加一个兄弟就会令路径上的句柄被保守地拒绝。
 
 - **只在 Cursor 一个宿主里运行过**（2026-10-16，用户级 `~/.cursor/mcp.json`，macOS 26.6.2，Cursor 版本未记录）。
   观察到：握手成功；三个工具都被识别；`initialize` 的 `instructions` 被作为服务描述呈现给模型；

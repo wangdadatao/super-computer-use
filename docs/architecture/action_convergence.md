@@ -49,6 +49,23 @@ flowchart TD
 
 两个阈值都是启发式的，具体取值待实验确定。
 
+<a id="p0_implementation"></a>
+
+### P0 实际（已实现，启发式初值）
+
+P0 没有变更通知，也没有显式等待原语；点击之后用**轮询重读**近似：
+
+| 项 | 取值 |
+| --- | --- |
+| 轮询间隔 | 200 毫秒 |
+| 收敛条件 | 连续两次重读的结构摘要一致，**且这次读取未被截断** |
+| 总上限 | 3 秒的**时钟**上限，在每次重读完成之后检查（单次重读受 `budget_ms` 约束，大树上可能远超 3 秒） |
+| 结果 | `converged` / `treeChanged` / `targetChanged` / `noOpSuspected`；被截断时为 `unknown`，见 [MCP 接入面](../interfaces/mcp_surface.md#click_tool) |
+
+已知缺口：两次一致只说明 400 毫秒内没变，不说明加载已结束；夹具上两秒后才变化的场景被判为已收敛。
+记录见 [ADR-0011 追加记录](../decisions/adr_0011_convergence_over_fixed_delay.md) 与
+[夹具验证](../../verification/2026-10-18-fixture-validation.md)。下文关于变更通知与显式等待的描述是**未实现的设计**。
+
 ## 稳定信号
 
 判定"变化已停止"依赖可观测信号，按可靠性排序：

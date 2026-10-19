@@ -302,7 +302,19 @@ final class ScriptedReader: DesktopReader {
         guard let finder = try native.listApps().first(where: { $0.bundleId == "com.apple.finder" }) else { return }
 
         let session = DesktopSession(reader: native)
-        let state = try session.readState(pid: finder.pid, maxDepth: 12, budgetMs: 20_000)
+        // 访达偶尔在一瞬间读不到无障碍树（`target_missing`，2026-10-19 在提交钩子里遇到过一次，重跑即过）。
+        // 这是外部应用的瞬时状态，不是被测逻辑的问题：只对"读取"重试，不对判定重试。
+        var attempt = 0
+        var loaded: SessionState?
+        while loaded == nil {
+            do {
+                loaded = try session.readState(pid: finder.pid, maxDepth: 12, budgetMs: 20_000)
+            } catch let e as WireError where e.code == "target_missing" && attempt < 3 {
+                attempt += 1
+                Thread.sleep(forTimeInterval: 1.0)
+            }
+        }
+        let state = try #require(loaded)
         let total = ElementTable.flatten(state.reading.root).count
         #expect(total > 1)
 

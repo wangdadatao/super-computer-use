@@ -36,7 +36,7 @@ SCU 失败返回的结构、分类与可重试性。成功返回的形态见
 | --- | --- | --- |
 | 动作已投递但界面无变化 | 成功 | 事件确实送达了，只是没生效。这是信息，不是失败 |
 | 在收敛窗口内未观察到稳定 | 成功 | "还不知道"不等于"失败" |
-| 元素在快照中消失 | 成功 | 重新读取后元素不在了，是状态事实 |
+| 动作之后元素不在了 | 成功 | 动作后的重读里目标不在原路径上，是状态事实：效果摘要的 `targetChanged=true`。**与 `element_gone` 不同**——后者是动作**之前**句柄就不在令牌对应的快照里，动作没有执行，是错误 |
 | 策略判定为"需确认" | 失败 | 动作尚未执行，调用方必须处理 |
 
 前两项对应[动作收敛与等待](../architecture/action_convergence.md)的
@@ -82,11 +82,22 @@ interface ScuError {
 | `authorization_timeout` | policy | `after_user_action` | 授权提示超时未响应 |
 | `confirmation_denied` | policy | `no` | 用户在审批提示中明确拒绝 |
 | `confirmation_timeout` | policy | `after_user_action` | 审批提示超时未响应 |
-| `system_permission_missing` | platform | `after_user_action` | 系统权限未授予（辅助功能 / 屏幕录制） |
+| `system_permission_missing` | platform | `after_user_action` | 系统权限未授予（辅助功能；屏幕录制是设计目标，P0 尚未检测） |
 | `platform_unavailable` | platform | `immediate` | 原生层不可达或崩溃 |
 | `action_failed` | platform | `immediate` | 目标仍在、定位核对通过，但平台拒绝或未能完成动作（如 `AXPress` 返回 `cannotComplete`）。P0 新增，见 [ADR-0015](../decisions/adr_0015_handle_resolution_by_path.md) |
 | `protocol_version_mismatch` | boundary | `no` | 两侧协议版本不一致 |
 | `internal_error` | boundary | `immediate` | 未归类的内部故障 |
+
+**P0 实际发出的码**：`stale_snapshot`、`target_switched`、`element_gone`、`unsupported_operation`、`policy_denied`、
+`system_permission_missing`、`target_missing`、`platform_unavailable`、`action_failed`、`protocol_version_mismatch`、`internal_error`。
+`stale_geometry`、`ambiguous_reference`、`authorization_*`、`confirmation_*` 是设计目标，尚无构造它们的代码（坐标令牌、目标歧义、审批都未实现）。
+
+**接入层（MCP）自己的码**不经原生层，没有 `layer` 与 `retry`，工具文本里不带 `（retry=…）`：
+
+| code | 含义 |
+| --- | --- |
+| `invalid_argument` | 工具参数缺失、类型或范围不对、出现未声明参数。调用方改参数后重试 |
+| `tool_unavailable` | 保留码；P0 里到不了（动作档未开启时 `click` 在 JSON-RPC 层按未知工具被拒，见 [MCP 接入面](mcp_surface.md)） |
 
 `layer` 的语义是**调用方该找谁**：
 
