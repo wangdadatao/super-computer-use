@@ -30,6 +30,7 @@ verification/
 | `2026-10-17-read-latency.md` | 读树耗时：逐属性读取与批量读取的对比（性能测量，不是验证结论） |
 | `2026-10-18-identity-k4.md` | 元素身份 K4 比例的正式验证（3 个判定样本，结论不成立，限定见文内） |
 | `2026-10-18-fixture-validation.md` | 夹具应用上的令牌、动作效果、收敛、策略验证：哪些成立、哪些是缺口 |
+| `2026-10-19-token-reject-rate.md` | 令牌误拒率与重读成本：A/B 误拒 0/8，C 保守拒绝 8/8，D 改值点击后令牌失效 8/8 |
 
 ## 结论文件格式
 
@@ -38,12 +39,13 @@ verification/
 
 ## 当前状态
 
-**尚无任何假设被整体验证通过。** 有一份元素身份的基线记录
-（[2026-10-16-baseline-identity.md](2026-10-16-baseline-identity.md)，不是验证结论），
-和一份夹具上的验证记录（[2026-10-18-fixture-validation.md](2026-10-18-fixture-validation.md)，
-令牌语义成立、收敛有缺口）。元素身份的 K4 正式验证已执行（[2026-10-18-identity-k4.md](2026-10-18-identity-k4.md)），冻结规则下不成立。
+**P0 的出口门槛已全部满足或判定不适用（2026-10-19）。** 五份记录：元素身份基线
+（[2026-10-16](2026-10-16-baseline-identity.md)，不是结论）、读树耗时
+（[2026-10-17](2026-10-17-read-latency.md)）、夹具验证（[2026-10-18](2026-10-18-fixture-validation.md)）、
+K4 正式验证（[2026-10-18](2026-10-18-identity-k4.md)，不成立）、令牌误拒与重读成本
+（[2026-10-19](2026-10-19-token-reject-rate.md)，A/B 0/8、C 8/8、D 8/8）。
+指示层隔离（需要屏幕录制）等 P0 之外的假设仍未验证。
 门槛见 [ADR-0013](../docs/decisions/adr_0013_p0_vertical_slice.md)；
 权限状态见 [docs/operations/permissions.md](../docs/operations/permissions.md)。
-
-令牌误拒率的测量脚本已就绪（[scripts/measure_token_reject.py](../scripts/measure_token_reject.py)），
-口径见 ADR-0013 的 2026-10-19 追加记录；**尚未执行**，因此还没有对应的记录文件。
+真实第三方应用上的 `click` 与宿主接入仍是未验证项，见
+[MCP 接入面](../docs/interfaces/mcp_surface.md#未验证项)。
