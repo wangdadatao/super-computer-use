@@ -1,0 +1,78 @@
+# 真实第三方应用端到端：网易云音乐（2026-10-19）
+
+第一次在**真实第三方应用**上跑通「读取 → 找到元素 → 输入 → 按键 → 点击 → 确认效果」。
+此前的动作验证只有自制夹具；访达只做过不点击的 `verify`。
+
+## 采集环境
+
+| 项 | 值 |
+| --- | --- |
+| 系统 | macOS 26.6.2，arm64 |
+| 宿主 | pi agent 会话（launchd 下的 `node`）；辅助功能已授予（`scu permissions` 退出码 0） |
+| 应用 | 网易云音乐 `3.1.12`（build `3444`），`/Applications/NeteaseMusic.app` |
+| 二进制 | `Contents/MacOS/NeteaseMusic`，SHA-256 前缀 `e9c6b546…` |
+| 框架 | Chromium Embedded Framework `1162.0.2`（`otool -L`） |
+| SCU | 提交 `4ea05aa`，线协议 5 |
+| 屏幕录制 | 未授予（`screencapture` 失败），本记录不依赖截图 |
+
+## 方法
+
+1. **正常启动**：`open -a NeteaseMusic`，用 `get_ax_state` 读取。
+2. **尝试运行时开关**：对应用元素设置 `AXManualAccessibility` 与 `AXEnhancedUserInterface`。
+3. **带参数重启**：退出应用后
+   ```bash
+   open -a NeteaseMusic --args --force-renderer-accessibility
+   ```
+4. 重新读取；再用 MCP 动作完成搜索与播放：
+   - `type_text` 写入搜索框（一次调用）；
+   - `press_key(Return)` 提交搜索；
+   - `click`「单曲」区的「播放」按钮；
+   - 每次动作后重新读取，检查令牌与播放器状态。
+
+## 结果
+
+| 步骤 | 结果 |
+| --- | --- |
+| 正常启动下的 AX 树 | **窗口零子元素**：只有 `AXApplication`、`AXWindow`、`AXMenuBar` |
+| `AXManualAccessibility` | `attributeUnsupported`（-25205） |
+| `AXEnhancedUserInterface` | `notImplemented`（-25208） |
+| 带参数重启后的 AX 树 | **出现 `AXWebArea`**，整树 1511 个元素；找到 `AXTextField#132`（搜索框）与 `AXButton#129 "search"` |
+| 输入「梁静茹 暖暖」 | `type_text` 一次调用；`treeChanged=true`、`targetChanged=true`、令牌失效；字段值正好是 `梁静茹 暖暖`，**没有重复** |
+| 按 Return | 搜索结果出现（824 个元素，多条「暖暖 / 梁静茹」） |
+| 点击「单曲」区「播放」 | `treeChanged=true`；播放器出现 `pause` 图标与「暖暖 / 梁静茹」，菜单「暂停」可用 |
+| 确认播放状态 | 通过 AX 的 `pause` 与歌曲标题确认；**没有**验证实际音频输出 |
+
+## 观察
+
+1. **CEF 的运行时开关不生效，启动参数生效。** 该应用的窗口在正常启动下完全不暴露网页内容；
+   `--force-renderer-accessibility` 是唯一让它进入 AX 的已知方式。
+2. **中文输入成立且不需要输入法。** `type_text` 用 Unicode 键盘事件写入中文，一次调用只写一次。
+3. **动作后的令牌与效果摘要在真实网页 UI 上成立。** 输入与点击都返回 `treeChanged=true` 并使旧令牌失效；
+   重新读取后能继续下一步。
+4. **播放状态可以被 AX 核实。** 播放器从 `play` 变成 `pause`，并显示歌曲与歌手。
+5. **代价是重启应用。** 带参数启动会中断用户当前状态（本次中断了正在播放的歌）；
+   这是有副作用的操作，不能静默执行。
+
+## 一次操作事故（记录教训）
+
+在发现 AX 为空、还没加启动参数时，我用 `press_key(cmd+f)` + `type_text` 盲操作了一次；
+因为 AX 读不到搜索框，效果摘要只显示 `noOpSuspected=true`，我误判为"没生效"，又执行了一次，
+导致搜索框出现 `梁静茹 暖暖梁静茹 暖暖`。
+
+**这不在 SCU 的重复投递**：每次 `type_text` 只发一遍，是调用方（我）重复调用了两次。
+教训：对不暴露 AX 的应用，`noOpSuspected` 不能作为"没生效"的判断，更不能盲目重试。
+这条已写入 [skills/scu/SKILL.md](../skills/scu/SKILL.md)。
+
+## 限定
+
+- 只测了一个应用、一个版本（`3.1.12`）；其他 CEF/Electron 应用是否支持该参数未知。
+- 只验证了登录态、免费曲目下的搜索与播放；未测付费/版权受限曲目。
+- 没有验证实际音频输出，只用 AX 的播放器状态推断。
+- 正常启动下该应用仍然不可操作；带参数重启是前提。
+- 屏幕录制未授予，本次没有使用截图或坐标。
+
+## 影响
+
+- [ADR-0017](../docs/decisions/adr_0017_cef_accessibility_launch.md)：CEF/Chromium 应用的无障碍启动参数作为**需用户同意的应用级适配**。
+- [skills/scu/SKILL.md](../skills/scu/SKILL.md)：新增 CEF 应用的识别与处理步骤。
+- [MCP 接入面](../docs/interfaces/mcp_surface.md#未验证项)：真实应用上的动作验证状态更新。

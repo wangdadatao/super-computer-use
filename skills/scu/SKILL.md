@@ -140,6 +140,27 @@ effect: delivered=true observed=true converged=true treeChanged=false targetChan
 - **每步动作后重读**是设计使然（令牌会被值变化作废）。不要为了省调用而复用旧句柄。
 - 只读档不会拉起原生进程；`initialize` / `tools/list` 不需要权限。
 
+## CEF/Chromium 应用（网易云这类）
+
+有些应用（网易云音乐、部分 Electron 应用）正常启动时**不把界面暴露给无障碍**：
+`get_ax_state` 只能看到 `AXWindow`，没有子元素。先判断是不是这一类：
+
+- 窗口没有子元素、菜单栏之外读不到内容；
+- 应用 bundle 里有 `Chromium Embedded Framework.framework` 或 `Electron Framework.framework`。
+
+处理步骤（**必须先征得用户同意**，因为要退出并重启应用）：
+
+```bash
+pkill -TERM -x <应用进程名>   # 或让用户正常退出
+open -a "<应用名>" --args --force-renderer-accessibility
+```
+
+重启后重新 `get_ax_state`。出现 `AXWebArea` 就说明恢复成功，可以正常读、点、输入、设值。
+仍没有子元素时，如实告诉用户当前版本不支持该应用，**不要盲发按键或猜测坐标**。
+
+代价：重启会中断用户当前状态（播放、未保存内容）；参数是 Chromium 的开关，不保证所有应用透传。
+设计见 [ADR-0017](../../docs/decisions/adr_0017_cef_accessibility_launch.md)。
+
 ## 已知限制与失败模式
 
 - **不能启动应用**：目标没在运行就请用户打开。

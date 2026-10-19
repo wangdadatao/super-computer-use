@@ -243,12 +243,14 @@ socket 目录建在 `TMPDIR`（若设置且存在）或系统临时目录下。
 
 ## 未验证项
 
-- **`type_text` / `press_key` 只在自制夹具上验证过**：夹具的输入框与 Return 提交成立；
-  没有在真实应用上输入过，也没有验证输入法（IME）、组合键在需要真实修饰键事件的应用里的行为。
-  设计见 [ADR-0016](../decisions/adr_0016_input_and_keys.md)。
+- **真实应用上的动作只验证了一个**：网易云音乐 `3.1.12`（CEF），以 `--force-renderer-accessibility` 启动后，
+  `type_text`（中文）、`press_key(Return)`、`click` 与播放器状态核实均成立，见
+  [真实应用验证](../../verification/2026-10-19-real-app-netease.md)。
+  该应用**正常启动时不暴露 AX**；启动参数与用户同意见 [ADR-0017](../decisions/adr_0017_cef_accessibility_launch.md)。
+  其他第三方应用、Electron、输入法（IME）与坐标类场景仍未验证。
 
-- **`click` 只在自制夹具 `scu-fixture` 上真实点击过，访达上只做过 `verify`（不点击）**；
-  没有在 Electron 等第三方应用上点击过，也没有经 Cursor 宿主调用过。夹具验证的结论与缺口见
+- **`click` 除网易云（带 CEF 启动参数）外，只在自制夹具 `scu-fixture` 上真实点击过**；访达上只做过 `verify`（不点击）。
+  没有经 Cursor 宿主调用过动作工具。夹具验证的结论与缺口见
   [verification/2026-10-18-fixture-validation.md](../../verification/2026-10-18-fixture-validation.md)：
   `AXPress` 不看遮挡；两秒后才出现的变化会被判为已收敛；同一容器里加一个兄弟就会令路径上的句柄被保守地拒绝。
 

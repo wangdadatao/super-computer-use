@@ -31,6 +31,7 @@ verification/
 | `2026-10-18-identity-k4.md` | 元素身份 K4 比例的正式验证（3 个判定样本，结论不成立，限定见文内） |
 | `2026-10-18-fixture-validation.md` | 夹具应用上的令牌、动作效果、收敛、策略验证：哪些成立、哪些是缺口 |
 | `2026-10-19-token-reject-rate.md` | 令牌误拒率与重读成本：A/B 误拒 0/8，C 保守拒绝 8/8，D 改值点击后令牌失效 8/8 |
+| `2026-10-19-real-app-netease.md` | 真实第三方应用端到端（网易云 CEF）：正常启动无 AX，带 `--force-renderer-accessibility` 后读/输入/点击/播放核实成立 |
 
 ## 结论文件格式
 

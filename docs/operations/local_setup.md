@@ -123,6 +123,9 @@ printf '%s\n' \
 
 ### 已知缺口（P0 内待处理）
 
+- **CEF/Chromium 应用可能完全不暴露 AX。** 网易云音乐 `3.1.12` 正常启动时窗口零子元素；
+  以 `--force-renderer-accessibility` 重启后才出现 `AXWebArea`。这是需用户同意的应用级适配，
+  见 [ADR-0017](../decisions/adr_0017_cef_accessibility_launch.md)。
 - **Electron 应用的树大小随读取时机变化。** 同一个 Cursor 进程，较早一次读取 251 个元素，
   随后读取 706 个且含 `AXWebArea`。原因未查明（Chromium 可能在检测到辅助技术后才逐步暴露网页树，
   也可能只是窗口状态不同）。正式验证前需要确定预热方式。若最终需要主动设置
