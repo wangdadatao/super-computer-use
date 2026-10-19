@@ -14,7 +14,7 @@
 
 ## 当前阶段
 
-**P0 出口门槛已全部满足或判定不适用（2026-10-19），是否宣布完成待项目负责人确认。** 仓库有一个 Swift package，
+**P0 已完成（2026-10-19）：出口门槛全部满足或判定不适用。** 仓库有一个 Swift package，
 实现了两进程通信、版本协商、权限检测、无障碍树读取、快照令牌与按路径定位句柄、`AXPress` 点击与最小效果摘要、
 拒绝类目（`PolicyGate`），以及 MCP stdio 服务（`scu mcp`，见 [MCP 接入面](interfaces/mcp_surface.md)）。
 **默认只读，`scu mcp --actions` 才暴露 `click`。**
