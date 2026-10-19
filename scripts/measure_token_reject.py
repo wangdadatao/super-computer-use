@@ -27,6 +27,7 @@ import platform
 import re
 import subprocess
 import sys
+import tempfile
 import time
 from datetime import datetime
 
@@ -116,14 +117,36 @@ def list_apps(mcp):
     return apps
 
 
-def wait_fixture(mcp, deadline=20.0):
+def wait_fixture(mcp, fixture, stderr_file, deadline=30.0):
+    """等夹具出现在 list_apps 里。夹具提前退出或始终没出现时，把可诊断的信息一起报出来。"""
     start = time.time()
+    announced = start
+    last_apps = []
     while time.time() - start < deadline:
-        for pid, name, _ in list_apps(mcp):
+        last_apps = list_apps(mcp)
+        for pid, name, _ in last_apps:
             if "fixture" in name.lower():
                 return pid
+        if fixture.poll() is not None:
+            raise MeasurementError(
+                f"夹具进程已退出（退出码 {fixture.returncode}）。{fixture_stderr(stderr_file)}")
+        if time.time() - announced >= 5:
+            announced = time.time()
+            print("  仍在等待夹具窗口出现…", flush=True)
         time.sleep(0.3)
-    raise MeasurementError("没有在 list_apps 里看到 scu-fixture")
+    names = [name for _, name, _ in last_apps[-5:]]
+    raise MeasurementError(
+        f"没有在 list_apps 里看到 scu-fixture（夹具 pid {fixture.pid} 仍在运行：{fixture.poll() is None}）。"
+        f"最近看到的应用：{names}。{fixture_stderr(stderr_file)}")
+
+
+def fixture_stderr(handle):
+    if handle is None:
+        return ""
+    handle.flush()
+    handle.seek(0)
+    text = handle.read().strip()
+    return f"夹具 stderr：{text[-800:]}" if text else "夹具没有输出 stderr"
 
 
 def read_state(mcp, pid):
@@ -273,15 +296,16 @@ def main():
     if permission.returncode != 0:
         raise MeasurementError(f"scu permissions 失败（退出码 {permission.returncode}）：{permission.stdout.strip()}")
 
+    fixture_stderr_file = tempfile.TemporaryFile(mode="w+")
     fixture = subprocess.Popen(
-        [fixture_bin], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        [fixture_bin], stdout=subprocess.DEVNULL, stderr=fixture_stderr_file)
     a = b = None
     try:
         a = Mcp(scu)
         b = Mcp(scu)
         a.initialize()
         b.initialize()
-        pid = wait_fixture(a)
+        pid = wait_fixture(a, fixture, fixture_stderr_file)
         print(f"夹具 pid={pid}，每项 {args.rounds} 轮。窗口会在结束时关闭。\n", flush=True)
 
         result_a = phase_a(a, pid, args.rounds)
@@ -303,6 +327,7 @@ def main():
                 fixture.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 fixture.kill()
+        fixture_stderr_file.close()
 
     commit = subprocess.run(
         ["git", "-C", ROOT, "rev-parse", "--short", "HEAD"], text=True,
