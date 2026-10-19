@@ -84,8 +84,11 @@ swift build && swift test
 
 ## 给 agent 用
 
-MCP 宿主接入后，让 agent 读 [skills/scu/SKILL.md](skills/scu/SKILL.md)：
-何时用 SCU、核心循环（读 → 一个动作 → 重读）、动作选择、效果摘要与错误处理。
+两份给 agent 的文档：
+
+- [skills/scu/INSTALL.md](skills/scu/INSTALL.md)：安装、宿主配置、授权与自检（授权必须由人完成）
+- [skills/scu/SKILL.md](skills/scu/SKILL.md)：何时用、核心循环（读 → 一个动作 → 重读）、动作选择、效果摘要与错误处理
+
 动作档（`--actions`）才有 `click` / `type_text` / `press_key` / `set_value`。
 
 ## 文档

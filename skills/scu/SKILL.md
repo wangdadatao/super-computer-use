@@ -24,6 +24,9 @@ SCU 是一个 MCP 服务：读取 macOS 应用的无障碍树，并用 `AXPress`
 
 ## 第一次使用
 
+还没装好时先读 [INSTALL.md](INSTALL.md)：环境检查、构建、宿主配置、授权与自检。
+授权必须由人在系统设置里完成，agent 不能代做。
+
 1. 调用 `check_permissions`。**权限属于启动 MCP 服务的宿主应用**，不是整台机器。
    未授予时让用户给宿主（Cursor、终端等）授权，然后重启该宿主。
 2. `list_apps` 取 `pid`。它只列出已在运行、激活策略为 regular 的应用。
