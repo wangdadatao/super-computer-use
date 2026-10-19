@@ -2,7 +2,7 @@ import Foundation
 
 /// 协议层 ↔ 原生层的协议版本。单调递增整数，两侧必须完全相等（ADR-0012）。
 /// 编译期常量：不是运行时可变状态。
-public let scuNativeProtocolVersion = 4
+public let scuNativeProtocolVersion = 5
 
 /// `dumpTree` 允许的最大深度。超出时原生层拒绝，不做静默截断。
 public let scuMaxTreeDepth = 64
@@ -255,6 +255,8 @@ public enum Request: Sendable, Equatable {
     case typeText(pid: Int32, locator: ElementLocator, text: String)
     /// 向目标元素发送一个按键或组合键（先聚焦）。
     case pressKey(pid: Int32, locator: ElementLocator, key: String)
+    /// 通过无障碍接口直接写元素的值（要求元素声明 AXValue 可写）。
+    case setValue(pid: Int32, locator: ElementLocator, value: String)
 }
 
 public enum Response: Sendable, Equatable {
@@ -273,10 +275,10 @@ public enum Response: Sendable, Equatable {
 
 extension Request: Codable {
     private enum Key: String, CodingKey {
-        case type, protocolVersion, pid, maxDepth, budgetMs, locator, action, text, key
+        case type, protocolVersion, pid, maxDepth, budgetMs, locator, action, text, key, value
     }
     private enum Kind: String, Codable {
-        case hello, checkPermissions, listApps, dumpTree, performAction, typeText, pressKey
+        case hello, checkPermissions, listApps, dumpTree, performAction, typeText, pressKey, setValue
     }
 
     public init(from decoder: any Decoder) throws {
@@ -304,6 +306,11 @@ extension Request: Codable {
                 pid: try c.decode(Int32.self, forKey: .pid),
                 locator: try c.decode(ElementLocator.self, forKey: .locator),
                 key: try c.decode(String.self, forKey: .key))
+        case .setValue:
+            self = .setValue(
+                pid: try c.decode(Int32.self, forKey: .pid),
+                locator: try c.decode(ElementLocator.self, forKey: .locator),
+                value: try c.decode(String.self, forKey: .value))
         }
     }
 
@@ -335,6 +342,11 @@ extension Request: Codable {
             try c.encode(pid, forKey: .pid)
             try c.encode(locator, forKey: .locator)
             try c.encode(key, forKey: .key)
+        case .setValue(let pid, let locator, let value):
+            try c.encode(Kind.setValue, forKey: .type)
+            try c.encode(pid, forKey: .pid)
+            try c.encode(locator, forKey: .locator)
+            try c.encode(value, forKey: .value)
         }
     }
 }

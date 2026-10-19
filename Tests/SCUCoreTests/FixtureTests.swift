@@ -251,6 +251,32 @@ struct FixtureTests {
         #expect(value == "hello")
     }
 
+    @Test func setValueWritesTheFieldDirectly() throws {
+        let rig = try Rig()
+        defer { rig.stop() }
+        let st = try rig.read()
+        let field = try rig.handle(identifier: "input", in: st)
+        let report = try rig.session.setValue(token: st.token.value, handle: field, value: "written")
+        #expect(report.delivered)
+        #expect(report.treeChanged == true)
+        #expect(report.tokenInvalidated)
+        let after = try rig.read()
+        let value = ElementTable.flatten(after.reading.root).first { $0.node.identifier == "input" }?.node.value
+        #expect(value == "written")
+    }
+
+    @Test func setValueOnAButtonIsUnsupportedAndKeepsTheToken() throws {
+        let rig = try Rig()
+        defer { rig.stop() }
+        let st = try rig.read()
+        let button = try rig.handle("NoOp", in: st)
+        rig.expectCode("unsupported_operation") {
+            _ = try rig.session.setValue(token: st.token.value, handle: button, value: "x")
+        }
+        // 动作没有执行，令牌仍然有效。
+        _ = try rig.session.act(token: st.token.value, handle: button, action: .verify)
+    }
+
     @Test func pressingReturnInTheFieldSubmitsIt() throws {
         let rig = try Rig()
         defer { rig.stop() }

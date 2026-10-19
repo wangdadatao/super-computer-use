@@ -17,6 +17,7 @@ final class ScriptedReader: DesktopReader {
     private(set) var actionCalls: [(pid: Int32, locator: ElementLocator, action: ActionKind)] = []
     private(set) var typed: [(pid: Int32, locator: ElementLocator, text: String)] = []
     private(set) var pressed: [(pid: Int32, locator: ElementLocator, key: String)] = []
+    private(set) var written: [(pid: Int32, locator: ElementLocator, value: String)] = []
     /// 动作发生时执行，用来模拟"界面被这次动作改变了"。
     var onAction: (() -> Void)?
 
@@ -44,6 +45,12 @@ final class ScriptedReader: DesktopReader {
 
     func pressKey(pid: Int32, locator: ElementLocator, key: String) throws -> ActionOutcome {
         pressed.append((pid, locator, key))
+        onAction?()
+        return try action.get()
+    }
+
+    func setValue(pid: Int32, locator: ElementLocator, value: String) throws -> ActionOutcome {
+        written.append((pid, locator, value))
         onAction?()
         return try action.get()
     }
@@ -106,6 +113,18 @@ final class ScriptedReader: DesktopReader {
             _ = try s.pressKey(token: a.token.value, handle: 3, key: "Return")
         }
         #expect(r.pressed.isEmpty)
+    }
+
+    @Test func setValueWritesTheValueAndInvalidatesTheToken() throws {
+        let (s, r) = session()
+        let a = try read(s)
+        r.onAction = { r.tree = TreeReading(root: Self.sampleTree(okTitle: "新值"), truncated: false) }
+        let report = try s.setValue(token: a.token.value, handle: 3, value: "新值")
+        #expect(report.delivered)
+        #expect(report.treeChanged == true)
+        #expect(report.tokenInvalidated)
+        #expect(r.written.count == 1)
+        #expect(r.written[0].value == "新值")
     }
 
     @Test func pressKeyUsesTheSameTargetAndReportsTheEffect() throws {

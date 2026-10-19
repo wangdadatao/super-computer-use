@@ -60,6 +60,33 @@ extension AXBackend {
         }
     }
 
+    /// 通过无障碍接口直接写元素的值。**要求元素声明 AXValue 可写**，否则拒绝——
+    /// 不自动回退到逐字输入：两者的副作用不同（edit_semantics.md）。
+    public static func setValue(pid: Int32, locator: ElementLocator, value: String) throws -> ActionResult {
+        guard value.count <= inputTextLimit else {
+            throw WireError.internalError("值过长：\(value.count) 个字符，上限 \(inputTextLimit)")
+        }
+        switch try locateTarget(pid: pid, locator: locator) {
+        case .stale(let detail):
+            return .stale(detail)
+        case .found(let element):
+            var settable = DarwinBoolean(false)
+            let query = AXUIElementIsAttributeSettable(element, kAXValueAttribute as CFString, &settable)
+            guard query == .success, settable.boolValue else {
+                throw WireError.unsupportedOperation("元素的 AXValue 不可写，不能设值")
+            }
+            let status = AXUIElementSetAttributeValue(element, kAXValueAttribute as CFString, value as CFString)
+            switch status {
+            case .success:
+                return .acted
+            case .attributeUnsupported, .notImplemented, .actionUnsupported:
+                throw WireError.unsupportedOperation("设值失败：\(axErrorName(status))")
+            default:
+                throw WireError.actionFailed("设值失败：\(axErrorName(status))")
+            }
+        }
+    }
+
     // MARK: - 定位与聚焦
 
     /// 定位目标并检查可访问性。返回 `.stale` 时不执行任何动作。

@@ -94,6 +94,20 @@ v1 第一项实现两个动作：
 - 测试：按键解析单元测试、会话层令牌/效果测试、夹具上的真实输入与提交测试
 - [edit_semantics](../interfaces/edit_semantics.md) 的"三种写入路径"中，逐字输入已实现，设值待做
 
+## 追加记录（2026-10-19，设值）
+
+`set_value` 已实现，补完"输入"这一项。与逐字输入的差别按
+[edit_semantics](../interfaces/edit_semantics.md) 的约定：
+
+- 要求元素声明 `AXValue` 可写（`AXUIElementIsAttributeSettable`）；不可写时返回 `unsupported_operation`，
+  **不回退到逐字输入**——两者的副作用不同。
+- 不需要聚焦，也不经过键盘与输入法；因此不触发自动完成、实时校验与按键处理。
+- 空字符串是合法值（清空字段），不会被当作"未给出"。
+- 值变化同样进入结构摘要，**令牌作废**；效果摘要与点击共用。
+- 错误归类：不可写 → `unsupported_operation`；平台拒绝 → `action_failed`。
+
+至此 v1 的「点击、输入、设值」都已实现。
+
 ## 相关文档
 
 - [编辑类操作语义](../interfaces/edit_semantics.md)

@@ -42,6 +42,7 @@
 | `click`（仅 `--actions`） | `token`、`handle`（均必填） | 对句柄执行 `AXPress`；见下 |
 | `type_text`（仅 `--actions`） | `token`、`handle`、`text`（均必填） | 先聚焦元素，再把文本逐字输入；见下 |
 | `press_key`（仅 `--actions`） | `token`、`handle`、`key`（均必填） | 先聚焦元素，再发送按键或组合键；见下 |
+| `set_value`（仅 `--actions`） | `token`、`handle`、`value`（均必填） | 通过无障碍接口直接写值，要求元素可写；见下 |
 
 <a id="click_tool"></a>
 
@@ -82,7 +83,7 @@ effect: delivered=true observed=true converged=true treeChanged=false targetChan
 
 <a id="input_tools"></a>
 
-### `type_text` 与 `press_key`
+### `type_text`、`press_key` 与 `set_value`
 
 两者都要求**显式的目标元素**（`token` + `handle`），顺序与 `click` 相同：
 策略 → 令牌 → 原生层沿路径核对 → 聚焦该元素 → 投递键盘事件 → 事后观察。
@@ -95,7 +96,9 @@ effect: delivered=true observed=true converged=true treeChanged=false targetChan
 - `press_key` 的键名用 `+` 分隔，修饰键顺序无关：`Return`、`Tab`、`esc`、`cmd+c`、`shift+left`。
   修饰键用事件 `flags` 表达；每次都是 down + up，**不跨动作保持按住状态**。
 - 不认识的键名、空键名、多个主键、空文本都会被拒绝，不猜测；元素不接受焦点时返回 `unsupported_operation`。
-- 效果摘要与令牌规则与 `click` 相同：输入会改值，所以**通常每次输入后都要重读**。
+- `set_value` 走无障碍设值：**要求元素声明 `AXValue` 可写**，否则 `unsupported_operation`，
+  不回退到逐字输入；不需要聚焦，不经过键盘与输入法；空串表示清空字段。
+- 效果摘要与令牌规则与 `click` 相同：输入与设值都会改值，所以**通常每次动作后都要重读**。
 
 两者的设计取舍见 [ADR-0016](../decisions/adr_0016_input_and_keys.md)。
 

@@ -16,6 +16,7 @@ final class FakeReader: DesktopReader {
     private(set) var actionCalls: [(pid: Int32, locator: ElementLocator, action: ActionKind)] = []
     private(set) var typed: [(pid: Int32, locator: ElementLocator, text: String)] = []
     private(set) var pressed: [(pid: Int32, locator: ElementLocator, key: String)] = []
+    private(set) var written: [(pid: Int32, locator: ElementLocator, value: String)] = []
 
     func checkPermissions() throws -> Bool { try permissions.get() }
     func listApps() throws -> [AppInfo] { try apps.get() }
@@ -33,6 +34,10 @@ final class FakeReader: DesktopReader {
     }
     func pressKey(pid: Int32, locator: ElementLocator, key: String) throws -> ActionOutcome {
         pressed.append((pid, locator, key))
+        return try action.get()
+    }
+    func setValue(pid: Int32, locator: ElementLocator, value: String) throws -> ActionOutcome {
+        written.append((pid, locator, value))
         return try action.get()
     }
 }
@@ -406,7 +411,7 @@ extension JSONValue {
         let read = t.callTool(s, "get_ax_state", ["pid": 42])
         let tok = token(from: read)
         #expect(tok.hasPrefix("s"))
-        #expect(read.text.contains("用 click(token, handle) 点击，或用 type_text / press_key 输入"))
+        #expect(read.text.contains("用 click(token, handle) 点击，用 type_text / press_key 输入"))
         let r = t.callTool(s, "click", ["token": .string(tok), "handle": 2])
         #expect(!r.isError)
         #expect(r.text.contains("AXButton#2"))
@@ -453,6 +458,36 @@ extension JSONValue {
         #expect(r.text.contains("投递按键"))
         #expect(reader.pressed.count == 1)
         #expect(reader.pressed[0].key == "Return")
+    }
+
+    @Test func setValueIsExposedAndUsesTokenAndReportsTheEffect() {
+        let (t, s, reader) = rig(actions: true)
+        #expect(toolNames(t, s).contains("set_value"))
+        let read = t.callTool(s, "get_ax_state", ["pid": 42])
+        let r = t.callTool(s, "set_value", [
+            "token": .string(token(from: read)), "handle": 3, "value": "written",
+        ])
+        #expect(!r.isError)
+        #expect(r.text.contains("投递设值"))
+        #expect(reader.written.count == 1)
+        #expect(reader.written[0].value == "written")
+    }
+
+    @Test func setValueAcceptsAnEmptyValueAndValidatesArguments() {
+        let (t, s, reader) = rig(actions: true)
+        let tok = token(from: t.callTool(s, "get_ax_state", ["pid": 42]))
+        let cleared = t.callTool(s, "set_value", ["token": .string(tok), "handle": 3, "value": ""])
+        #expect(!cleared.isError)
+        #expect(reader.written.count == 1 && reader.written[0].value == "")
+
+        for args: JSONValue in [
+            ["token": .string(tok), "handle": 3],
+            ["token": .string(tok), "handle": 0, "value": "x"],
+            ["token": .string(tok), "handle": 3, "value": "x", "extra": true],
+        ] {
+            let r = t.callTool(s, "set_value", args)
+            #expect(r.isError && r.text.hasPrefix("[invalid_argument]"), "\(args)")
+        }
     }
 
     @Test func inputArgumentsAreValidated() {

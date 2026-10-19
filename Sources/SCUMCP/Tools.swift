@@ -12,6 +12,7 @@ enum ScuTool: String, CaseIterable {
     case click
     case typeText = "type_text"
     case pressKey = "press_key"
+    case setValue = "set_value"
 
     var isAction: Bool { self != .checkPermissions && self != .listApps && self != .getAXState }
 
@@ -27,6 +28,7 @@ enum ScuTool: String, CaseIterable {
         case .click: return "点击元素"
         case .typeText: return "向元素输入文本"
         case .pressKey: return "向元素发送按键"
+        case .setValue: return "直接写入元素的值"
         }
     }
 
@@ -69,11 +71,20 @@ enum ScuTool: String, CaseIterable {
                 必须同时给出 get_ax_state 输出的令牌与句柄；令牌失效、目标对不上或应用属于拒绝类目时不会执行。\
                 返回的是**观察到的效果**，不是"成功"的保证；结构变化时旧令牌作废。
                 """
+        case .setValue:
+            return """
+                直接把值写入指定元素（无障碍设值）。会改变应用的状态。\
+                这是默认的写入路径：不经过键盘与输入法，速度快、不触发按键处理；\
+                因此也不会触发自动完成、实时校验这类"输入过程中"的行为。\
+                只有元素声明了可写的 AXValue 时才执行；不支持时返回 unsupported_operation，\
+                不会自动改成逐字输入（两者的副作用不同）。必须给出令牌与句柄；\
+                值变化后令牌作废，需要重新 get_ax_state。
+                """
         case .getAXState:
             return """
                 读取指定应用的无障碍树，返回文本化元素表。只读，不会操作应用。\
                 每行一个元素，缩进表示层级，格式 [角色#句柄] "标题" 属性…。\
-                输出带一个令牌，句柄与令牌配对、只在该令牌有效期内可用（界面结构变化后令牌失效）；click / type_text / press_key（仅动作档提供）接受它们。\
+                输出带一个令牌，句柄与令牌配对、只在该令牌有效期内可用（界面结构变化后令牌失效）；click / type_text / press_key / set_value（仅动作档提供）接受它们。\
                 读取有总时间预算，耗尽时输出会明确标注"已截断"。\
                 元素多于 max_elements 时按层级优先显示（先看整体结构，不是先序的前 N 个），\
                 被折叠的元素行尾标 (折叠 N)，表示其下还有 N 个后代未显示。\
@@ -123,6 +134,17 @@ enum ScuTool: String, CaseIterable {
                     ],
                 ],
                 "required": ["token", "handle", "key"],
+                "additionalProperties": false,
+            ]
+        case .setValue:
+            return [
+                "type": "object",
+                "properties": [
+                    "token": ["type": "string", "description": "get_ax_state 标题行里的令牌"],
+                    "handle": ["type": "integer", "minimum": 1, "description": "要写入的元素句柄"],
+                    "value": ["type": "string", "maxLength": 10000, "description": "要写入的值"],
+                ],
+                "required": ["token", "handle", "value"],
                 "additionalProperties": false,
             ]
         case .getAXState:
@@ -271,6 +293,19 @@ enum ScuTool: String, CaseIterable {
                 }
                 let pressed = try session.pressKey(token: token, handle: handle, key: key)
                 return Outcome(text: Self.actionText(pressed, handle: handle, verb: "按键"), isError: false)
+
+            case .setValue:
+                try Self.requireNoExtra(args, allowed: ["token", "handle", "value"])
+                guard let token = try Self.string(args, "token") else { throw ArgumentError(message: "缺少参数 token") }
+                guard let handle = try Self.int(args, "handle", range: 1...Int(Int32.max), required: true) else {
+                    throw ArgumentError(message: "缺少参数 handle")
+                }
+                guard let value = try Self.stringAllowingEmpty(args, "value") else {
+                    throw ArgumentError(message: "缺少参数 value")
+                }
+                guard value.count <= 10000 else { throw ArgumentError(message: "value 最长 10000 个字符") }
+                let written = try session.setValue(token: token, handle: handle, value: value)
+                return Outcome(text: Self.actionText(written, handle: handle, verb: "设值"), isError: false)
             }
         } catch let e as ArgumentError {
             return Outcome(text: "[invalid_argument] \(e.message)", isError: true)
@@ -305,7 +340,7 @@ enum ScuTool: String, CaseIterable {
             h += "按层级优先显示；行尾 (折叠 N) 表示其下还有 N 个后代未显示。用 focus 看某一部分，或调大 max_elements。"
         }
         h += "句柄只在该令牌有效期内可用（界面结构变化后令牌失效）；"
-        h += actionsEnabled ? "用 click(token, handle) 点击，或用 type_text / press_key 输入。" : "目前没有工具接受句柄（动作档未开启）。"
+        h += actionsEnabled ? "用 click(token, handle) 点击，用 type_text / press_key 输入，或用 set_value 直接写值。" : "目前没有工具接受句柄（动作档未开启）。"
         if case .deny(let category) = policy {
             h += "\n⚠️ 策略：\(appName ?? "该应用") 属于拒绝类目 \(category)，对它的动作会被拒绝（读取不受限）。"
         }
@@ -388,6 +423,13 @@ enum ScuTool: String, CaseIterable {
         guard let s = v.stringValue else { throw ArgumentError(message: "参数 \(name) 必须是字符串") }
         // 空串等价于未给出：模型常把"不需要的可选参数"填成空串。
         return s.isEmpty ? nil : s
+    }
+
+    /// 与 `string` 相同，但保留空串——设值的空串是"清空这个字段"，是有意义的值。
+    static func stringAllowingEmpty(_ args: [String: JSONValue], _ name: String) throws -> String? {
+        guard let v = args[name] else { return nil }
+        guard let s = v.stringValue else { throw ArgumentError(message: "参数 \(name) 必须是字符串") }
+        return s
     }
 
     static func int(

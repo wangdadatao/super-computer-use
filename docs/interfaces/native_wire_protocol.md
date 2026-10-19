@@ -50,6 +50,7 @@ agent 侧的会话 API 见[协议总览](protocol_overview.md)，两者是不同
 | `performAction` | `pid: int`、`locator: ElementLocator`、`action: "press" \| "verify"` | 沿定位器的路径定位目标并核对，通过后执行动作；`verify` 只定位核对、不执行。路径长度上限同 `maxDepth`，每步须满足 `siblings ≥ 1` 且 `0 ≤ index < siblings`，否则 `internal_error`（连接保持）。见 [ADR-0015](../decisions/adr_0015_handle_resolution_by_path.md) |
 | `typeText` | `pid: int`、`locator: ElementLocator`、`text: string` | 定位并核对目标，聚焦它，再把文本逐字投递到目标进程。`text` 上限 10000 字符，空串被拒绝。见 [ADR-0016](../decisions/adr_0016_input_and_keys.md) |
 | `pressKey` | `pid: int`、`locator: ElementLocator`、`key: string` | 定位并核对目标，聚焦它，再发送按键或组合键（`cmd+shift+t`）。不认识的键名被拒绝。见 [ADR-0016](../decisions/adr_0016_input_and_keys.md) |
+| `setValue` | `pid: int`、`locator: ElementLocator`、`value: string` | 定位并核对目标，通过无障碍接口直接写 `AXValue`。**元素必须声明该属性可写**，否则返回 `unsupported_operation`；空串是合法值。见 [ADR-0016](../decisions/adr_0016_input_and_keys.md) |
 
 ### 应答
 
@@ -59,7 +60,7 @@ agent 侧的会话 API 见[协议总览](protocol_overview.md)，两者是不同
 | `permissions` | `accessibility: bool` | `checkPermissions` |
 | `apps` | `apps: [{pid, name, bundleId?}]` | `listApps` |
 | `tree` | `tree: AXNode`、`truncated: bool` | `dumpTree`。`truncated` 为真表示时间预算耗尽、树不完整；深度上限造成的未展开不算截断（那是调用方的选择）。**遍历按层级（广度优先）进行**，预算耗尽时丢弃的是尚未读取的最深节点，已读部分是树的完整上层；`truncated` 只在确实丢弃了待读节点时为真 |
-| `acted` | — | `performAction(press)`、`typeText`、`pressKey`：动作已投递给平台且平台未报错。**不代表界面已经变化** |
+| `acted` | — | `performAction(press)`、`typeText`、`pressKey`、`setValue`：动作已投递给平台且平台未报错。**不代表界面已经变化** |
 | `located` | — | `performAction(verify)`：定位器与界面现状一致 |
 | `stale` | `stale: StaleDetail` | `performAction`：定位器与界面现状不符，**没有执行任何动作** |
 | `failure` | `error: WireError` | 任意请求 |
@@ -160,6 +161,6 @@ agent 侧的会话 API 见[协议总览](protocol_overview.md)，两者是不同
 
 读取应答超时的**映射**（关闭连接、终止子进程、`platform_unavailable`）在 `NativeClient.call` 中实现；测试只覆盖到等待可读时抛出超时，没有覆盖后面的清理路径。
 
-当前协议版本为 **4**（P0 时为 3）：本次新增 `typeText` 与 `pressKey`。
-消息目录只覆盖到 v1 目前需要的七种请求。屏幕捕获、变更通知等随 P0 推进增加，
+当前协议版本为 **5**（P0 时为 3；v1 依次加入 `typeText` / `pressKey` 与 `setValue`）。
+消息目录只覆盖到 v1 目前需要的八种请求。屏幕捕获、变更通知等随 P0 推进增加，
 每增加一种都要在此登记并视情况提升版本号。

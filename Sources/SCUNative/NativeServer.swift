@@ -105,6 +105,11 @@ public struct NativeServer: Sendable {
             return actionResponse {
                 try AXBackend.pressKey(pid: pid, locator: locator, key: key)
             }
+        case .setValue(let pid, let locator, let value):
+            if let problem = validate(locator) { return .failure(.internalError(problem)) }
+            return actionResponse {
+                try AXBackend.setValue(pid: pid, locator: locator, value: value)
+            }
         }
 
     /// 把动作结果或错误统一映射为应答，避免三类动作各写一遍。

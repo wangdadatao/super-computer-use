@@ -175,9 +175,16 @@ import Testing
         #expect(p["type"] as? String == "pressKey")
         #expect(p["key"] as? String == "cmd+t")
 
+        let written = try Self.json(
+            RequestFrame(id: 6, request: .setValue(pid: 7, locator: Self.locator, value: "名称")))
+        let w = written["request"] as! [String: Any]
+        #expect(w["type"] as? String == "setValue")
+        #expect(w["value"] as? String == "名称")
+
         for request in [
             Request.typeText(pid: 7, locator: Self.locator, text: "多行\n文本"),
             Request.pressKey(pid: 7, locator: Self.locator, key: "shift+tab"),
+            Request.setValue(pid: 7, locator: Self.locator, value: ""),
         ] {
             let body = try JSONEncoder().encode(RequestFrame(id: 1, request: request))
             #expect(try Frame.decode(RequestFrame.self, body: body).request == request)

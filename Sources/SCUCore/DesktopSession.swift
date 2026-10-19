@@ -294,6 +294,14 @@ public final class DesktopSession {
         }
     }
 
+    /// 通过无障碍接口直接写元素的值，再观察效果。
+    // @project-doc docs/interfaces/mcp_surface.md#input_tools
+    public func setValue(token: String, handle: Int, value: String) throws -> ClickReport {
+        try perform(token: token, handle: handle) { pid, locator in
+            try reader.setValue(pid: pid, locator: locator, value: value)
+        }
+    }
+
     /// 动作的统一路径：策略 → 令牌 → 原生层核对 → 投递 → 事后观察。
     /// 点击、输入、按键共用同一套效果摘要与令牌作废规则。
     private func perform(

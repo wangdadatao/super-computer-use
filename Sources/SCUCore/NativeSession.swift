@@ -22,6 +22,7 @@ public protocol DesktopReader {
     func performAction(pid: Int32, locator: ElementLocator, action: ActionKind) throws -> ActionOutcome
     func typeText(pid: Int32, locator: ElementLocator, text: String) throws -> ActionOutcome
     func pressKey(pid: Int32, locator: ElementLocator, key: String) throws -> ActionOutcome
+    func setValue(pid: Int32, locator: ElementLocator, value: String) throws -> ActionOutcome
 }
 
 extension DesktopReader {
@@ -32,6 +33,10 @@ extension DesktopReader {
 
     public func pressKey(pid: Int32, locator: ElementLocator, key: String) throws -> ActionOutcome {
         throw WireError.unsupportedOperation("这个读取器不支持按键")
+    }
+
+    public func setValue(pid: Int32, locator: ElementLocator, value: String) throws -> ActionOutcome {
+        throw WireError.unsupportedOperation("这个读取器不支持设值")
     }
 }
 
@@ -141,6 +146,16 @@ public final class NativeSession: DesktopReader {
             case .acted: return .acted
             case .stale(let d): return .stale(d)
             default: throw WireError.internalError("按键应答类型错误")
+            }
+        }
+    }
+
+    public func setValue(pid: Int32, locator: ElementLocator, value: String) throws -> ActionOutcome {
+        try withClient { c in
+            switch try c.call(.setValue(pid: pid, locator: locator, value: value), timeoutMs: 30_000) {
+            case .acted: return .acted
+            case .stale(let d): return .stale(d)
+            default: throw WireError.internalError("设值应答类型错误")
             }
         }
     }
