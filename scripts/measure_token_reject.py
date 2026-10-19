@@ -34,7 +34,8 @@ from datetime import datetime
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 TOKEN_RE = re.compile(r"令牌\s+(\S+)")
-HANDLE_RE = re.compile(r"^\[[^\]\s#]+#(\d+)\]\s+\"((?:[^\"\\]|\\.)*)\"")
+# 元素表有缩进（两空格一层），不能从行首匹配。
+HANDLE_RE = re.compile(r"^\s*\[[^\]\s#]+#(\d+)\]\s+\"((?:[^\"\\]|\\.)*)\"")
 EFFECT_RE = re.compile(r"effect:\s*(.*)")
 CODE_RE = re.compile(r"^\[([a-z_]+)\]")
 
@@ -116,27 +117,6 @@ def fixture_stderr(handle):
     return f"夹具 stderr：{text[-800:]}" if text else "夹具没有输出 stderr"
 
 
-class SessionStale(MeasurementError):
-    """MCP 会话读不到界面，但独立 dump 能看到：重启会话后重试。"""
-
-
-def direct_element_count(scu_path, pid, depth=2):
-    """不经过 MCP 会话，直接跑一次 scu dump。返回 (元素数, 说明)；dump 失败时元素数为 0。"""
-    try:
-        dump = subprocess.run(
-            [scu_path, "dump", "--pid", str(pid), "--depth", str(depth)], text=True,
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=20)
-    except (OSError, subprocess.TimeoutExpired) as error:
-        return 0, f"dump 失败：{error}"
-    first = dump.stdout.splitlines()[0] if dump.stdout.strip() else "（无输出）"
-    if dump.returncode != 0:
-        return 0, f"dump 退出码 {dump.returncode}：{first}"
-    match = re.search(r"元素 (\d+)；", dump.stdout)
-    if not match:
-        return 0, f"dump 输出没有元素数：{first}"
-    return int(match.group(1)), first
-
-
 def independent_check(scu_path, pid):
     """失败时用一条独立路径再看一眼：进程状态 + `scu dump`（不经过 MCP 会话）。"""
     lines = []
@@ -159,11 +139,7 @@ def independent_check(scu_path, pid):
 
 
 def wait_ready(mcp, fixture, stderr_file, pid, scu_path, deadline=60.0):
-    """等夹具的界面可读。不依赖 NSWorkspace 的 list_apps 注册，直接用启动时的 pid。
-
-    每 5 秒用一条独立的 `scu dump` 对照一次：如果 dump 能看到控件而 MCP 会话看不到，
-    说明是会话侧的读取坏了（实测出现过），抛 SessionStale 让调用方重建会话。
-    """
+    """等夹具的界面可读：直接用启动时的 pid，不依赖 NSWorkspace 的 list_apps 注册。"""
     start = time.time()
     announced = start
     last_error = None
@@ -178,30 +154,18 @@ def wait_ready(mcp, fixture, stderr_file, pid, scu_path, deadline=60.0):
             if "system_permission_missing" in str(error):
                 raise
             last_error = str(error)
-        if time.time() - announced >= 5:
+        if time.time() - announced >= 10:
             announced = time.time()
-            count, note = direct_element_count(scu_path, pid)
-            print(f"  等待中…（MCP：{last_error}；独立 dump：{note}）", flush=True)
-            if count >= 3:
-                raise SessionStale("独立 dump 能看到界面，但 MCP 会话读不到")
+            print("  仍在等待夹具界面可读…", flush=True)
         time.sleep(0.3)
-    count, note = direct_element_count(scu_path, pid)
-    detail = (
+    raise MeasurementError(
         f"夹具在 {deadline:.0f} 秒内没有可读的界面（pid {pid}）。最后一次错误：{last_error}。"
-        f"独立 dump：{note}。{fixture_stderr(stderr_file)}"
-        f"{independent_check(scu_path, pid)}")
-    if count >= 3:
-        raise SessionStale(detail)
-    raise MeasurementError(detail)
+        f"{fixture_stderr(stderr_file)}{independent_check(scu_path, pid)}")
 
 
-def read_state(mcp, pid, depth=12):
-    """返回 (令牌, {标题: 句柄})。标题在夹具上唯一。
-
-    深度 12 读不到控件时退回深度 4 再试一次：夹具只需要到按钮那一层。
-    两种深度都读不到时，把深度 12 的头部带进错误信息。
-    """
-    is_error, text = mcp.tool("get_ax_state", {"pid": pid, "max_depth": depth, "max_elements": 2000})
+def read_state(mcp, pid):
+    """返回 (令牌, {标题: 句柄})。标题在夹具上唯一。"""
+    is_error, text = mcp.tool("get_ax_state", {"pid": pid, "max_depth": 12, "max_elements": 2000})
     if is_error:
         raise MeasurementError("get_ax_state 失败：" + text.splitlines()[0])
     token_match = TOKEN_RE.search(text)
@@ -215,14 +179,9 @@ def read_state(mcp, pid, depth=12):
             handles.setdefault(title, int(found.group(1)))
     missing = [t for t in TARGETS if t not in handles]
     if missing:
-        if depth > 4:
-            try:
-                return read_state(mcp, pid, depth=4)
-            except MeasurementError:
-                pass
         head = "\n".join(text.splitlines()[:6])
         raise MeasurementError(
-            f"夹具里找不到控件：{missing}（句柄：{handles}，深度 {depth}）。get_ax_state 前 6 行：\n{head}")
+            f"夹具里找不到控件：{missing}（句柄：{handles}）。get_ax_state 前 6 行：\n{head}")
     return token_match.group(1), handles
 
 
@@ -363,20 +322,7 @@ def main():
         a.initialize()
         b.initialize()
         print(f"已启动夹具 pid={fixture.pid}，等待它的界面可读…", flush=True)
-        for attempt in (1, 2):
-            try:
-                pid = wait_ready(a, fixture, fixture_stderr_file, fixture.pid, scu)
-                break
-            except SessionStale as stale:
-                if attempt == 2:
-                    raise
-                print(f"  {stale}；重建 MCP 会话后重试", flush=True)
-                a.close()
-                b.close()
-                a = Mcp(scu)
-                b = Mcp(scu)
-                a.initialize()
-                b.initialize()
+        pid = wait_ready(a, fixture, fixture_stderr_file, fixture.pid, scu)
         print(f"夹具 pid={pid}，每项 {args.rounds} 轮。窗口会在结束时关闭。\n", flush=True)
 
         result_a = phase_a(a, pid, args.rounds)
