@@ -21,6 +21,8 @@
 **默认只读，`scu mcp --actions` 才暴露 `click` / `type_text` / `press_key` / `set_value`。**
 **未实现**：句柄注册表（跨快照延续，按 K4 验证结果不实现）、坐标动作与坐标令牌、滚动与拖拽、应用启动、审批与租约、屏幕捕获、指示层、code mode。
 验证状态：令牌与效果摘要在受控夹具上满足（误拒 0/8；每次改值点击后都要重读）；输入、按键与设值在夹具与网易云（CEF，带无障碍启动参数）上成立（其他真实应用与输入法未验证）；收敛有已知缺口、不列为出口门槛；策略在夹具上满足；身份 K4 按冻结规则不成立；经宿主调用动作仍未验证。见[测试策略](operations/testing.md#当前状态)。
+v2 候选范围（截图+坐标、滚动/拖拽、应用启动、审批、`batch` 等）见 [ADR-0013 的 v2 候选](decisions/adr_0013_p0_vertical_slice.md#v2_candidates_2026_10_19)，
+接口演进顺序见 [ADR-0002 的追加记录](decisions/adr_0002_code_mode_surface.md)。
 范围与出口门槛见 [ADR-0013](decisions/adr_0013_p0_vertical_slice.md)，
 已实现内容见[本地环境](operations/local_setup.md)。
 给 agent 的使用指导（何时用、核心循环、动作选择、错误处理）在 [skills/scu/SKILL.md](../skills/scu/SKILL.md)。

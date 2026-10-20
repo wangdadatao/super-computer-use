@@ -21,7 +21,7 @@
 
 ### 接口与集成
 
-- [ADR-0002 用 code mode 作为 agent 接口](adr_0002_code_mode_surface.md)：工具面形态的选择。读取时机：增删 agent 侧工具、讨论调用可观测性时。
+- [ADR-0002 用 code mode 作为 agent 接口](adr_0002_code_mode_surface.md)：工具面形态的选择；v1 平铺交付，v2 先 `batch`、受限 code mode 视度量再定。读取时机：增删 agent 侧工具、讨论调用可观测性时。
 - [ADR-0006 动作返回效果摘要](adr_0006_action_effect_verification.md)：效果回报机制与异步误报风险。读取时机：改动作接口、或质疑效果字段可靠性时。
 - [ADR-0012 协议版本在会话建立时协商](adr_0012_protocol_versioning.md)：版本错配的处理策略。读取时机：改动跨进程协议、设计升级流程时。
 - [ADR-0016 v1 输入用逐字按键，目标是显式元素](adr_0016_input_and_keys.md)：输入路径的选择、焦点与事件投递、组合键语法与清理取舍。读取时机：实现或修改输入、按键、设值时。
