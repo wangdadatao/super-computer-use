@@ -73,6 +73,20 @@ SCU 的设计决策引用了一批对两套已发布实现的观察结论。本�
 | 元素表是带短 ID 的文本 | `CU-REPL`、`GB-NATIVE` | `GB-NATIVE` 工具描述："Read the app's accessibility tree as text (no image): one element per line" |
 | 位置寻址（帧内序号） | `CU-SKY`、`GB-NATIVE` | `CU-SKY` 的 `Click.d.ts` 注释 "Element index from the latest `get_app_state()` text"；`GB-NATIVE` 有 `element_id` 与 `snapshot_id` |
 
+### 大应用树（2026-10-20 静态复核）
+
+| 结论 | 来源 | 证据 |
+| --- | --- | --- |
+| Codex 保存树快照并计算差异，不每步重发整棵树 | `CU-APP` | Swift 符号 `UIElementTreeRevision.differenceLines(from:options:summarizesRemovedElementIDs:ignoreDifferenceLineBudget:onLineBudgetExceeded:)`、`UIElementRenderDifference`、`UIElementRenderTreeSnapshot`；字符串 "The following is a diff from the previous accessibility tree"、"The following is a cumulative diff from the initial accessibility tree" |
+| 删除元素按 ID 范围概括 | `CU-APP` | 字符串 "Removed element IDs: "、"with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range."；feature flag `axTreeDiffingRemovedElementIDRanges` |
+| Codex 的差异有行数预算，超限时走完整树 | `CU-APP` | 符号 `AccessibilityDifferenceLineBudgetExceeded`；`llmDescription` 在 `differenceLines` 返回 nil 时调用 `UIElementRenderTree.lines` 与 `AccessibilityTreePresentation`（静态调用路径，未做运行时验证） |
+| Codex 的 `get_app_state` 默认 diff，可显式取完整树 | `CU-SKY`、`CU-PLUGIN` | `GetAppState.d.ts` 的 `disableDiff` 注释；SKILL.md "the accessibility tree will be returned as a diff … pass true for `disableDiff`" |
+| Codex 的 diff 面向 key window，不是整个应用 | `CU-SKY`、`CU-PLUGIN` | API 文档 "Capture the current state … for an app window"；SKILL.md "get the state of the app's key window" |
+
+**限定**：以上来自 Mach-O 导出符号、字符串和静态调用路径；没有在运行时观察 Codex 的 diff 输出，
+行数预算的具体数值、`DifferenceBaseline` 的切换条件和 feature flag 默认值未还原。
+REA Mach-O 证据 `ev_431ddb…`（父 `ev_5a22…`），工件 `CU-APP` SHA-256 `f21c31c0…`。
+
 ### 坐标与截图（2026-10-19 复核）
 
 | 结论 | 来源 | 证据 |

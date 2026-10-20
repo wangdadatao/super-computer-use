@@ -36,6 +36,7 @@
 - [ADR-0025 多窗口：截图与激活使用同一个目标窗口](adr_0025_window_target.md)：最大非最小化窗口、frame 匹配、失败关闭。读取时机：修改截图/坐标动作的窗口选择、处理多窗口应用时。
 - [ADR-0026 窗口选择：绑定截图与坐标动作](adr_0026_window_selection.md)：`get_ax_state(window)`、令牌绑定；元素表仍是整个应用的限制已由 ADR-0027 补齐。读取时机：多窗口、截图目标、窗口标题变化时。
 - [ADR-0027 窗口列表与窗口根定位](adr_0027_window_root_locator.md)：`list_windows`、`get_ax_state(window)` 以窗口为根、元素动作携带窗口标题。读取时机：多窗口任务、窗口改名、显式选择窗口时。
+- [ADR-0028 元素表默认输出增量差异](adr_0028_incremental_tree_rendering.md)：上一版快照、`~`/`+`/删除范围、200 行预算与 `full=true` 回退。读取时机：改元素表输出、处理大应用树、令牌重读成本时。
 
 ### 范围与安全
 

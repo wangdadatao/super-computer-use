@@ -309,6 +309,45 @@ struct ToolReply: Equatable {
         #expect(lines[3] == #"  [AXTextField#3] value="abc""#)
     }
 
+    @Test func getAXStateReturnsDiffByDefaultAndFullOverrides() {
+        let s = server
+        reader.tree = .success(TreeReading(
+            root: AXNode(role: "AXWindow", title: "主窗口", children: [
+                AXNode(role: "AXButton", title: "确定"),
+                AXNode(role: "AXTextField", value: "before"),
+            ]), truncated: false))
+        let first = callTool(s, "get_ax_state", ["pid": 42])
+        #expect(first.text.contains(#"[AXTextField#3] value="before""#))
+
+        reader.tree = .success(TreeReading(
+            root: AXNode(role: "AXWindow", title: "主窗口", children: [
+                AXNode(role: "AXButton", title: "确定"),
+                AXNode(role: "AXTextField", value: "after"),
+            ]), truncated: false))
+        let second = callTool(s, "get_ax_state", ["pid": 42])
+        #expect(!second.isError)
+        #expect(second.text.contains("差异 +0 ~1 -0"))
+        #expect(second.text.contains("~ "))
+        #expect(second.text.contains("value=\"after\""))
+        #expect(!second.text.contains(#"[AXButton#2] "确定""#))
+        #expect(!second.text.contains("界面与上次读取相同"))
+
+        let full = callTool(s, "get_ax_state", ["pid": 42, "full": true])
+        #expect(full.text.contains("元素 3"))
+        #expect(full.text.contains(#"[AXButton#2] "确定""#))
+        #expect(full.text.contains(#"[AXTextField#3] value="after""#))
+        #expect(!full.text.contains("差异 +0 ~1 -0"))
+    }
+
+    @Test func unchangedReadIsReportedWithoutRepeatingTheTable() {
+        let s = server
+        _ = callTool(s, "get_ax_state", ["pid": 42])
+        let again = callTool(s, "get_ax_state", ["pid": 42])
+        #expect(again.text.contains("与上次读取相同"))
+        #expect(again.text.contains("令牌"))
+        #expect(!again.text.contains("[AXWindow#1]"))
+    }
+
     @Test func getAXStatePassesDefaultsAndOverrides() {
         let s = server
         _ = callTool(s, "get_ax_state", ["pid": 42])
@@ -326,6 +365,7 @@ struct ToolReply: Equatable {
             nil, [:], ["pid": "42"], ["pid": 0], ["pid": -1], ["pid": 1.5],
             ["pid": 42, "max_depth": 999], ["pid": 42, "budget_ms": 5],
             ["pid": 42, "max_elements": 0], ["pid": 42, "max_depth": "3"],
+            ["pid": 42, "full": "yes"],
             ["pid": 42, "pidd": 1],  // 拼错的参数不能被静默忽略
             "not an object",
         ]

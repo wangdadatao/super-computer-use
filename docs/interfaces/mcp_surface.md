@@ -60,7 +60,7 @@ scu mcp --actions --allow-app-file ~/.config/scu/pi-apps.json
 | `check_permissions` | 无 | 报告启动本服务的宿主是否有辅助功能权限。权限未授予不算工具错误，是对状态的如实报告 |
 | `list_apps` | 无 | 每行 `pid<TAB>名称<TAB>bundle id`（无 bundle id 时为 `-`） |
 | `list_windows` | `pid`（必填） | 每行 `"标题"<TAB>(x,y,w,h)`；标题缺失为 `-`。只枚举窗口，不激活、不截图 |
-| `get_ax_state` | `pid`（必填）、`max_depth`、`budget_ms`、`max_elements`、`focus`、`focus_role`、`window` | 读取无障碍树，返回带标签与 `frame` 的文本化元素表；`window` 存在时以该窗口为根，截图与坐标动作也绑定它 |
+| `get_ax_state` | `pid`（必填）、`max_depth`、`budget_ms`、`max_elements`、`focus`、`focus_role`、`window`、`full` | 读取无障碍树，返回带标签与 `frame` 的文本化元素表；默认只返回与上次读取的差异，`full=true` 返回完整表；`window` 存在时以该窗口为根，截图与坐标动作也绑定它 |
 | `get_screenshot` | `token` | 截取令牌对应的目标窗口，叠加标签，返回 PNG、`screenshot_id`、窗口 frame 与 title；需要屏幕录制权限 |
 | `launch_app`（仅 `--actions`） | `app` | 启动/激活应用（bundle id、名称或 `.app` 路径）；见下 |
 | `click`（仅 `--actions`） | `token`、`handle` 或 `label`（二选一） | 对目标执行 `AXPress`；见下 |
@@ -193,6 +193,7 @@ effect: delivered=true observed=true converged=true treeChanged=false targetChan
 | `max_elements` | 1 到 20000 | 300 | 拒绝 |
 | `focus` | 字符串 | 无 | 类型错误时拒绝；空串等价于未给出 |
 | `focus_role` | 字符串 | 无 | 同上 |
+| `full` | 布尔值 | `false` | 类型错误时拒绝 |
 
 - **拒绝未声明的参数。** 拼错的参数名被静默忽略，调用方会以为生效了。
 - 整数参数接受小数部分为 0 的浮点数（部分客户端把 `12` 序列化成 `12.0`）。
@@ -233,6 +234,26 @@ screenshot_id=g1abc.1 图像 1600x1138 scale=1.514 window=(353,199,1057,752)
 **标签可点不等于应用会响应**：网易云左侧栏声明了 `AXPress`，但 `click(label)` 返回
 `noOpSuspected=true`；这类控件需要坐标点击（尚未实现）。设计见
 [ADR-0018](../decisions/adr_0018_label_addressing.md)。
+
+### 默认差异
+
+同一 pid、同一窗口、同一 `max_depth`/`budget_ms` 的第二次读取开始，`get_ax_state` 默认只返回差异：
+
+```text
+~ [AXTextField#5] value="new"
++ [AXButton#8] "保存"
+Removed element IDs: 12-15, 20（旧快照句柄，不可用于动作）
+```
+
+- `~` 是内容变化，或父级插入/删除后句柄换了；
+- `+` 是新增；删除项只给旧句柄范围，不逐行打印；
+- 没有变化时输出“界面与上次读取相同”，令牌仍可复用；
+- 首次读取、切换目标、树被截断、`max_depth`/`budget_ms` 变化时不计算差异，直接返回完整表；
+- 差异超过 200 行时**不返回半截差异**，回退完整表并在标题行说明；
+- `full=true` 强制完整表；`focus` 也返回完整表。
+
+差异只是**展示层**：完整树仍保存在会话快照里，句柄解析、动作前核对和截图标签都用完整树。
+线协议不变，原生层仍发送完整树。
 
 ### 概览与展开
 

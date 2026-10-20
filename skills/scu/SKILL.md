@@ -32,7 +32,7 @@ SCU 是一个 MCP 服务：读取 macOS 应用的无障碍树，并用 `AXPress`
 1. 调用 `check_permissions`。**权限属于启动 MCP 服务的宿主应用**，不是整台机器。
    未授予时让用户给宿主（Cursor、终端等）授权，然后重启该宿主。
 2. `list_apps` 取 `pid`。它只列出已在运行、激活策略为 regular 的应用。
-   用户说的应用不在列表里，就先请用户打开它（SCU 不能启动应用）。
+   目标没在运行就先 `launch_app`；解析不到会返回 `app_not_found`。
 3. `get_ax_state(pid)` 读界面。多窗口应用先用 `list_windows(pid)` 看标题，再决定是否 `window=`。
 
 ## 核心循环
@@ -56,6 +56,21 @@ list_apps → get_ax_state(pid) → 多窗口时 list_windows(pid) → get_ax_st
     [a] [AXButton#3] "返回" id="go-back" frame=(10,50,24,24)
     [b] [AXTextField#4] "地址与搜索" value="example.com" frame=(50,50,300,28)
 ```
+
+**同一 pid、同一窗口的后续读取默认只返回差异：**
+
+```text
+~ [AXTextField#5] value="new"
++ [AXButton#8] "保存"
+Removed element IDs: 12-15, 20（旧快照句柄，不可用于动作）
+```
+
+- `~` 是内容变化，或父级插入/删除后句柄换了；`+` 是新增；
+- 删除项只给旧句柄范围，不能拿来动作；
+- 没有变化时只输出“界面与上次读取相同”，令牌仍可复用；
+- 首次读取、切换目标、树被截断、`max_depth`/`budget_ms` 变化时返回完整表；
+- 差异超过 200 行会回退完整表，并在标题行说明；
+- 差异太长、上下文丢失或不确定句柄时，传 `full=true` 要完整表。
 
 - `[a]`：**优先用它**。标签只对**本次令牌**有效，动作工具都接受 `label`；
   标签大小写不敏感，`a` 与 `A` 等价。标签可能落在 `AXGroup`/`AXRow` 上（网页侧栏、表格行），

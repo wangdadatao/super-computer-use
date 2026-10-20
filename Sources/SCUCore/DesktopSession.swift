@@ -65,6 +65,8 @@ public struct SessionState: Sendable {
     public var appName: String?
     /// 绑定的窗口标题；nil 表示默认窗口（原生层选最大非最小化窗口）。
     public var windowTitle: String?
+    /// 与上一次同一窗口读取的差异；首次读取、切换目标、树被截断或读取参数变化时为 nil。
+    public var diff: ElementTable.Diff?
 }
 
 /// 会话：保存快照与令牌状态，把"令牌 + 句柄"解析成动作定位器，并在失效时给出分类的错误。
@@ -104,6 +106,17 @@ public final class DesktopSession {
         /// 读取参数：动作之后重读用同样的深度与预算，才能与动作前的摘要比较。
         var maxDepth: Int
         var budgetMs: Int
+    }
+
+    /// 差异基线：保留**上一次成功读取**的完整元素表，不随令牌失效而释放。
+    /// 动作后令牌会失效、Record.snapshot 会被清掉；差异仍需要动作前的树。
+    /// 只保留一份，切换目标或参数变化时自然失配，读取后替换。
+    struct Baseline {
+        var pid: Int32
+        var windowTitle: String?
+        var maxDepth: Int
+        var budgetMs: Int
+        var entries: [ElementTable.Entry]
     }
 
     /// 截图的坐标绑定：窗口位置/缩放变化后，旧截图不能用于坐标动作。
@@ -152,6 +165,7 @@ public final class DesktopSession {
     private var records: [String: Record] = [:]
     private var order: [String] = []
     private var currentToken: String?
+    private var baseline: Baseline?
 
     /// 令牌从当前变为失效（含目标切换）的次数。同一令牌只迁移一次，重复使用不再增加。
     public private(set) var invalidations = 0
@@ -227,7 +241,19 @@ public final class DesktopSession {
             // 结构没有变化：沿用令牌。几何不进摘要，窗口移动不会让令牌失效。
             r.snapshot = Snapshot(
                 entries: entries, digest: digest, truncated: reading.truncated, maxDepth: maxDepth, budgetMs: budgetMs)
-            return state(token: t, record: r, reading: reading, reused: true)
+            baseline = reading.truncated ? nil : Baseline(
+                pid: pid, windowTitle: windowTitle, maxDepth: maxDepth, budgetMs: budgetMs,
+                entries: entries)
+            return state(
+                token: t, record: r, reading: reading, reused: true, diff: .noChange)
+        }
+
+        // 差异只用于展示。完整 entries 仍然写进快照，动作解析不依赖差异文本。
+        var diff: ElementTable.Diff?
+        if let b = baseline, b.pid == pid, b.windowTitle == windowTitle,
+            b.maxDepth == maxDepth, b.budgetMs == budgetMs, !reading.truncated
+        {
+            diff = ElementTable.diff(previous: b.entries, current: entries)
         }
 
         if let t = currentToken, let old = records[t] {
@@ -246,14 +272,20 @@ public final class DesktopSession {
             records[order.removeFirst()] = nil
         }
         currentToken = token
-        return state(token: token, record: record, reading: reading, reused: false)
+        baseline = reading.truncated ? nil : Baseline(
+            pid: pid, windowTitle: windowTitle, maxDepth: maxDepth, budgetMs: budgetMs,
+            entries: entries)
+        return state(token: token, record: record, reading: reading, reused: false, diff: diff)
     }
 
-    private func state(token: String, record: Record, reading: TreeReading, reused: Bool) -> SessionState {
+    private func state(
+        token: String, record: Record, reading: TreeReading, reused: Bool,
+        diff: ElementTable.Diff?
+    ) -> SessionState {
         SessionState(
             token: SnapshotToken(token), reading: reading, reused: reused, pid: record.pid,
             policy: policy.evaluate(pid: record.pid, bundleId: record.identity?.bundleId),
-            appName: record.identity?.name, windowTitle: record.windowTitle)
+            appName: record.identity?.name, windowTitle: record.windowTitle, diff: diff)
     }
 
     /// 查进程的 bundle id 与名称。列表里没有该进程时返回空身份（不是失败）；列表本身读不到则抛错。

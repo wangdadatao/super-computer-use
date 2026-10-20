@@ -246,6 +246,56 @@ final class FakeLauncher: AppLauncher, @unchecked Sendable {
 
 
 
+    // MARK: - 差异渲染
+
+    @Test func secondReadReportsNoChange() throws {
+        let (s, _) = session()
+        let first = try read(s)
+        #expect(first.diff == nil)
+        let second = try read(s)
+        #expect(second.reused)
+        #expect(second.diff?.unchanged == true)
+        #expect(second.token == first.token)
+    }
+
+    @Test func changedTreeProducesDiffAndNewToken() throws {
+        let (s, r) = session()
+        let first = try read(s)
+        r.tree = TreeReading(root: Self.sampleTree(okTitle: "确定!"), truncated: false)
+        let second = try read(s)
+        #expect(!second.reused)
+        #expect(second.token != first.token)
+        #expect(second.diff != nil)
+        #expect(second.diff?.unchanged == false)
+        // 标题变化按保守口径是删除 + 新增，不是猜测的“同一个元素改名”。
+        #expect(second.diff?.removed == 1)
+        #expect(second.diff?.added == 1)
+        expectError("stale_snapshot", retry: "after_refresh") {
+            _ = try s.resolve(token: first.token.value, handle: 3)
+        }
+    }
+
+    @Test func diffUsesThePreActionBaselineAfterTokenInvalidation() throws {
+        let (s, r) = session()
+        let before = try read(s)
+        r.onAction = { r.tree = TreeReading(root: Self.sampleTree(okTitle: "新标题"), truncated: false) }
+        _ = try s.click(token: before.token.value, handle: 3)
+        // 动作后的令牌已失效，Record.snapshot 已释放；差异基线仍应保留动作前的树。
+        let after = try read(s)
+        #expect(after.diff != nil)
+        #expect(after.diff?.unchanged == false)
+        #expect(after.diff?.removed == 1)
+        #expect(after.diff?.added == 1)
+    }
+
+    @Test func truncatedReadsDoNotProduceDiff() throws {
+        let (s, r) = session()
+        _ = try read(s)
+        r.tree = TreeReading(root: Self.sampleTree(okTitle: "确定!"), truncated: true)
+        let second = try read(s)
+        #expect(second.diff == nil)
+    }
+
     // MARK: - 窗口绑定
 
     @Test func changingTheSelectedWindowIssuesANewTokenAndStalesTheOldOne() throws {

@@ -34,7 +34,7 @@ enum ScuTool: String, CaseIterable {
         case .checkPermissions: return "检查辅助功能权限"
         case .listApps: return "列出应用"
         case .listWindows: return "列出窗口"
-        case .getAXState: return "读取无障碍树"
+        case .getAXState: return "读取无障碍树（默认差异）"
         case .getScreenshot: return "截取窗口并叠加标签"
         case .launchApp: return "启动应用"
         case .click: return "点击元素"
@@ -146,6 +146,8 @@ enum ScuTool: String, CaseIterable {
         case .getAXState:
             return """
                 读取指定应用的无障碍树，返回文本化元素表。只读，不会操作应用。\
+                默认返回与上一次读取的差异（~ 变化，+ 新增，删除项用旧句柄范围概括）；\
+                首次读取、切换目标、树被截断或读取参数变化时返回完整表。需要完整表时传 full=true。\
                 可用 window 指定窗口标题：此时元素表以该窗口为根读取，截图与坐标动作也绑定该窗口。\
                 窗口标题来自 list_windows；找不到会返回 window_not_found。\
                 每行一个元素，缩进表示层级，格式 [a] [角色#句柄] "标题" 属性… frame=(x,y,w,h)。\
@@ -320,6 +322,10 @@ enum ScuTool: String, CaseIterable {
                         "type": "string",
                         "description": "窗口标题；元素表以该窗口为根读取，截图与坐标动作也绑定该窗口",
                     ],
+                    "full": [
+                        "type": "boolean",
+                        "description": "返回完整元素表，而不是与上次读取的差异；差异过大时也会自动回退完整表",
+                    ],
                 ],
                 "required": ["pid"],
                 "additionalProperties": false,
@@ -406,6 +412,7 @@ enum ScuTool: String, CaseIterable {
                 try Self.requireNoExtra(
                     args, allowed: [
                         "pid", "max_depth", "budget_ms", "max_elements", "focus", "focus_role", "window",
+                        "full",
                     ])
                 guard let pid = try Self.int(args, "pid", range: 1...Int(Int32.max), required: true) else {
                     throw ArgumentError(message: "缺少参数 pid")
@@ -422,17 +429,30 @@ enum ScuTool: String, CaseIterable {
                 let focus = (focusText != nil || focusRole != nil)
                     ? ElementTable.Focus(text: focusText, role: focusRole) : nil
                 let windowTitle = try Self.string(args, "window")
+                let full = try Self.bool(args, "full") ?? false
 
                 let state = try session.readState(
                     pid: Int32(pid), maxDepth: depth, budgetMs: budget, windowTitle: windowTitle)
                 let reading = state.reading
                 let table = ElementTable.render(reading.root, maxElements: maxElements, focus: focus)
-                let head = Self.header(
+                // 差异只影响展示；完整树仍留在会话快照里，句柄解析不依赖它。
+                let diff = (!full && focus == nil) ? state.diff : nil
+                let useDiff = diff.map { !$0.budgetExceeded } ?? false
+                var head = Self.header(
                     pid: pid, table: table, depthLimit: depth, budgetMs: budget,
                     truncated: reading.truncated, focused: focus != nil, token: state.token,
                     policy: state.policy, appName: state.appName, windowTitle: state.windowTitle,
-                    actionsEnabled: actionsEnabled)
-                return Outcome(text: table.text.isEmpty ? head : head + "\n" + table.text, isError: false)
+                    actionsEnabled: actionsEnabled, diff: useDiff ? diff : nil)
+                if let diff, diff.budgetExceeded {
+                    head += "\n⚠️ 差异超过 \(ElementTable.defaultMaxDiffLines) 行（\(diff.lineCount) 行变化），已回退完整表；需要更小范围时用 window/focus。"
+                }
+                let body: String
+                if useDiff, let diff {
+                    body = diff.unchanged ? "界面与上次读取相同；令牌仍有效。" : diff.text
+                } else {
+                    body = table.text
+                }
+                return Outcome(text: body.isEmpty ? head : head + "\n" + body, isError: false)
 
             case .getScreenshot:
                 try Self.requireNoExtra(args, allowed: ["token"])
@@ -577,11 +597,19 @@ enum ScuTool: String, CaseIterable {
     static func header(
         pid: Int, table: ElementTable.Result, depthLimit: Int, budgetMs: Int, truncated: Bool, focused: Bool,
         token: SnapshotToken, policy: PolicyGate.Decision = .allow, appName: String? = nil,
-        windowTitle: String? = nil, actionsEnabled: Bool = false
+        windowTitle: String? = nil, actionsEnabled: Bool = false, diff: ElementTable.Diff? = nil
     ) -> String {
         var h = "# pid=\(pid) 令牌 \(token) 元素 \(table.total)"
         if let windowTitle { h += " 窗口=\"\(windowTitle)\"" }
-        if focused {
+        if let diff {
+            if diff.unchanged {
+                h += "。与上次读取相同。"
+            } else {
+                h += "。差异 +\(diff.added) ~\(diff.changed) -\(diff.removed)"
+                if let ids = diff.removedIDs { h += "，删除的旧句柄 \(ids)" }
+                h += "；只显示变化，需要完整表用 full=true。"
+            }
+        } else if focused {
             let m = table.matches ?? 0
             if m == 0 {
                 h += "；没有元素匹配 focus。"
@@ -596,7 +624,7 @@ enum ScuTool: String, CaseIterable {
         } else {
             h += "。"
         }
-        if table.shown < table.scope {
+        if diff == nil && table.shown < table.scope {
             h += "按层级优先显示；行尾 (折叠 N) 表示其下还有 N 个后代未显示。用 focus 看某一部分，或调大 max_elements。"
         }
         h += "句柄只在该令牌有效期内可用（界面结构变化后令牌失效）；"
@@ -758,6 +786,12 @@ enum ScuTool: String, CaseIterable {
         guard let v = args[name] else { return nil }
         guard let s = v.stringValue else { throw ArgumentError(message: "参数 \(name) 必须是字符串") }
         return s
+    }
+
+    static func bool(_ args: [String: JSONValue], _ name: String) throws -> Bool? {
+        guard let v = args[name] else { return nil }
+        guard case .bool(let b) = v else { throw ArgumentError(message: "参数 \(name) 必须是布尔值") }
+        return b
     }
 
     static func int(
