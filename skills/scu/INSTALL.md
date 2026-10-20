@@ -59,6 +59,8 @@ chmod +x ~/bin/scu/scu ~/bin/scu/scu-native
 ## 4. 写宿主配置
 
 **先备份**目标文件，再写入。动作档需要 `--actions`；只读试用可以去掉。
+如需限制可操作的应用，在参数里加 `--allow-app <bundle|名称|路径>`（可重复）或
+`--allow-app-file <path>`；列表外的应用会在读取/动作前被拒绝。
 
 Cursor（`~/.cursor/mcp.json`）：
 

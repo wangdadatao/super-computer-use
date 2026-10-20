@@ -91,6 +91,16 @@ public struct WireError: Error, Codable, Sendable, Equatable {
         WireError(code: "stale_geometry", layer: "protocol", retry: "after_refresh", message: message)
     }
 
+    /// 应用不在本次连接的允许列表里。不是硬拒绝类目；用户调整允许列表并重启后可恢复。
+    public static func appNotAuthorized(app: String, bundleId: String?, allowed: Set<String>) -> WireError {
+        let listed = allowed.sorted().joined(separator: ", ")
+        let detail = listed.isEmpty ? "当前允许列表为空" : "当前允许列表：\(listed)"
+        let identity = bundleId.map { "\(app)（\($0)）" } ?? app
+        return WireError(
+            code: "app_not_authorized", layer: "policy", retry: "no",
+            message: "应用 \(identity) 不在本次连接的应用允许列表里；\(detail)。请让用户确认后调整 --allow-app / --allow-app-file 并重启服务；本次连接不会自行放行。")
+    }
+
     /// 找不到要启动/解析的应用。
     public static func appNotFound(_ identifier: String) -> WireError {
         WireError(

@@ -132,6 +132,8 @@ public final class DesktopSession {
 
     public let reader: DesktopReader
     public let launcher: AppLauncher
+    /// 连接级应用允许列表；默认允许全部（硬拒绝类目仍单独生效）。
+    public internal(set) var appAuthorization: AppAuthorization
 
     private var screenshotBindings: [String: ScreenshotBinding] = [:]
     private var screenshotOrder: [String] = []
@@ -150,11 +152,13 @@ public final class DesktopSession {
 
     public init(
         reader: DesktopReader, launcher: AppLauncher = WorkspaceAppLauncher(),
+        appAuthorization: AppAuthorization = .allowAll,
         policy: PolicyGate = PolicyGate(), retainedTokens: Int = 16,
         settle: Settle = Settle()
     ) {
         self.reader = reader
         self.launcher = launcher
+        self.appAuthorization = appAuthorization
         self.policy = policy
         self.settle = settle
         self.retained = max(2, retainedTokens)
@@ -169,12 +173,32 @@ public final class DesktopSession {
         if case .deny(let category) = policy.evaluate(bundleId: resolved.bundleId) {
             throw WireError.policyDenied(category: category, app: resolved.name)
         }
+        try authorizeApp(
+            Identity(name: resolved.name, bundleId: resolved.bundleId),
+            pid: resolved.pid)
         return try launcher.launch(identifier, activate: true)
     }
 
     // MARK: - 读取与签发
 
     public func readState(pid: Int32, maxDepth: Int, budgetMs: Int) throws -> SessionState {
+        // 受限连接必须在读树之前确认应用身份，避免先读到数据再拒绝。
+        let knownIdentity: Identity?
+        if appAuthorization.isRestricted {
+            let identity: Identity
+            if let t = currentToken, let current = records[t], current.pid == pid,
+                let known = current.identity
+            {
+                identity = known
+            } else {
+                identity = try lookupIdentity(pid: pid)
+            }
+            try authorizeApp(identity, pid: pid)
+            knownIdentity = identity
+        } else {
+            knownIdentity = nil
+        }
+
         let reading = try reader.readTree(pid: pid, maxDepth: maxDepth, budgetMs: budgetMs)
         let entries = ElementTable.flatten(reading.root)
         let digest = Self.structuralDigest(entries)
@@ -194,7 +218,7 @@ public final class DesktopSession {
         counter += 1
         let token = "s\(nonce).\(counter)"
         let record = Record(
-            pid: pid, identity: try? lookupIdentity(pid: pid), status: .current,
+            pid: pid, identity: knownIdentity ?? (try? lookupIdentity(pid: pid)), status: .current,
             snapshot: Snapshot(
                 entries: entries, digest: digest, truncated: reading.truncated, maxDepth: maxDepth, budgetMs: budgetMs))
         records[token] = record
@@ -217,6 +241,24 @@ public final class DesktopSession {
     private func lookupIdentity(pid: Int32) throws -> Identity {
         let app = try reader.listApps().first { $0.pid == pid }
         return Identity(name: app?.name, bundleId: app?.bundleId)
+    }
+
+    /// 取出或重查记录的应用身份，并缓存到记录上。
+    private func identity(for record: Record) throws -> Identity {
+        if let known = record.identity { return known }
+        let identity = try lookupIdentity(pid: record.pid)
+        record.identity = identity
+        return identity
+    }
+
+    /// 连接级允许列表检查。硬拒绝类目由 `policy` 单独负责，且先于这里。
+    private func authorizeApp(_ identity: Identity, pid: Int32) throws {
+        guard appAuthorization.permits(bundleId: identity.bundleId) else {
+            throw WireError.appNotAuthorized(
+                app: identity.name ?? identity.bundleId ?? "pid \(pid)",
+                bundleId: identity.bundleId,
+                allowed: appAuthorization.allowedBundleIds)
+        }
     }
 
     private func invalidate(_ r: Record, to status: Status) {
@@ -285,6 +327,7 @@ public final class DesktopSession {
             break
         }
         guard let snap = r.snapshot else { throw WireError.internalError("当前令牌缺少快照") }
+        try authorizeApp(try identity(for: r), pid: r.pid)
         let capture = try reader.captureWindow(pid: r.pid)
         let labels = snap.entries.enumerated().compactMap { index, entry -> ElementTable.Label? in
             guard let text = entry.label, let frame = entry.node.frame else { return nil }
@@ -327,16 +370,11 @@ public final class DesktopSession {
             throw WireError.staleGeometry("截图 \(screenshotID) 不存在、已过期或不属于令牌 \(token)，请重新 get_screenshot。")
         }
 
-        let identity: Identity
-        if let known = r.identity {
-            identity = known
-        } else {
-            identity = try lookupIdentity(pid: r.pid)
-            r.identity = identity
-        }
+        let identity = try identity(for: r)
         if case .deny(let category) = policy.evaluate(pid: r.pid, bundleId: identity.bundleId) {
             throw WireError.policyDenied(category: category, app: identity.name ?? "pid \(r.pid)")
         }
+        try authorizeApp(identity, pid: r.pid)
         return (r, snap, binding)
     }
 
@@ -477,17 +515,12 @@ public final class DesktopSession {
     /// 也不因令牌状态而改变结论（ADR-0015 §5）。
     private func authorizedTarget(token: String, handle: Int) throws -> (pid: Int32, locator: ElementLocator) {
         if let r = records[token] {
-            let identity: Identity
-            if let known = r.identity {
-                identity = known
-            } else {
-                // 读取时身份查询失败：这里重查；仍然失败就不执行（无法确认策略，不放行）。
-                identity = try lookupIdentity(pid: r.pid)
-                r.identity = identity
-            }
+            // 读取时身份查询失败：这里重查；仍然失败就不执行（无法确认策略，不放行）。
+            let identity = try identity(for: r)
             if case .deny(let category) = policy.evaluate(pid: r.pid, bundleId: identity.bundleId) {
                 throw WireError.policyDenied(category: category, app: identity.name ?? "pid \(r.pid)")
             }
+            try authorizeApp(identity, pid: r.pid)
         }
         return try resolve(token: token, handle: handle)
     }

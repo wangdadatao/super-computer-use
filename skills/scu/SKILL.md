@@ -73,6 +73,12 @@ list_apps → get_ax_state(pid) → 需要时 get_screenshot(token) → 用令�
 - 标题行有 `⚠️ 已截断` / `⚠️ 已达深度上限` / `⚠️ 策略：…` 时，先读警告再决定下一步。
 - 推荐流程：先看概览 → 用 `focus` 展开目标区域 → 再有针对性地动作。
 
+## 应用允许列表
+
+服务可以用 `--allow-app` / `--allow-app-file` 启动，只允许操作列出的应用。
+列表外的应用在读取和动作之前返回 `app_not_authorized`；不要重试或换相近应用，
+告诉用户把应用加入允许列表并重启服务。允许列表是连接级的，不是逐动作审批。
+
 ## 启动应用：launch_app
 
 `launch_app(app)` 接受 bundle id、显示名或 `.app` 路径。它先解析、再检查拒绝类目、
@@ -177,6 +183,8 @@ effect: delivered=true observed=true converged=true treeChanged=false targetChan
 | `element_gone` | 句柄不在该令牌的快照里 | 同上；先用 `focus` 按文本定位 |
 | `target_switched` | 令牌属于另一个已切换走的目标 | 对当前目标重新读取 |
 | `unsupported_operation` | 元素不支持该动作 / 键名不认识 | 换元素（父/子）或换动作，不要猜 |
+| `app_not_found` | 启动/解析时找不到应用 | 用 bundle id、显示名或完整 `.app` 路径；不要猜相近名字 |
+| `app_not_authorized` | 应用不在本次连接的允许列表里 | 让用户调整 `--allow-app` / `--allow-app-file` 并重启服务；不要重试 |
 | `policy_denied` | 命中拒绝类目 | **不可协商，不要绕过**；告知用户由他自己完成 |
 | `system_permission_missing` | 宿主没有辅助功能权限 | 让用户给宿主授权并重启宿主 |
 | `platform_unavailable` | 原生进程不可达 | 稍后重试一次；持续失败就报告 |

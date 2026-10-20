@@ -213,6 +213,63 @@ final class FakeLauncher: AppLauncher, @unchecked Sendable {
 
     // MARK: - 令牌未知
 
+
+    // MARK: - 连接级应用授权
+
+    @Test func allowlistDeniesReadBeforeReadingTheTree() throws {
+        let r = ScriptedReader()
+        r.apps = .success([AppInfo(pid: 10, name: "演示", bundleId: "com.example.demo")])
+        let s = DesktopSession(
+            reader: r,
+            appAuthorization: AppAuthorization(mode: .allowlist, bundleIds: ["com.other"]))
+        expectError("app_not_authorized", retry: "no") {
+            _ = try s.readState(pid: 10, maxDepth: 12, budgetMs: 1000)
+        }
+        #expect(r.readCount == 0)
+    }
+
+    @Test func allowlistMatchesBundleIdsCaseInsensitively() throws {
+        let r = ScriptedReader()
+        r.apps = .success([AppInfo(pid: 10, name: "演示", bundleId: "com.example.demo")])
+        let s = DesktopSession(
+            reader: r,
+            appAuthorization: AppAuthorization(mode: .allowlist, bundleIds: [" COM.EXAMPLE.DEMO "]))
+        let state = try s.readState(pid: 10, maxDepth: 12, budgetMs: 1000)
+        #expect(state.pid == 10)
+        #expect(r.readCount == 1)
+    }
+
+    @Test func allowlistDeniesActionEvenWhenTheTokenWasIssuedBeforeRestriction() throws {
+        let (s, r) = session()
+        let a = try read(s)
+        s.appAuthorization = AppAuthorization(mode: .allowlist, bundleIds: ["com.other"])
+        expectError("app_not_authorized", retry: "no") {
+            _ = try s.click(token: a.token.value, handle: 3)
+        }
+        #expect(r.actionCalls.isEmpty)
+    }
+
+
+    @Test func launchAppChecksTheConnectionAllowlistBeforeLaunching() throws {
+        let launcher = FakeLauncher()
+        let s = DesktopSession(
+            reader: ScriptedReader(), launcher: launcher,
+            appAuthorization: AppAuthorization(mode: .allowlist, bundleIds: ["com.other"]))
+        expectError("app_not_authorized", retry: "no") {
+            _ = try s.launchApp(identifier: "com.example.demo")
+        }
+        #expect(launcher.launchCount == 0)
+    }
+
+    @Test func allowAllStillPermitsAppsWithoutABundleId() throws {
+        let r = ScriptedReader()
+        r.apps = .success([AppInfo(pid: 10, name: "无身份", bundleId: nil)])
+        let s = DesktopSession(reader: r)
+        let state = try s.readState(pid: 10, maxDepth: 12, budgetMs: 1000)
+        #expect(state.pid == 10)
+        #expect(r.readCount == 1)
+    }
+
     @Test func unknownOrGarbledTokenIsStaleAndNeverReachesNative() throws {
         let (s, r) = session()
         _ = try read(s)

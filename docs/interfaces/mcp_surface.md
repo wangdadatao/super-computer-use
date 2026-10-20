@@ -23,10 +23,29 @@
 
 只读档不需要拒绝清单：读取不改变桌面状态。动作档引入了**最小策略层**（拒绝类目，见
 [策略层的 P0 实现](../architecture/policy_layer.md#p0_denylist)）、令牌会话与动作后的效果摘要；
-仍然**没有**审批、授权作用域、租约与审计。
+另外可选**连接级应用允许列表**（[ADR-0024](../decisions/adr_0024_app_authorization.md)）。
+仍然**没有**逐次审批、交互式授权提示、租约与审计。
 
 **动作档默认关闭，由启动参数显式开启。** 未开启时 `click` 不出现在 `tools/list`，直接调用按未知工具处理
 （JSON-RPC `-32602`）。这样默认接入的宿主即使被诱导也没有可调用的动作。
+
+### 连接级应用允许列表
+
+默认不限制应用（只受拒绝类目约束）。启动时传 `--allow-app <bundle|名称|路径>`（可重复）
+或 `--allow-app-file <path>` 即进入允许列表模式：列表外的应用在**读取和动作之前**返回
+`app_not_authorized`。`list_apps` 仍列出所有运行应用（只发现目标，不读内容）。
+
+```bash
+scu mcp --actions --allow-app com.netease.163music
+scu mcp --actions --allow-app-file ~/.config/scu/pi-apps.json
+```
+
+- 一个 `scu mcp` 进程就是一个授权作用域；进程退出即失效，不需要宿主传 session id；
+- 允许列表在启动时解析为 bundle id，解析不到就拒绝启动；
+- 文件是只读输入，支持 JSON 数组或一行一个标识；`#` 开头的行忽略；
+- 修改列表需要重启服务；不提供模型可自调的 `authorize_app` 工具（那会是假审批）；
+- 与拒绝类目的顺序：先 `policy_denied`，再 `app_not_authorized`；
+- 设计见 [ADR-0024](../decisions/adr_0024_app_authorization.md)。
 
 <a id="tool_catalog"></a>
 
@@ -263,6 +282,7 @@ screenshot_id=g1abc.1 图像 1600x1138 scale=1.514 window=(353,199,1057,752)
 | `stale_snapshot`、`element_gone` | 重新 `get_ax_state` 取得新令牌与句柄；用 `focus` 按文本重新定位 |
 | `stale_geometry`、`invalid_coordinates` | 重新 `get_screenshot`，使用截图内的坐标 |
 | `app_not_found` | 用 bundle id、显示名或完整 `.app` 路径重试 |
+| `app_not_authorized` | 让用户把应用加入 `--allow-app` / `--allow-app-file` 并重启服务；不要换相近应用重试 |
 | `click_at` 的 `noOpSuspected` | 树与图都没变；不要重复点，必要时让用户核实 |
 | `target_switched` | 令牌属于之前读取的另一个应用，对要操作的应用重新读取 |
 | `unsupported_operation` | 该元素不支持这个动作（不能点击、不接受焦点、或不认识键名）；可尝试父元素、子元素或改换方式 |
@@ -339,6 +359,8 @@ socket 目录建在 `TMPDIR`（若设置且存在）或系统临时目录下。
   左侧栏坐标点击从「推荐」切到「精选」并成功返回（2026-10-20）。
   滚动已在网易云验证（推荐页上下滚动，diff 约 0.387）；拖拽只有单元/MCP 测试，真实应用未验证。
   其他应用、多窗口选择、窗口移动后的过期判断、区域级 diff 未验证。
+- **应用允许列表**：已做单元与 MCP 测试；已在网易云/访达上验证“列表外应用读取前被拒”。
+  动作门禁与 `--allow-app-file` 的文本格式还有单元测试覆盖；允许列表不是逐动作审批，也不包含交互式授权 UI。
 - **`launch_app` 已验证冷启动（计算器）与已运行（网易云）**：返回 pid、终端拒绝、未知应用错误均成立。
   非标准路径与“启动后等待 AX 就绪”未验证。
   `isError` 的呈现、其他宿主（Claude Desktop 等）都未观察。

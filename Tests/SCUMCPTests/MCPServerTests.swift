@@ -129,6 +129,24 @@ struct ToolReply: Equatable {
         #expect(ax?["inputSchema"]?["required"] == ["pid"])
     }
 
+
+    @Test func appAllowlistDeniesAXStateBeforeReading() {
+        let reader = FakeReader()
+        reader.apps = .success([
+            AppInfo(pid: 42, name: "演示", bundleId: "com.example.demo"),
+            AppInfo(pid: 43, name: "别的应用", bundleId: "com.example.other"),
+        ])
+        let s = MCPServer(
+            reader: reader, serverVersion: "test",
+            appAuthorization: AppAuthorization(mode: .allowlist, bundleIds: ["com.example.demo"]))
+        let allowed = callTool(s, "get_ax_state", ["pid": .int(42)])
+        #expect(!allowed.isError)
+        let denied = callTool(s, "get_ax_state", ["pid": .int(43)])
+        #expect(denied.isError)
+        #expect(denied.text.contains("app_not_authorized"))
+        #expect(reader.treeCalls.map(\.pid) == [42])
+    }
+
     @Test func pingReturnsEmptyResult() {
         #expect(request(server, "ping")["result"] == [:])
     }

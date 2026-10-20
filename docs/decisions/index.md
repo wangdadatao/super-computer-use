@@ -32,6 +32,7 @@
 - [ADR-0021 滚动与拖拽：坐标手势](adr_0021_scroll_and_drag.md)：`scroll_at` / `drag` 的坐标、方向、时长与风险。读取时机：实现滚动/拖拽、处理列表与画布时。
 - [ADR-0022 应用启动走 LaunchServices](adr_0022_app_launch.md)：`launch_app` 的解析、策略前置、激活与等待。读取时机：实现应用启动/发现、处理未运行应用时。
 - [ADR-0023 坐标动作前的可见指示环](adr_0023_indicator.md)：120ms 圆环、窗口属性与不进入截图。读取时机：实现指示层、坐标动作反馈时。
+- [ADR-0024 连接级应用允许列表](adr_0024_app_authorization.md)：一个 `scu mcp` 进程一个作用域、启动参数与文件、读取/动作前置检查。读取时机：接入新宿主、配置应用授权、处理 `app_not_authorized` 时。
 
 ### 范围与安全
 

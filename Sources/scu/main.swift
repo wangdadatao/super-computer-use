@@ -5,7 +5,9 @@ import SCUMCP
 import SCUWire
 
 // 命令行入口：诊断命令，以及 `scu mcp`（MCP stdio 服务）。
-//   scu mcp [--actions]                以 MCP stdio 服务运行；默认只读档，--actions 额外暴露 click，见 docs/interfaces/mcp_surface.md
+//   scu mcp [--actions] [--allow-app <id>]... [--allow-app-file <path>]
+//                                      以 MCP stdio 服务运行；默认只读档，--actions 额外暴露动作工具；
+//                                      --allow-app 配置连接级应用允许列表，见 docs/interfaces/mcp_surface.md
 //   scu permissions
 //   scu apps
 //   scu dump --pid <pid> [--depth <n>] [--json]
@@ -37,6 +39,74 @@ func option(_ name: String, in args: [String]) -> String? {
     return args[i + 1]
 }
 
+struct MCPOptions {
+    var actions = false
+    var allowedApps: [String] = []
+    var allowFile: String?
+}
+
+func parseMCPOptions(_ args: [String]) throws -> MCPOptions {
+    var options = MCPOptions()
+    var i = 0
+    while i < args.count {
+        switch args[i] {
+        case "--actions":
+            options.actions = true
+            i += 1
+        case "--allow-app":
+            guard i + 1 < args.count else { throw usage("--allow-app 需要一个值") }
+            options.allowedApps.append(args[i + 1])
+            i += 2
+        case "--allow-app-file":
+            guard i + 1 < args.count else { throw usage("--allow-app-file 需要一个路径") }
+            options.allowFile = args[i + 1]
+            i += 2
+        default:
+            throw usage("scu mcp 不认识的参数：\(args[i])（支持 --actions、--allow-app、--allow-app-file）")
+        }
+    }
+    return options
+}
+
+/// 把启动参数里的应用标识解析成 bundle id。文件名可以是 JSON 数组，
+/// 也可以是一行一个标识；解析不到就拒绝启动，不猜相近的应用。
+func loadAppAuthorization(_ options: MCPOptions) throws -> AppAuthorization {
+    var identifiers = options.allowedApps
+    if let path = options.allowFile {
+        let url = URL(fileURLWithPath: path)
+        let data: Data
+        do {
+            data = try Data(contentsOf: url)
+        } catch {
+            throw usage("读不到应用允许列表 \(path)：\(error.localizedDescription)")
+        }
+        if let list = try? JSONDecoder().decode([String].self, from: data) {
+            identifiers.append(contentsOf: list)
+        } else if let text = String(data: data, encoding: .utf8) {
+            identifiers.append(
+                contentsOf: text.split(whereSeparator: \.isNewline).map(String.init)
+                    .map { $0.trimmingCharacters(in: .whitespaces) }
+                    .filter { !$0.isEmpty && !$0.hasPrefix("#") })
+        } else {
+            throw usage("应用允许列表 \(path) 既不是 JSON 数组，也不是 UTF-8 文本")
+        }
+    }
+
+    guard !identifiers.isEmpty || options.allowFile != nil else { return .allowAll }
+
+    let launcher = WorkspaceAppLauncher()
+    var bundleIds = Set<String>()
+    for identifier in identifiers {
+        guard let app = try launcher.resolve(identifier), let bundleId = app.bundleId,
+            !bundleId.isEmpty
+        else {
+            throw usage("允许列表里的应用无法解析出 bundle id：\(identifier)")
+        }
+        bundleIds.insert(bundleId)
+    }
+    return AppAuthorization(mode: .allowlist, bundleIds: bundleIds)
+}
+
 func parseBudget(_ args: [String]) throws -> Int {
     guard let b = option("--budget-ms", in: args) else { return scuDefaultTreeBudgetMs }
     guard let n = Int(b), scuTreeBudgetMsRange.contains(n) else {
@@ -51,7 +121,7 @@ func treeTimeoutMs(_ budgetMs: Int) -> Int32 { Int32(budgetMs + 10_000) }
 let scuVersion = "0.1.0"
 
 /// 以 MCP stdio 服务运行。**stdout 只允许出现协议消息**：任何诊断都写 stderr。
-func runMCP(actions: Bool) {
+func runMCP(options: MCPOptions, appAuthorization: AppAuthorization) {
     // 宿主关闭管道后继续写会触发 SIGPIPE；改为让 write 返回错误，由循环正常退出并清理。
     signal(SIGPIPE, SIG_IGN)
 
@@ -72,7 +142,8 @@ func runMCP(actions: Bool) {
     defer { session.close() }
     // 策略的宿主判定：SCU 自身与启动它的进程链都是拒绝目标（policy_layer.md）。
     let server = MCPServer(
-        reader: session, serverVersion: scuVersion, actionsEnabled: actions, policy: PolicyGate.forCurrentProcess())
+        reader: session, serverVersion: scuVersion, actionsEnabled: options.actions,
+        appAuthorization: appAuthorization, policy: PolicyGate.forCurrentProcess())
     server.run(
         readLine: { Swift.readLine(strippingNewline: true) },
         write: { line in
@@ -122,9 +193,9 @@ func run(command: String, args: [String]) throws {
         budgetMs = try parseBudget(args)
     } else if command == "mcp" {
         // 先校验参数再启动：用法错误不应拉起子进程。
-        let unknown = args.filter { $0 != "--actions" }
-        if let bad = unknown.first { throw usage("scu mcp 不认识的参数：\(bad)（只支持 --actions）") }
-        runMCP(actions: args.contains("--actions"))
+        let options = try parseMCPOptions(args)
+        let authorization = try loadAppAuthorization(options)
+        runMCP(options: options, appAuthorization: authorization)
         return
     } else if command != "permissions" && command != "apps" {
         throw usage("未知命令：\(command)")
@@ -199,7 +270,7 @@ func main() -> Int32 {
     let argv = Array(CommandLine.arguments.dropFirst())
     guard let command = argv.first else {
         FileHandle.standardError.write(
-            Data("用法：scu mcp [--actions] | permissions | apps | dump|identity --pid <pid> [--depth <n>] [--budget-ms <n>] [--json|--show-k4|--by-role]\n".utf8))
+            Data("用法：scu mcp [--actions] [--allow-app <id>]... [--allow-app-file <path>] | permissions | apps | dump|identity --pid <pid> [--depth <n>] [--budget-ms <n>] [--json|--show-k4|--by-role]\n".utf8))
         return 64
     }
     do {

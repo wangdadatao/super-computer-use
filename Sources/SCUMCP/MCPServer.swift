@@ -23,10 +23,12 @@ public final class MCPServer {
     public init(
         reader: DesktopReader, serverVersion: String, actionsEnabled: Bool = false,
         launcher: AppLauncher = WorkspaceAppLauncher(),
+        appAuthorization: AppAuthorization = .allowAll,
         policy: PolicyGate = PolicyGate(), settle: DesktopSession.Settle = DesktopSession.Settle()
     ) {
         self.session = DesktopSession(
-            reader: reader, launcher: launcher, policy: policy, settle: settle)
+            reader: reader, launcher: launcher, appAuthorization: appAuthorization,
+            policy: policy, settle: settle)
         self.serverVersion = serverVersion
         self.actionsEnabled = actionsEnabled
     }
@@ -98,6 +100,7 @@ public final class MCPServer {
         SCU（SuperComputerUse）当前是只读档：只能读取 macOS 应用的无障碍树，不能点击、输入或改变任何东西。\
         典型流程：list_apps 取得 pid，再用 get_ax_state 读取元素表；需要看界面时用 get_screenshot。\
         元素表里的标签/句柄与标题行的令牌配对，令牌失效后不可用。读取不到时先用 check_permissions 确认宿主应用的辅助功能权限；
+        如果服务以应用允许列表启动，列表外的应用会在读取前返回 app_not_authorized；不要重试，让用户调整允许列表并重启服务。\
         截图还需要屏幕录制权限，两者按宿主应用归属。
         """
 
@@ -111,7 +114,9 @@ public final class MCPServer {
         需要看界面时用 get_screenshot（需要屏幕录制权限）；图上会叠加与元素表一致的 [a] 标签。\
         动作前会核对目标仍是读取时的那个，不是就拒绝并告诉你原因；点击后会报告观察到的效果，\
         结构变化时令牌作废需重读，"疑似空操作"需要你核实。终端、脚本运行器、密码管理器、系统设置、Cursor 等属于拒绝类目，\
-        拒绝不可协商，请让用户自己完成。读取不到时先用 check_permissions 确认宿主应用的辅助功能权限。
+        拒绝不可协商，请让用户自己完成。如果服务以应用允许列表启动，列表外的应用会返回 app_not_authorized；\
+        不要重试或换相近应用，让用户调整 --allow-app / --allow-app-file 并重启服务。\
+        读取不到时先用 check_permissions 确认宿主应用的辅助功能权限。
         """
 
     private func callTool(id: JSONValue, params: JSONValue?) -> String {

@@ -165,6 +165,15 @@ delivered=true observed=true converged=true treeChanged=false targetChanged=fals
   因此“圆环确实显示”只能靠人工观察，不能像 AX 变化那样自动断言。
 - 多显示器、不同缩放下的圆环位置未验证。
 
+## 追加：连接级应用允许列表（2026-10-20）
+
+- `scu mcp --actions --allow-app com.netease.163music`：`get_ax_state` 读取网易云 pid 7554 成功。
+- 同一进程读取访达 pid 697：返回 `app_not_authorized`，消息含当前允许列表；
+  读取在原生层之前被拒（单元测试断言 `readTree` 未被调用）。
+- `--allow-app-file /tmp/scu-allowed.json`（JSON `["com.netease.163music"]`）：读取网易云成功。
+- `--allow-app com.example.not-real`：启动退出码 64，拒绝启动并提示无法解析 bundle id。
+- 没有在允许列表模式下做点击/输入；动作门禁由单元测试覆盖。
+
 ## 限定
 
 - 只测了一个应用、一个版本（`3.1.12`）；其他 CEF/Electron 应用是否支持该参数未知。

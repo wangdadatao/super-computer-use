@@ -575,6 +575,8 @@ enum ScuTool: String, CaseIterable {
             s += "\n窗口位置/缩放或截图已变化：重新 get_screenshot，使用新的 screenshot_id。"
         case "app_not_found":
             s += "\n用 bundle id、显示名或完整 .app 路径重试；不要猜一个相近的名字。"
+        case "app_not_authorized":
+            s += "\n该应用不在本次连接的允许列表里：让用户确认后调整 --allow-app / --allow-app-file 并重启服务；不要重试或换相近应用。"
         case "target_switched":
             s += "\n令牌属于之前读取的另一个应用：请对要操作的应用重新 get_ax_state。"
         case "unsupported_operation":
