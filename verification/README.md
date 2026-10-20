@@ -34,7 +34,7 @@ verification/
 | `2026-10-19-real-app-netease.md` | 真实第三方应用端到端（网易云 CEF）：正常启动无 AX，带 `--force-renderer-accessibility` 后读/输入/点击/播放核实成立 |
 | `2026-10-20-approval-triggers.md` | Grok Bot 与 Codex Computer Use 的审批触发：应用级运行时审批与动作级提示词的区分 |
 | `2026-10-20-window-root.md` | TextEdit 两窗口上的 `list_windows`、窗口根读取与跨窗口 `set_value` 实测 |
-| `2026-10-20-real-tasks.md` | 真实任务第一轮：TextEdit 编辑/保存/多窗口隔离、计算器、访达新建文件夹（部分通过） |
+| `2026-10-20-real-tasks.md` | 真实任务第一轮：TextEdit 编辑/保存/多窗口隔离、计算器、访达新建文件夹（部分通过）、Edge 链接、TextEdit 撤销（失败） |
 
 ## 结论文件格式
 
@@ -51,7 +51,7 @@ K4 正式验证（[2026-10-18](2026-10-18-identity-k4.md)，不成立）、令�
 真实应用端到端（[2026-10-19](2026-10-19-real-app-netease.md)，网易云 CEF）、审批触发
 （[2026-10-20](2026-10-20-approval-triggers.md)，Grok/Codex 静态分析）、窗口列表与窗口根
 （[2026-10-20](2026-10-20-window-root.md)，TextEdit 两窗口）、真实任务第一轮
-（[2026-10-20](2026-10-20-real-tasks.md)，4 个任务，3 个通过、1 个部分通过）。
+（[2026-10-20](2026-10-20-real-tasks.md)，6 个任务：4 个通过、1 个部分通过、1 个失败）。
 指示层隔离（需要屏幕录制）等 P0 之外的假设仍未验证。
 门槛见 [ADR-0013](../docs/decisions/adr_0013_p0_vertical_slice.md)；
 权限状态见 [docs/operations/permissions.md](../docs/operations/permissions.md)。
