@@ -88,7 +88,7 @@ flowchart LR
 - CLI 新增 `--allow-app`、`--allow-app-file`；
 - `DesktopSession` 持有连接级 `AppAuthorization`；读取、动作、启动都过它；
 - 新增错误码 `app_not_authorized`；
-- 不改线协议（仍是 v9），不改原生层；
+- 不改线协议（当时为 v9；后续 ADR-0026 升到 v10），不改原生层；
 - 文档需要说明：这是连接级允许列表，不是逐动作审批，也不是 SCU 维护的 session 服务；
 - 真实应用验证需要覆盖“允许的应用可读、列表外应用在读取前被拒”。
 

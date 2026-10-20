@@ -2,7 +2,7 @@ import Foundation
 
 /// 协议层 ↔ 原生层的协议版本。单调递增整数，两侧必须完全相等（ADR-0012）。
 /// 编译期常量：不是运行时可变状态。
-public let scuNativeProtocolVersion = 9
+public let scuNativeProtocolVersion = 10
 
 /// `dumpTree` 允许的最大深度。超出时原生层拒绝，不做静默截断。
 public let scuMaxTreeDepth = 64
@@ -99,6 +99,13 @@ public struct WireError: Error, Codable, Sendable, Equatable {
         return WireError(
             code: "app_not_authorized", layer: "policy", retry: "no",
             message: "应用 \(identity) 不在本次连接的应用允许列表里；\(detail)。请让用户确认后调整 --allow-app / --allow-app-file 并重启服务；本次连接不会自行放行。")
+    }
+
+    /// 找不到指定标题的目标窗口。
+    public static func windowNotFound(pid: Int32, title: String) -> WireError {
+        WireError(
+            code: "window_not_found", layer: "protocol", retry: "after_refresh",
+            message: "进程 \(pid) 找不到标题为“\(title)”的窗口；请重新读取界面并选择仍存在的窗口。")
     }
 
     /// 找不到要启动/解析的应用。
@@ -320,13 +327,16 @@ public enum Request: Sendable, Equatable {
     /// 通过无障碍接口直接写元素的值（要求元素声明 AXValue 可写）。
     case setValue(pid: Int32, locator: ElementLocator, value: String)
     /// 截取目标应用的一个窗口，返回 PNG 与坐标映射元数据。
-    case captureWindow(pid: Int32)
+    /// `windowTitle` 为 nil 时使用默认窗口；非 nil 时必须精确匹配该标题的窗口。
+    case captureWindow(pid: Int32, windowTitle: String?)
     /// 在全局屏幕坐标 (x, y) 投递一次鼠标左键点击。坐标由协议层从截图换算。
-    case clickAt(pid: Int32, x: Double, y: Double)
+    case clickAt(pid: Int32, windowTitle: String?, x: Double, y: Double)
     /// 在全局坐标 (x, y) 投递滚轮事件，dx/dy 为像素增量。
-    case scrollAt(pid: Int32, x: Double, y: Double, dx: Double, dy: Double)
+    case scrollAt(pid: Int32, windowTitle: String?, x: Double, y: Double, dx: Double, dy: Double)
     /// 从全局坐标 (fromX, fromY) 拖到 (toX, toY)，持续 durationMs。
-    case dragAt(pid: Int32, fromX: Double, fromY: Double, toX: Double, toY: Double, durationMs: Int)
+    case dragAt(
+        pid: Int32, windowTitle: String?, fromX: Double, fromY: Double, toX: Double, toY: Double,
+        durationMs: Int)
 }
 
 public enum Response: Sendable, Equatable {
@@ -348,7 +358,7 @@ public enum Response: Sendable, Equatable {
 extension Request: Codable {
     private enum Key: String, CodingKey {
         case type, protocolVersion, pid, maxDepth, budgetMs, locator, action, text, key, value, x, y,
-            dx, dy, fromX, fromY, toX, toY, durationMs
+            dx, dy, fromX, fromY, toX, toY, durationMs, windowTitle
     }
     private enum Kind: String, Codable {
         case hello, checkPermissions, listApps, dumpTree, performAction, typeText, pressKey, setValue
@@ -386,15 +396,19 @@ extension Request: Codable {
                 locator: try c.decode(ElementLocator.self, forKey: .locator),
                 value: try c.decode(String.self, forKey: .value))
         case .captureWindow:
-            self = .captureWindow(pid: try c.decode(Int32.self, forKey: .pid))
+            self = .captureWindow(
+                pid: try c.decode(Int32.self, forKey: .pid),
+                windowTitle: try c.decodeIfPresent(String.self, forKey: .windowTitle))
         case .clickAt:
             self = .clickAt(
                 pid: try c.decode(Int32.self, forKey: .pid),
+                windowTitle: try c.decodeIfPresent(String.self, forKey: .windowTitle),
                 x: try c.decode(Double.self, forKey: .x),
                 y: try c.decode(Double.self, forKey: .y))
         case .scrollAt:
             self = .scrollAt(
                 pid: try c.decode(Int32.self, forKey: .pid),
+                windowTitle: try c.decodeIfPresent(String.self, forKey: .windowTitle),
                 x: try c.decode(Double.self, forKey: .x),
                 y: try c.decode(Double.self, forKey: .y),
                 dx: try c.decode(Double.self, forKey: .dx),
@@ -402,6 +416,7 @@ extension Request: Codable {
         case .dragAt:
             self = .dragAt(
                 pid: try c.decode(Int32.self, forKey: .pid),
+                windowTitle: try c.decodeIfPresent(String.self, forKey: .windowTitle),
                 fromX: try c.decode(Double.self, forKey: .fromX),
                 fromY: try c.decode(Double.self, forKey: .fromY),
                 toX: try c.decode(Double.self, forKey: .toX),
@@ -443,24 +458,28 @@ extension Request: Codable {
             try c.encode(pid, forKey: .pid)
             try c.encode(locator, forKey: .locator)
             try c.encode(value, forKey: .value)
-        case .captureWindow(let pid):
+        case .captureWindow(let pid, let windowTitle):
             try c.encode(Kind.captureWindow, forKey: .type)
             try c.encode(pid, forKey: .pid)
-        case .clickAt(let pid, let x, let y):
+            try c.encodeIfPresent(windowTitle, forKey: .windowTitle)
+        case .clickAt(let pid, let windowTitle, let x, let y):
             try c.encode(Kind.clickAt, forKey: .type)
             try c.encode(pid, forKey: .pid)
+            try c.encodeIfPresent(windowTitle, forKey: .windowTitle)
             try c.encode(x, forKey: .x)
             try c.encode(y, forKey: .y)
-        case .scrollAt(let pid, let x, let y, let dx, let dy):
+        case .scrollAt(let pid, let windowTitle, let x, let y, let dx, let dy):
             try c.encode(Kind.scrollAt, forKey: .type)
             try c.encode(pid, forKey: .pid)
+            try c.encodeIfPresent(windowTitle, forKey: .windowTitle)
             try c.encode(x, forKey: .x)
             try c.encode(y, forKey: .y)
             try c.encode(dx, forKey: .dx)
             try c.encode(dy, forKey: .dy)
-        case .dragAt(let pid, let fromX, let fromY, let toX, let toY, let durationMs):
+        case .dragAt(let pid, let windowTitle, let fromX, let fromY, let toX, let toY, let durationMs):
             try c.encode(Kind.dragAt, forKey: .type)
             try c.encode(pid, forKey: .pid)
+            try c.encodeIfPresent(windowTitle, forKey: .windowTitle)
             try c.encode(fromX, forKey: .fromX)
             try c.encode(fromY, forKey: .fromY)
             try c.encode(toX, forKey: .toX)

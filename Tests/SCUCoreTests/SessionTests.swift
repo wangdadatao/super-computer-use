@@ -13,6 +13,8 @@ final class ScriptedReader: DesktopReader {
     func readCountReset() { readCount = 0 }
     var apps: Result<[AppInfo], WireError> = .success([AppInfo(pid: 10, name: "演示", bundleId: "com.example.demo")])
     private(set) var listAppsCalls = 0
+    private(set) var captureTitles: [String?] = []
+    var capture: Result<WindowCapture, WireError> = .failure(.unsupportedOperation("没有配置截图"))
     var action: Result<ActionOutcome, WireError> = .success(.acted)
     private(set) var actionCalls: [(pid: Int32, locator: ElementLocator, action: ActionKind)] = []
     private(set) var typed: [(pid: Int32, locator: ElementLocator, text: String)] = []
@@ -30,6 +32,10 @@ final class ScriptedReader: DesktopReader {
         defer { readCount += 1 }
         guard !script.isEmpty else { return tree }
         return try script[min(readCount, script.count - 1)].get()
+    }
+    func captureWindow(pid: Int32, windowTitle: String?) throws -> WindowCapture {
+        captureTitles.append(windowTitle)
+        return try capture.get()
     }
     func performAction(pid: Int32, locator: ElementLocator, action kind: ActionKind) throws -> ActionOutcome {
         actionCalls.append((pid, locator, kind))
@@ -213,6 +219,29 @@ final class FakeLauncher: AppLauncher, @unchecked Sendable {
 
     // MARK: - 令牌未知
 
+
+
+    // MARK: - 窗口绑定
+
+    @Test func changingTheSelectedWindowIssuesANewTokenAndStalesTheOldOne() throws {
+        let (s, r) = session()
+        r.capture = .success(WindowCapture(
+            png: Data([0x89, 0x50]), width: 80, height: 20, scale: 1,
+            windowFrame: Rect(x: 0, y: 0, width: 80, height: 20), windowTitle: "A"))
+        let a = try s.readState(pid: 10, maxDepth: 12, budgetMs: 1000, windowTitle: "A")
+        let b = try s.readState(pid: 10, maxDepth: 12, budgetMs: 1000, windowTitle: "A")
+        #expect(a.token == b.token && b.reused)
+        #expect(a.windowTitle == "A")
+
+        let c = try s.readState(pid: 10, maxDepth: 12, budgetMs: 1000, windowTitle: "B")
+        #expect(c.token != a.token && !c.reused)
+        expectError("stale_snapshot", retry: "after_refresh") {
+            _ = try s.resolve(token: a.token.value, handle: 3)
+        }
+
+        _ = try s.captureScreenshot(token: c.token.value)
+        #expect(r.captureTitles == ["B"])
+    }
 
     // MARK: - 连接级应用授权
 

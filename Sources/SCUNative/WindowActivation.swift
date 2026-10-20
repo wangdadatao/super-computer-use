@@ -15,7 +15,7 @@ enum WindowActivation {
     }
 
     @discardableResult
-    static func activate(pid: Int32) throws -> Target {
+    static func activate(pid: Int32, windowTitle: String? = nil) throws -> Target {
         guard let app = NSRunningApplication(processIdentifier: pid) else {
             throw WireError.targetMissing(pid: pid)
         }
@@ -23,8 +23,15 @@ enum WindowActivation {
 
         let axApp = AXUIElementCreateApplication(pid)
         let windows = axWindows(axApp)
-        let index = largestIndex(windows.map(\.frame))
-        let chosen = index.map { windows[$0] }
+        let chosen: (element: AXUIElement, title: String?, frame: Rect?)?
+        if let windowTitle {
+            guard let match = windows.first(where: { $0.title == windowTitle }) else {
+                throw WireError.windowNotFound(pid: pid, title: windowTitle)
+            }
+            chosen = match
+        } else {
+            chosen = largestIndex(windows.map(\.frame)).map { windows[$0] }
+        }
         if let chosen {
             AXUIElementPerformAction(chosen.element, kAXRaiseAction as CFString)
         }

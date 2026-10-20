@@ -59,7 +59,7 @@ scu mcp --actions --allow-app-file ~/.config/scu/pi-apps.json
 | --- | --- | --- |
 | `check_permissions` | 无 | 报告启动本服务的宿主是否有辅助功能权限。权限未授予不算工具错误，是对状态的如实报告 |
 | `list_apps` | 无 | 每行 `pid<TAB>名称<TAB>bundle id`（无 bundle id 时为 `-`） |
-| `get_ax_state` | `pid`（必填）、`max_depth`、`budget_ms`、`max_elements`、`focus`、`focus_role` | 读取应用的无障碍树，返回带标签与 `frame` 的文本化元素表；`focus` 系列只展开一部分 |
+| `get_ax_state` | `pid`（必填）、`max_depth`、`budget_ms`、`max_elements`、`focus`、`focus_role`、`window` | 读取应用的无障碍树，返回带标签与 `frame` 的文本化元素表；`window` 绑定截图/坐标动作的窗口，元素表仍为整个应用 |
 | `get_screenshot` | `token` | 截取令牌对应的目标窗口，叠加标签，返回 PNG、`screenshot_id`、窗口 frame 与 title；需要屏幕录制权限 |
 | `launch_app`（仅 `--actions`） | `app` | 启动/激活应用（bundle id、名称或 `.app` 路径）；见下 |
 | `click`（仅 `--actions`） | `token`、`handle` 或 `label`（二选一） | 对目标执行 `AXPress`；见下 |
@@ -77,7 +77,11 @@ scu mcp --actions --allow-app-file ~/.config/scu/pi-apps.json
 截图与坐标动作使用**同一个目标窗口**：原生层在激活应用时选择面积最大的非最小化 AX 窗口，
 截图再按该窗口的 frame 匹配 ScreenCaptureKit 候选；匹配不上就拒绝截图，不会退回可能不匹配的窗口。
 `get_screenshot` 的元数据带 `title`，便于确认截的是哪个窗口。
-当前没有显式窗口选择（按标题/ID 绑定），多窗口时仍可能选到非预期的最大窗口；见 [ADR-0025](../decisions/adr_0025_window_target.md)。
+
+`get_ax_state` 可以传 `window`（精确标题）把令牌绑定到指定窗口；之后 `get_screenshot` /
+`click_at` / `scroll_at` / `drag` 都使用该窗口。**元素表仍是整个应用**，`click` 等元素动作不受
+`window` 限制。截图/坐标动作时窗口标题不存在返回 `window_not_found`。见 [ADR-0025](../decisions/adr_0025_window_target.md)、
+[ADR-0026](../decisions/adr_0026_window_selection.md)。
 
 ### `launch_app`
 
@@ -290,6 +294,7 @@ screenshot_id=g1abc.1 图像 1600x1138 scale=1.514 window=(353,199,1057,752)
 | `stale_geometry`、`invalid_coordinates` | 重新 `get_screenshot`，使用截图内的坐标 |
 | `app_not_found` | 用 bundle id、显示名或完整 `.app` 路径重试 |
 | `app_not_authorized` | 让用户把应用加入 `--allow-app` / `--allow-app-file` 并重启服务；不要换相近应用重试 |
+| `window_not_found` | 重新 `get_ax_state` 查看当前窗口标题，绑定仍存在的窗口 |
 | `click_at` 的 `noOpSuspected` | 树与图都没变；不要重复点，必要时让用户核实 |
 | `target_switched` | 令牌属于之前读取的另一个应用，对要操作的应用重新读取 |
 | `unsupported_operation` | 该元素不支持这个动作（不能点击、不接受焦点、或不认识键名）；可尝试父元素、子元素或改换方式 |
@@ -365,8 +370,8 @@ socket 目录建在 `TMPDIR`（若设置且存在）或系统临时目录下。
 - **`get_screenshot` / `click_at` 只在网易云 3.1.12 上验证过**：截图 1600×1138、`scale=1.514`；
   左侧栏坐标点击从「推荐」切到「精选」并成功返回（2026-10-20）。
   滚动已在网易云验证（推荐页上下滚动，diff 约 0.387）；拖拽只有单元/MCP 测试，真实应用未验证。
-  其他应用、显式多窗口选择、窗口移动后的过期判断、区域级 diff 未验证；
-  多窗口目标一致性有单元测试，TextEdit 单窗口实测。
+  其他应用、多窗口真实回归、窗口移动后的过期判断、区域级 diff 未验证；
+  多窗口目标一致性与窗口标题绑定有单元/MCP 测试，TextEdit 单窗口实测。
 - **应用允许列表**：已做单元与 MCP 测试；已在网易云/访达上验证“列表外应用读取前被拒”。
   动作门禁与 `--allow-app-file` 的文本格式还有单元测试覆盖；允许列表不是逐动作审批，也不包含交互式授权 UI。
 - **`launch_app` 已验证冷启动（计算器）与已运行（网易云）**：返回 pid、终端拒绝、未知应用错误均成立。

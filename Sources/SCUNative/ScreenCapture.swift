@@ -16,7 +16,7 @@ enum ScreenCapture {
         CGPreflightScreenCaptureAccess()
     }
 
-    static func captureWindow(pid: Int32) throws -> WindowCapture {
+    static func captureWindow(pid: Int32, windowTitle: String? = nil) throws -> WindowCapture {
         guard isAuthorized() else { throw WireError.screenRecordingMissing() }
 
         // ScreenCaptureKit 依赖 WindowServer/CoreGraphics 的进程级初始化。
@@ -26,7 +26,7 @@ enum ScreenCapture {
 
         // 截图前把窗口带到当前 Space/显示器：否则 SCWindow.frame 可能与
         // AX/CGWindowList 的屏幕坐标不一致，模型拿到的坐标会点空。
-        let target = try WindowActivation.activate(pid: pid)
+        let target = try WindowActivation.activate(pid: pid, windowTitle: windowTitle)
 
         let box = CaptureBox()
         let done = DispatchSemaphore(value: 0)

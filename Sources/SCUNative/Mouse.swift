@@ -9,8 +9,10 @@ import SCUWire
 /// `CGEvent.postToPid` 的鼠标事件，而 AXPress 也可能对它们是空操作。
 /// 这会移动真实光标并切换前台应用，代价是可见的，但这是坐标点击的语义。
 enum Mouse {
-    static func scrollAt(pid: Int32, x: Double, y: Double, dx: Double, dy: Double) throws {
-        try WindowActivation.activate(pid: pid)
+    static func scrollAt(
+        pid: Int32, windowTitle: String? = nil, x: Double, y: Double, dx: Double, dy: Double
+    ) throws {
+        try WindowActivation.activate(pid: pid, windowTitle: windowTitle)
         let point = CGPoint(x: x, y: y)
         Indicator.show(points: [point])
         defer { Indicator.hide() }
@@ -30,9 +32,10 @@ enum Mouse {
     }
 
     static func dragAt(
-        pid: Int32, fromX: Double, fromY: Double, toX: Double, toY: Double, durationMs: Int
+        pid: Int32, windowTitle: String? = nil, fromX: Double, fromY: Double, toX: Double, toY: Double,
+        durationMs: Int
     ) throws {
-        try WindowActivation.activate(pid: pid)
+        try WindowActivation.activate(pid: pid, windowTitle: windowTitle)
         let start = CGPoint(x: fromX, y: fromY)
         let end = CGPoint(x: toX, y: toY)
         Indicator.show(points: [start, end])
@@ -68,8 +71,8 @@ enum Mouse {
         up.post(tap: .cghidEventTap)
     }
 
-    static func clickAt(pid: Int32, x: Double, y: Double) throws {
-        try WindowActivation.activate(pid: pid)
+    static func clickAt(pid: Int32, windowTitle: String? = nil, x: Double, y: Double) throws {
+        try WindowActivation.activate(pid: pid, windowTitle: windowTitle)
 
         let point = CGPoint(x: x, y: y)
         Indicator.show(points: [point])

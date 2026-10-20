@@ -23,11 +23,14 @@ public protocol DesktopReader {
     func typeText(pid: Int32, locator: ElementLocator, text: String) throws -> ActionOutcome
     func pressKey(pid: Int32, locator: ElementLocator, key: String) throws -> ActionOutcome
     func setValue(pid: Int32, locator: ElementLocator, value: String) throws -> ActionOutcome
-    func captureWindow(pid: Int32) throws -> WindowCapture
-    func clickAt(pid: Int32, x: Double, y: Double) throws -> ActionOutcome
-    func scrollAt(pid: Int32, x: Double, y: Double, dx: Double, dy: Double) throws -> ActionOutcome
+    func captureWindow(pid: Int32, windowTitle: String?) throws -> WindowCapture
+    func clickAt(pid: Int32, windowTitle: String?, x: Double, y: Double) throws -> ActionOutcome
+    func scrollAt(
+        pid: Int32, windowTitle: String?, x: Double, y: Double, dx: Double, dy: Double
+    ) throws -> ActionOutcome
     func dragAt(
-        pid: Int32, fromX: Double, fromY: Double, toX: Double, toY: Double, durationMs: Int
+        pid: Int32, windowTitle: String?, fromX: Double, fromY: Double, toX: Double, toY: Double,
+        durationMs: Int
     ) throws -> ActionOutcome
 }
 
@@ -45,20 +48,23 @@ extension DesktopReader {
         throw WireError.unsupportedOperation("这个读取器不支持设值")
     }
 
-    public func captureWindow(pid: Int32) throws -> WindowCapture {
+    public func captureWindow(pid: Int32, windowTitle: String?) throws -> WindowCapture {
         throw WireError.unsupportedOperation("这个读取器不支持窗口截图")
     }
 
-    public func clickAt(pid: Int32, x: Double, y: Double) throws -> ActionOutcome {
+    public func clickAt(pid: Int32, windowTitle: String?, x: Double, y: Double) throws -> ActionOutcome {
         throw WireError.unsupportedOperation("这个读取器不支持坐标点击")
     }
 
-    public func scrollAt(pid: Int32, x: Double, y: Double, dx: Double, dy: Double) throws -> ActionOutcome {
+    public func scrollAt(
+        pid: Int32, windowTitle: String?, x: Double, y: Double, dx: Double, dy: Double
+    ) throws -> ActionOutcome {
         throw WireError.unsupportedOperation("这个读取器不支持滚动")
     }
 
     public func dragAt(
-        pid: Int32, fromX: Double, fromY: Double, toX: Double, toY: Double, durationMs: Int
+        pid: Int32, windowTitle: String?, fromX: Double, fromY: Double, toX: Double, toY: Double,
+        durationMs: Int
     ) throws -> ActionOutcome {
         throw WireError.unsupportedOperation("这个读取器不支持拖拽")
     }
@@ -184,10 +190,10 @@ public final class NativeSession: DesktopReader {
         }
     }
 
-    public func captureWindow(pid: Int32) throws -> WindowCapture {
+    public func captureWindow(pid: Int32, windowTitle: String?) throws -> WindowCapture {
         try withClient { c in
             guard case .windowCapture(let capture) = try c.call(
-                .captureWindow(pid: pid), timeoutMs: 35_000)
+                .captureWindow(pid: pid, windowTitle: windowTitle), timeoutMs: 35_000)
             else {
                 throw WireError.internalError("截图的应答类型错误")
             }
@@ -195,9 +201,9 @@ public final class NativeSession: DesktopReader {
         }
     }
 
-    public func clickAt(pid: Int32, x: Double, y: Double) throws -> ActionOutcome {
+    public func clickAt(pid: Int32, windowTitle: String?, x: Double, y: Double) throws -> ActionOutcome {
         try withClient { c in
-            switch try c.call(.clickAt(pid: pid, x: x, y: y), timeoutMs: 10_000) {
+            switch try c.call(.clickAt(pid: pid, windowTitle: windowTitle, x: x, y: y), timeoutMs: 10_000) {
             case .acted: return .acted
             case .failure(let e): throw e
             default: throw WireError.internalError("坐标点击的应答类型错误")
@@ -205,9 +211,11 @@ public final class NativeSession: DesktopReader {
         }
     }
 
-    public func scrollAt(pid: Int32, x: Double, y: Double, dx: Double, dy: Double) throws -> ActionOutcome {
+    public func scrollAt(
+        pid: Int32, windowTitle: String?, x: Double, y: Double, dx: Double, dy: Double
+    ) throws -> ActionOutcome {
         try withClient { c in
-            switch try c.call(.scrollAt(pid: pid, x: x, y: y, dx: dx, dy: dy), timeoutMs: 10_000) {
+            switch try c.call(.scrollAt(pid: pid, windowTitle: windowTitle, x: x, y: y, dx: dx, dy: dy), timeoutMs: 10_000) {
             case .acted: return .acted
             case .failure(let e): throw e
             default: throw WireError.internalError("滚动的应答类型错误")
@@ -216,12 +224,13 @@ public final class NativeSession: DesktopReader {
     }
 
     public func dragAt(
-        pid: Int32, fromX: Double, fromY: Double, toX: Double, toY: Double, durationMs: Int
+        pid: Int32, windowTitle: String?, fromX: Double, fromY: Double, toX: Double, toY: Double,
+        durationMs: Int
     ) throws -> ActionOutcome {
         try withClient { c in
             switch try c.call(
                 .dragAt(
-                    pid: pid, fromX: fromX, fromY: fromY, toX: toX, toY: toY,
+                    pid: pid, windowTitle: windowTitle, fromX: fromX, fromY: fromY, toX: toX, toY: toY,
                     durationMs: durationMs),
                 timeoutMs: 15_000)
             {

@@ -170,7 +170,10 @@ delivered=true observed=true converged=true treeChanged=false targetChanged=fals
 - 打开一个临时文本窗口（`/tmp/scu-win.txt`），`get_ax_state` 读取 pid 65797 成功。
 - `get_screenshot` 返回 `window=(-2251,-220,656,422) title="scu-win.txt"`，
   与 AX 顶层窗口的标题/frame 一致；验证后关闭 TextEdit 并删除临时文件。
-- 没有做点击；多窗口（同时两个窗口）未验证。窗口选择规则见 [ADR-0025](../docs/decisions/adr_0025_window_target.md)。
+- 第二轮（pid 85920）：`get_ax_state(window="scu-win.txt")` 标题行出现 `窗口="scu-win.txt"`，
+  `get_screenshot` 成功；绑定不存在的标题后 `get_screenshot` 返回 `window_not_found`（retry=after_refresh）。
+- 没有做点击；多窗口（同时两个窗口）未验证。窗口选择规则见 [ADR-0025](../docs/decisions/adr_0025_window_target.md)
+  与 [ADR-0026](../docs/decisions/adr_0026_window_selection.md)。
 
 ## 追加：连接级应用允许列表（2026-10-20）
 

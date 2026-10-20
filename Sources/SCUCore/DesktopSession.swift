@@ -63,6 +63,8 @@ public struct SessionState: Sendable {
     public var policy: PolicyGate.Decision
     /// 应用显示名；身份查询失败或没有该进程时为 nil。
     public var appName: String?
+    /// 绑定的窗口标题；nil 表示默认窗口（原生层选最大非最小化窗口）。
+    public var windowTitle: String?
 }
 
 /// 会话：保存快照与令牌状态，把"令牌 + 句柄"解析成动作定位器，并在失效时给出分类的错误。
@@ -82,12 +84,15 @@ public final class DesktopSession {
         /// nil 表示身份查询**失败**（不是"没有 bundle id"）；动作时必须重查，查不到就不执行。
         var identity: Identity?
         var status: Status
+        /// 这个令牌绑定的窗口标题；nil 表示默认窗口。
+        let windowTitle: String?
         /// 只有当前令牌保留整棵树；失效后释放，避免长期持有大树。
         var snapshot: Snapshot?
-        init(pid: Int32, identity: Identity?, status: Status, snapshot: Snapshot?) {
+        init(pid: Int32, identity: Identity?, status: Status, windowTitle: String?, snapshot: Snapshot?) {
             self.pid = pid
             self.identity = identity
             self.status = status
+            self.windowTitle = windowTitle
             self.snapshot = snapshot
         }
     }
@@ -104,6 +109,7 @@ public final class DesktopSession {
     /// 截图的坐标绑定：窗口位置/缩放变化后，旧截图不能用于坐标动作。
     struct ScreenshotBinding {
         var token: String
+        var windowTitle: String?
         var windowFrame: Rect
         var scale: Double
         var width: Int
@@ -181,7 +187,9 @@ public final class DesktopSession {
 
     // MARK: - 读取与签发
 
-    public func readState(pid: Int32, maxDepth: Int, budgetMs: Int) throws -> SessionState {
+    public func readState(
+        pid: Int32, maxDepth: Int, budgetMs: Int, windowTitle: String? = nil
+    ) throws -> SessionState {
         // 受限连接必须在读树之前确认应用身份，避免先读到数据再拒绝。
         let knownIdentity: Identity?
         if appAuthorization.isRestricted {
@@ -203,7 +211,8 @@ public final class DesktopSession {
         let entries = ElementTable.flatten(reading.root)
         let digest = Self.structuralDigest(entries)
 
-        if let t = currentToken, let r = records[t], r.pid == pid, let snap = r.snapshot,
+        if let t = currentToken, let r = records[t], r.pid == pid,
+            r.windowTitle == windowTitle, let snap = r.snapshot,
             snap.digest == digest, snap.truncated == reading.truncated
         {
             // 结构没有变化：沿用令牌。几何不进摘要，窗口移动不会让令牌失效。
@@ -219,6 +228,7 @@ public final class DesktopSession {
         let token = "s\(nonce).\(counter)"
         let record = Record(
             pid: pid, identity: knownIdentity ?? (try? lookupIdentity(pid: pid)), status: .current,
+            windowTitle: windowTitle,
             snapshot: Snapshot(
                 entries: entries, digest: digest, truncated: reading.truncated, maxDepth: maxDepth, budgetMs: budgetMs))
         records[token] = record
@@ -234,7 +244,7 @@ public final class DesktopSession {
         SessionState(
             token: SnapshotToken(token), reading: reading, reused: reused, pid: record.pid,
             policy: policy.evaluate(pid: record.pid, bundleId: record.identity?.bundleId),
-            appName: record.identity?.name)
+            appName: record.identity?.name, windowTitle: record.windowTitle)
     }
 
     /// 查进程的 bundle id 与名称。列表里没有该进程时返回空身份（不是失败）；列表本身读不到则抛错。
@@ -328,9 +338,17 @@ public final class DesktopSession {
         }
         guard let snap = r.snapshot else { throw WireError.internalError("当前令牌缺少快照") }
         try authorizeApp(try identity(for: r), pid: r.pid)
-        let capture = try reader.captureWindow(pid: r.pid)
+        let capture = try reader.captureWindow(pid: r.pid, windowTitle: r.windowTitle)
         let labels = snap.entries.enumerated().compactMap { index, entry -> ElementTable.Label? in
             guard let text = entry.label, let frame = entry.node.frame else { return nil }
+            if r.windowTitle != nil {
+                let window = capture.windowFrame
+                let intersects = frame.x < window.x + window.width
+                    && frame.x + frame.width > window.x
+                    && frame.y < window.y + window.height
+                    && frame.y + frame.height > window.y
+                guard intersects else { return nil }
+            }
             return ElementTable.Label(
                 text: text, handle: index + 1, role: entry.node.role,
                 title: entry.node.title, frame: frame)
@@ -338,8 +356,8 @@ public final class DesktopSession {
         screenshotCounter += 1
         let id = "g\(nonce).\(screenshotCounter)"
         screenshotBindings[id] = ScreenshotBinding(
-            token: token, windowFrame: capture.windowFrame, scale: capture.scale,
-            width: capture.width, height: capture.height, png: capture.png)
+            token: token, windowTitle: r.windowTitle, windowFrame: capture.windowFrame,
+            scale: capture.scale, width: capture.width, height: capture.height, png: capture.png)
         screenshotOrder.append(id)
         while screenshotOrder.count > 16 {
             screenshotBindings[screenshotOrder.removeFirst()] = nil
@@ -397,7 +415,9 @@ public final class DesktopSession {
         var changed: Bool?
         var invalidated = false
         do {
-            let after = try readState(pid: r.pid, maxDepth: snap.maxDepth, budgetMs: snap.budgetMs)
+            let after = try readState(
+                pid: r.pid, maxDepth: snap.maxDepth, budgetMs: snap.budgetMs,
+                windowTitle: r.windowTitle)
             observed = true
             changed = after.token != SnapshotToken(token)
             invalidated = changed == true
@@ -408,7 +428,7 @@ public final class DesktopSession {
         var screenshotChanged: Bool?
         var diffRatio: Double?
         var geometryChanged = false
-        if let after = try? reader.captureWindow(pid: r.pid) {
+        if let after = try? reader.captureWindow(pid: r.pid, windowTitle: binding.windowTitle) {
             if after.width != binding.width || after.height != binding.height
                 || after.windowFrame != binding.windowFrame || after.scale != binding.scale
             {
@@ -433,7 +453,7 @@ public final class DesktopSession {
         try checkPoint(x, y, in: binding)
         let start = Date()
         let point = globalPoint(x: x, y: y, binding: binding)
-        _ = try reader.clickAt(pid: r.pid, x: point.x, y: point.y)
+        _ = try reader.clickAt(pid: r.pid, windowTitle: binding.windowTitle, x: point.x, y: point.y)
         return observeCoordinate(token: token, r: r, snap: snap, binding: binding, start: start)
     }
 
@@ -448,7 +468,8 @@ public final class DesktopSession {
         }
         let start = Date()
         let point = globalPoint(x: x, y: y, binding: binding)
-        _ = try reader.scrollAt(pid: r.pid, x: point.x, y: point.y, dx: dx, dy: dy)
+        _ = try reader.scrollAt(
+            pid: r.pid, windowTitle: binding.windowTitle, x: point.x, y: point.y, dx: dx, dy: dy)
         return observeCoordinate(token: token, r: r, snap: snap, binding: binding, start: start)
     }
 
@@ -467,7 +488,8 @@ public final class DesktopSession {
         let from = globalPoint(x: fromX, y: fromY, binding: binding)
         let to = globalPoint(x: toX, y: toY, binding: binding)
         _ = try reader.dragAt(
-            pid: r.pid, fromX: from.x, fromY: from.y, toX: to.x, toY: to.y,
+            pid: r.pid, windowTitle: binding.windowTitle,
+            fromX: from.x, fromY: from.y, toX: to.x, toY: to.y,
             durationMs: max(100, min(2_000, durationMs)))
         return observeCoordinate(token: token, r: r, snap: snap, binding: binding, start: start)
     }

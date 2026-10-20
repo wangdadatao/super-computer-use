@@ -22,22 +22,31 @@ final class FakeReader: DesktopReader {
     private(set) var pressed: [(pid: Int32, locator: ElementLocator, key: String)] = []
     private(set) var written: [(pid: Int32, locator: ElementLocator, value: String)] = []
     private(set) var coordinateClicks: [(pid: Int32, x: Double, y: Double)] = []
+    private(set) var coordinateClickWindowTitles: [String?] = []
     private(set) var scrolls: [(pid: Int32, x: Double, y: Double, dx: Double, dy: Double)] = []
     private(set) var drags: [(pid: Int32, fromX: Double, fromY: Double, toX: Double, toY: Double, durationMs: Int)] = []
     var capture: Result<WindowCapture, WireError> = .failure(.unsupportedOperation("没有配置截图"))
+    private(set) var captureWindowTitles: [String?] = []
 
     func checkPermissions() throws -> Bool { try permissions.get() }
-    func captureWindow(pid: Int32) throws -> WindowCapture { try capture.get() }
-    func clickAt(pid: Int32, x: Double, y: Double) throws -> ActionOutcome {
+    func captureWindow(pid: Int32, windowTitle: String?) throws -> WindowCapture {
+        captureWindowTitles.append(windowTitle)
+        return try capture.get()
+    }
+    func clickAt(pid: Int32, windowTitle: String?, x: Double, y: Double) throws -> ActionOutcome {
         coordinateClicks.append((pid, x, y))
+        coordinateClickWindowTitles.append(windowTitle)
         return .acted
     }
-    func scrollAt(pid: Int32, x: Double, y: Double, dx: Double, dy: Double) throws -> ActionOutcome {
+    func scrollAt(
+        pid: Int32, windowTitle: String?, x: Double, y: Double, dx: Double, dy: Double
+    ) throws -> ActionOutcome {
         scrolls.append((pid, x, y, dx, dy))
         return .acted
     }
     func dragAt(
-        pid: Int32, fromX: Double, fromY: Double, toX: Double, toY: Double, durationMs: Int
+        pid: Int32, windowTitle: String?, fromX: Double, fromY: Double, toX: Double, toY: Double,
+        durationMs: Int
     ) throws -> ActionOutcome {
         drags.append((pid, fromX, fromY, toX, toY, durationMs))
         return .acted
@@ -561,6 +570,21 @@ final class FakeAppLauncher: AppLauncher, @unchecked Sendable {
         #expect(imageData.count > 0)
     }
 
+
+    @Test func getAXStateCanBindAScreenshotWindow() {
+        let (t, s, reader) = rig(actions: false)
+        reader.capture = .success(WindowCapture(
+            png: Self.makePNG(), width: 200, height: 120, scale: 1,
+            windowFrame: Rect(x: 0, y: 0, width: 200, height: 120), windowTitle: "主窗口"))
+        let read = t.callTool(s, "get_ax_state", ["pid": 42, "window": "主窗口"])
+        #expect(!read.isError)
+        #expect(read.text.contains("窗口=\"主窗口\""))
+        let shot = t.callTool(s, "get_screenshot", ["token": .string(token(from: read))])
+        #expect(!shot.isError)
+        #expect(shot.text.contains("title=\"主窗口\""))
+        #expect(reader.captureWindowTitles == ["主窗口"])
+    }
+
     @Test func screenshotRequiresALiveTokenAndReportsPermission() {
         let (t, s, reader) = rig(actions: false)
         let stale = t.callTool(s, "get_screenshot", ["token": "nope"])
@@ -608,6 +632,25 @@ final class FakeAppLauncher: AppLauncher, @unchecked Sendable {
         #expect(reader.coordinateClicks[0].pid == 42)
         #expect(reader.coordinateClicks[0].x == 120)
         #expect(reader.coordinateClicks[0].y == 230)
+    }
+
+
+    @Test func clickAtCarriesTheBoundWindowTitle() {
+        let (t, s, reader) = rig(actions: true)
+        reader.capture = .success(WindowCapture(
+            png: Self.makePNG(width: 200, height: 120), width: 200, height: 120, scale: 1,
+            windowFrame: Rect(x: 0, y: 0, width: 200, height: 120), windowTitle: "主窗口"))
+        let read = t.callTool(s, "get_ax_state", ["pid": 42, "window": "主窗口"])
+        let tok = token(from: read)
+        let shot = t.callTool(s, "get_screenshot", ["token": .string(tok)])
+        let sid = shot.text.split(separator: "\n").first
+            .flatMap { $0.split(separator: " ").first { $0.hasPrefix("screenshot_id=") } }
+            .map { String($0.dropFirst("screenshot_id=".count)) } ?? ""
+        let r = t.callTool(s, "click_at", [
+            "token": .string(tok), "screenshot_id": .string(sid), "x": 10, "y": 20,
+        ])
+        #expect(!r.isError)
+        #expect(reader.coordinateClickWindowTitles == ["主窗口"])
     }
 
     @Test func clickAtRejectsOutOfBoundsCoordinatesAndStaleScreenshots() {

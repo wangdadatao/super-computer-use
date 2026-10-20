@@ -135,6 +135,7 @@ enum ScuTool: String, CaseIterable {
         case .getAXState:
             return """
                 读取指定应用的无障碍树，返回文本化元素表。只读，不会操作应用。\
+                可用 window 指定要绑定/截图的窗口标题；元素表仍是整个应用，window 只影响截图与坐标动作。\
                 每行一个元素，缩进表示层级，格式 [a] [角色#句柄] "标题" 属性… frame=(x,y,w,h)。\
                 可交互元素前的 [a] 是本次快照的标签；click / type_text / press_key / set_value 可以用 label 代替 handle。\
                 输出带一个令牌，句柄与令牌配对、只在该令牌有效期内可用（界面结构变化后令牌失效）；click / type_text / press_key / set_value（仅动作档提供）接受它们。\
@@ -294,6 +295,10 @@ enum ScuTool: String, CaseIterable {
                         "maximum": .int(ElementTable.maxElementsRange.upperBound),
                         "description": .string("最多输出的元素数，默认 \(ElementTable.defaultMaxElements)"),
                     ],
+                    "window": [
+                        "type": "string",
+                        "description": "绑定截图的窗口标题；元素表仍为整个应用，只影响截图与坐标动作",
+                    ],
                 ],
                 "required": ["pid"],
                 "additionalProperties": false,
@@ -361,7 +366,9 @@ enum ScuTool: String, CaseIterable {
 
             case .getAXState:
                 try Self.requireNoExtra(
-                    args, allowed: ["pid", "max_depth", "budget_ms", "max_elements", "focus", "focus_role"])
+                    args, allowed: [
+                        "pid", "max_depth", "budget_ms", "max_elements", "focus", "focus_role", "window",
+                    ])
                 guard let pid = try Self.int(args, "pid", range: 1...Int(Int32.max), required: true) else {
                     throw ArgumentError(message: "缺少参数 pid")
                 }
@@ -376,14 +383,17 @@ enum ScuTool: String, CaseIterable {
                 let focusRole = try Self.string(args, "focus_role")
                 let focus = (focusText != nil || focusRole != nil)
                     ? ElementTable.Focus(text: focusText, role: focusRole) : nil
+                let windowTitle = try Self.string(args, "window")
 
-                let state = try session.readState(pid: Int32(pid), maxDepth: depth, budgetMs: budget)
+                let state = try session.readState(
+                    pid: Int32(pid), maxDepth: depth, budgetMs: budget, windowTitle: windowTitle)
                 let reading = state.reading
                 let table = ElementTable.render(reading.root, maxElements: maxElements, focus: focus)
                 let head = Self.header(
                     pid: pid, table: table, depthLimit: depth, budgetMs: budget,
                     truncated: reading.truncated, focused: focus != nil, token: state.token,
-                    policy: state.policy, appName: state.appName, actionsEnabled: actionsEnabled)
+                    policy: state.policy, appName: state.appName, windowTitle: state.windowTitle,
+                    actionsEnabled: actionsEnabled)
                 return Outcome(text: table.text.isEmpty ? head : head + "\n" + table.text, isError: false)
 
             case .getScreenshot:
@@ -528,9 +538,11 @@ enum ScuTool: String, CaseIterable {
 
     static func header(
         pid: Int, table: ElementTable.Result, depthLimit: Int, budgetMs: Int, truncated: Bool, focused: Bool,
-        token: SnapshotToken, policy: PolicyGate.Decision = .allow, appName: String? = nil, actionsEnabled: Bool = false
+        token: SnapshotToken, policy: PolicyGate.Decision = .allow, appName: String? = nil,
+        windowTitle: String? = nil, actionsEnabled: Bool = false
     ) -> String {
         var h = "# pid=\(pid) 令牌 \(token) 元素 \(table.total)"
+        if let windowTitle { h += " 窗口=\"\(windowTitle)\"" }
         if focused {
             let m = table.matches ?? 0
             if m == 0 {
@@ -577,6 +589,8 @@ enum ScuTool: String, CaseIterable {
             s += "\n用 bundle id、显示名或完整 .app 路径重试；不要猜一个相近的名字。"
         case "app_not_authorized":
             s += "\n该应用不在本次连接的允许列表里：让用户确认后调整 --allow-app / --allow-app-file 并重启服务；不要重试或换相近应用。"
+        case "window_not_found":
+            s += "\n指定的窗口标题不存在或已变化：重新 get_ax_state 查看当前窗口标题，再绑定仍存在的窗口。"
         case "target_switched":
             s += "\n令牌属于之前读取的另一个应用：请对要操作的应用重新 get_ax_state。"
         case "unsupported_operation":

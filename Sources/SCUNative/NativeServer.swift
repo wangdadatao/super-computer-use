@@ -110,36 +110,36 @@ public struct NativeServer: Sendable {
             return actionResponse {
                 try AXBackend.setValue(pid: pid, locator: locator, value: value)
             }
-        case .captureWindow(let pid):
+        case .captureWindow(let pid, let windowTitle):
             do {
-                return .windowCapture(try ScreenCapture.captureWindow(pid: pid))
+                return .windowCapture(try ScreenCapture.captureWindow(pid: pid, windowTitle: windowTitle))
             } catch let e as WireError {
                 return .failure(e)
             } catch {
                 return .failure(.platformUnavailable("截图失败：\(error)"))
             }
-        case .clickAt(let pid, let x, let y):
+        case .clickAt(let pid, let windowTitle, let x, let y):
             do {
-                try Mouse.clickAt(pid: pid, x: x, y: y)
+                try Mouse.clickAt(pid: pid, windowTitle: windowTitle, x: x, y: y)
                 return .acted
             } catch let e as WireError {
                 return .failure(e)
             } catch {
                 return .failure(.actionFailed("坐标点击失败：\(error)"))
             }
-        case .scrollAt(let pid, let x, let y, let dx, let dy):
+        case .scrollAt(let pid, let windowTitle, let x, let y, let dx, let dy):
             do {
-                try Mouse.scrollAt(pid: pid, x: x, y: y, dx: dx, dy: dy)
+                try Mouse.scrollAt(pid: pid, windowTitle: windowTitle, x: x, y: y, dx: dx, dy: dy)
                 return .acted
             } catch let e as WireError {
                 return .failure(e)
             } catch {
                 return .failure(.actionFailed("滚动失败：\(error)"))
             }
-        case .dragAt(let pid, let fromX, let fromY, let toX, let toY, let durationMs):
+        case .dragAt(let pid, let windowTitle, let fromX, let fromY, let toX, let toY, let durationMs):
             do {
                 try Mouse.dragAt(
-                    pid: pid, fromX: fromX, fromY: fromY, toX: toX, toY: toY,
+                    pid: pid, windowTitle: windowTitle, fromX: fromX, fromY: fromY, toX: toX, toY: toY,
                     durationMs: durationMs)
                 return .acted
             } catch let e as WireError {

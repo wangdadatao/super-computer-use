@@ -25,10 +25,11 @@ import Testing
     }
 
     @Test func windowCaptureRequestAndResponseRoundTrip() throws {
-        let requestFrame = try WireFormatTests.json(RequestFrame(id: 8, request: .captureWindow(pid: 42)))
+        let requestFrame = try WireFormatTests.json(RequestFrame(id: 8, request: .captureWindow(pid: 42, windowTitle: nil)))
         let request = requestFrame["request"] as! [String: Any]
         #expect(request["type"] as? String == "captureWindow")
         #expect(request["pid"] as? Int == 42)
+        #expect(request["windowTitle"] == nil)
 
         let capture = WindowCapture(
             png: Data([0x89, 0x50, 0x4E, 0x47]), width: 1600, height: 1138, scale: 1.514,
@@ -41,7 +42,7 @@ import Testing
 
     @Test func clickAtRequestShape() throws {
         let frame = try WireFormatTests.json(
-            RequestFrame(id: 9, request: .clickAt(pid: 7, x: 12.5, y: 34.0)))
+            RequestFrame(id: 9, request: .clickAt(pid: 7, windowTitle: nil, x: 12.5, y: 34.0)))
         let request = frame["request"] as! [String: Any]
         #expect(request["type"] as? String == "clickAt")
         #expect(request["pid"] as? Int == 7)
@@ -53,7 +54,7 @@ import Testing
         let scrollFrame = try WireFormatTests.json(
             RequestFrame(
                 id: 10,
-                request: .scrollAt(pid: 7, x: 1.5, y: 2.5, dx: 0, dy: 120)))
+                request: .scrollAt(pid: 7, windowTitle: nil, x: 1.5, y: 2.5, dx: 0, dy: 120)))
         let scroll = scrollFrame["request"] as! [String: Any]
         #expect(scroll["type"] as? String == "scrollAt")
         #expect(scroll["pid"] as? Int == 7)
@@ -63,12 +64,29 @@ import Testing
             RequestFrame(
                 id: 11,
                 request: .dragAt(
-                    pid: 7, fromX: 1, fromY: 2, toX: 3, toY: 4, durationMs: 400)))
+                    pid: 7, windowTitle: nil, fromX: 1, fromY: 2, toX: 3, toY: 4, durationMs: 400)))
         let drag = dragFrame["request"] as! [String: Any]
         #expect(drag["type"] as? String == "dragAt")
         #expect(drag["fromX"] as? Double == 1)
         #expect(drag["toY"] as? Double == 4)
         #expect(drag["durationMs"] as? Int == 400)
+    }
+
+
+    @Test func windowTitleIsOptionalButEncodedWhenPresent() throws {
+        let withTitle = try WireFormatTests.json(
+            RequestFrame(id: 12, request: .captureWindow(pid: 42, windowTitle: "主窗口")))
+        let w = withTitle["request"] as! [String: Any]
+        #expect(w["windowTitle"] as? String == "主窗口")
+
+        let withoutTitle = try WireFormatTests.json(
+            RequestFrame(id: 13, request: .captureWindow(pid: 42, windowTitle: nil)))
+        let o = withoutTitle["request"] as! [String: Any]
+        #expect(o["windowTitle"] == nil)
+
+        let click = try WireFormatTests.json(
+            RequestFrame(id: 14, request: .clickAt(pid: 7, windowTitle: "主窗口", x: 1, y: 2)))
+        #expect((click["request"] as! [String: Any])["windowTitle"] as? String == "主窗口")
     }
 
     @Test func failureCarriesStructuredError() throws {

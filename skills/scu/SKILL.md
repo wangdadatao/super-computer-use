@@ -73,6 +73,13 @@ list_apps → get_ax_state(pid) → 需要时 get_screenshot(token) → 用令�
 - 标题行有 `⚠️ 已截断` / `⚠️ 已达深度上限` / `⚠️ 策略：…` 时，先读警告再决定下一步。
 - 推荐流程：先看概览 → 用 `focus` 展开目标区域 → 再有针对性地动作。
 
+## 多窗口
+
+`get_ax_state(pid, window="窗口标题")` 会把令牌绑定到该窗口；之后 `get_screenshot`、`click_at`、
+`scroll_at`、`drag` 都使用这个窗口。**元素表仍是整个应用**，`click` / `type_text` 等元素动作不受
+`window` 限制。窗口标题不存在或已变化时返回 `window_not_found`：重新读取并选仍存在的窗口。
+标题要精确匹配；多个同名窗口当前只选第一个，这是已知限制。默认不传 `window` 时使用面积最大的窗口。
+
 ## 应用允许列表
 
 服务可以用 `--allow-app` / `--allow-app-file` 启动，只允许操作列出的应用。
@@ -185,6 +192,7 @@ effect: delivered=true observed=true converged=true treeChanged=false targetChan
 | `unsupported_operation` | 元素不支持该动作 / 键名不认识 | 换元素（父/子）或换动作，不要猜 |
 | `app_not_found` | 启动/解析时找不到应用 | 用 bundle id、显示名或完整 `.app` 路径；不要猜相近名字 |
 | `app_not_authorized` | 应用不在本次连接的允许列表里 | 让用户调整 `--allow-app` / `--allow-app-file` 并重启服务；不要重试 |
+| `window_not_found` | 绑定的窗口标题不存在或已变化 | 重新 `get_ax_state` 查看窗口标题，绑定仍存在的窗口 |
 | `policy_denied` | 命中拒绝类目 | **不可协商，不要绕过**；告知用户由他自己完成 |
 | `system_permission_missing` | 宿主没有辅助功能权限 | 让用户给宿主授权并重启宿主 |
 | `platform_unavailable` | 原生进程不可达 | 稍后重试一次；持续失败就报告 |

@@ -57,11 +57,12 @@ ScreenCaptureKit 的候选窗口里按 frame（容差 2 点）匹配，找不到
 - 单窗口应用行为不变；TextEdit 真实验证截图标题与窗口 frame 一致；
 - 多窗口应用不再出现“截图 A、激活 B”的已知路径；
 - 仍然没有显式窗口选择、窗口列表、跨 Space 的多窗口测试；
-- 不改线协议，仍是 v9。
+- 不改线协议（当时为 v9；后续 ADR-0026 升到 v10）。
 
 ## 相关文档
 
 - [ADR-0019 窗口截图](adr_0019_window_screenshot.md)
 - [ADR-0020 坐标点击](adr_0020_coordinate_click.md)
 - [ADR-0021 滚动与拖拽](adr_0021_scroll_and_drag.md)
+- [ADR-0026 窗口选择](adr_0026_window_selection.md)
 - [MCP 接入面](../interfaces/mcp_surface.md)
