@@ -63,6 +63,19 @@
 教训：对不暴露 AX 的应用，`noOpSuspected` 不能作为"没生效"的判断，更不能盲目重试。
 这条已写入 [skills/scu/SKILL.md](../skills/scu/SKILL.md)。
 
+## 追加：快照内标签（同日）
+
+应用以同样参数重启（pid `7554`）后，验证 [ADR-0018](../docs/decisions/adr_0018_label_addressing.md) 的标签寻址：
+
+- `get_ax_state` 输出 457 个元素；搜索按钮带 `[a] [AXButton#118] "search" frame=(-1489,72,42,28)`，
+  搜索框带 `[b] [AXTextField#132] frame=(-1447,71,216,30)`（窗口在副屏，x 为负）。
+- `type_text(token, label="b", text="test")`：`delivered=true observed=true converged=true treeChanged=true
+  targetChanged=true`，0.7 秒；重读搜索框出现 `value="test"`，并出现 `Test/TEST/test` 搜索建议。
+- `set_value(token, label="b", value="")`：搜索框被清空，恢复为空。
+
+第一次动作后 0.5 秒重读时 value 还未出现，第二次动作后才出现；说明动作后的读取仍可能落在中间状态，
+与收敛启发式的已知缺口一致。**标签解析与按标签动作本身成立**；标签仍只对签发它的令牌有效。
+
 ## 限定
 
 - 只测了一个应用、一个版本（`3.1.12`）；其他 CEF/Electron 应用是否支持该参数未知。
@@ -76,3 +89,4 @@
 - [ADR-0017](../docs/decisions/adr_0017_cef_accessibility_launch.md)：CEF/Chromium 应用的无障碍启动参数作为**需用户同意的应用级适配**。
 - [skills/scu/SKILL.md](../skills/scu/SKILL.md)：新增 CEF 应用的识别与处理步骤。
 - [MCP 接入面](../docs/interfaces/mcp_surface.md#未验证项)：真实应用上的动作验证状态更新。
+- [ADR-0018](../docs/decisions/adr_0018_label_addressing.md)：快照内短标签寻址。

@@ -1,7 +1,7 @@
 # MCP 接入面（只读档与动作档）
 
 `scu mcp` 以 MCP stdio 服务运行，是接入层的第一个实现。**默认只读**：
-能读取应用与无障碍树，不能改变任何东西。**`scu mcp --actions` 额外暴露 `click`、`type_text`、`press_key`**（动作档）。
+能读取应用与无障碍树，不能改变任何东西。**`scu mcp --actions` 额外暴露 `click`、`type_text`、`press_key`、`set_value`**（动作档）。
 完整的会话 API 与 `js` 工具面是拟实施设计，见[协议总览](protocol_overview.md)。
 
 ## 导航
@@ -40,11 +40,11 @@
 | --- | --- | --- |
 | `check_permissions` | 无 | 报告启动本服务的宿主是否有辅助功能权限。权限未授予不算工具错误，是对状态的如实报告 |
 | `list_apps` | 无 | 每行 `pid<TAB>名称<TAB>bundle id`（无 bundle id 时为 `-`） |
-| `get_ax_state` | `pid`（必填）、`max_depth`、`budget_ms`、`max_elements`、`focus`、`focus_role` | 读取应用的无障碍树，返回文本化元素表；`focus` 系列只展开一部分 |
-| `click`（仅 `--actions`） | `token`、`handle`（均必填） | 对句柄执行 `AXPress`；见下 |
-| `type_text`（仅 `--actions`） | `token`、`handle`、`text`（均必填） | 先聚焦元素，再把文本逐字输入；见下 |
-| `press_key`（仅 `--actions`） | `token`、`handle`、`key`（均必填） | 先聚焦元素，再发送按键或组合键；见下 |
-| `set_value`（仅 `--actions`） | `token`、`handle`、`value`（均必填） | 通过无障碍接口直接写值，要求元素可写；见下 |
+| `get_ax_state` | `pid`（必填）、`max_depth`、`budget_ms`、`max_elements`、`focus`、`focus_role` | 读取应用的无障碍树，返回带标签与 `frame` 的文本化元素表；`focus` 系列只展开一部分 |
+| `click`（仅 `--actions`） | `token`、`handle` 或 `label`（二选一） | 对目标执行 `AXPress`；见下 |
+| `type_text`（仅 `--actions`） | `token`、`handle` 或 `label`（二选一）、`text` | 先聚焦元素，再把文本逐字输入；见下 |
+| `press_key`（仅 `--actions`） | `token`、`handle` 或 `label`（二选一）、`key` | 先聚焦元素，再发送按键或组合键；见下 |
+| `set_value`（仅 `--actions`） | `token`、`handle` 或 `label`（二选一）、`value` | 通过无障碍接口直接写值，要求元素可写；见下 |
 
 <a id="click_tool"></a>
 
@@ -54,7 +54,8 @@
 `click`、`type_text`、`press_key` 走同一条路径，只有第 4 步的投递方式不同。
 
 1. 策略：目标应用命中拒绝类目 → `policy_denied`（`retry=no`，不可协商）。先于令牌检查，所以失效令牌的受限应用仍报策略拒绝。
-2. 令牌：未知或已失效 → `stale_snapshot`；属于已切换走的目标 → `target_switched`；句柄不在快照里 → `element_gone`。
+2. 令牌：未知或已失效 → `stale_snapshot`；属于已切换走的目标 → `target_switched`；
+   标签或句柄不在快照里 → `element_gone`。给了 `label` 时先在同一快照里解析成句柄，再走后面的步骤。
 3. 原生层沿路径核对（[ADR-0015](../decisions/adr_0015_handle_resolution_by_path.md)），不符 → `stale_snapshot`，**不执行**。
 4. 投递 `AXPress`。目标不支持 → `unsupported_operation`；平台报错 → `action_failed`。
 5. 事后观察：每 200 毫秒重读一次界面，**连续两次结构一致且这次读取未被截断**才算收敛；与动作前比较。
@@ -87,7 +88,7 @@ effect: delivered=true observed=true converged=true treeChanged=false targetChan
 
 ### `type_text`、`press_key` 与 `set_value`
 
-两者都要求**显式的目标元素**（`token` + `handle`），顺序与 `click` 相同：
+两者都要求**显式的目标元素**（`token`，加 `handle` 或 `label`），顺序与 `click` 相同：
 策略 → 令牌 → 原生层沿路径核对 → 聚焦该元素 → 投递键盘事件 → 事后观察。
 
 - **聚焦**：设置元素的 `AXFocused`，最多等约 300 毫秒被读回为 true。不接受"当前的焦点元素"这种隐式目标，
@@ -125,6 +126,17 @@ effect: delivered=true observed=true converged=true treeChanged=false targetChan
 
 `get_ax_state` 返回的文本由标题行与元素表组成。元素表格式见[元素寻址](element_addressing.md#readonly_subset)。
 
+可交互元素带一个快照内短标签，行尾带 `frame`：
+
+```
+[a] [AXButton#129] "search" frame=(120,40,24,24)
+[b] [AXTextField#132] value="" frame=(150,40,300,28)
+```
+
+标签只对本次令牌有效，`click` / `type_text` / `press_key` / `set_value` 可以用 `label` 代替 `handle`；
+两者必须二选一。`frame` 只用于阅读与后续截图叠加，不参与动作定位。设计见
+[ADR-0018](../decisions/adr_0018_label_addressing.md)。
+
 ### 概览与展开
 
 元素多于 `max_elements` 时**按层级优先取舍**，不是取先序的前 N 个。先序截断会让第一棵大子树
@@ -152,11 +164,11 @@ effect: delivered=true observed=true converged=true treeChanged=false targetChan
 
 标题行携带**快照令牌**：不透明字符串，由会话签发（[ADR-0015](../decisions/adr_0015_handle_resolution_by_path.md)）。
 令牌的失效类别、复用规则与"重复使用失效令牌"的语义见[快照生命周期](../architecture/snapshot_lifecycle.md#p0_implementation)。
-令牌出现在 `get_ax_state` 的输出里；接受它的动作工具是 [`click`](#click_tool)（仅动作档）。
+令牌出现在 `get_ax_state` 的输出里；接受它的动作工具是 `click` / `type_text` / `press_key` / `set_value`（仅动作档）。
 
 ### 完整性标注
 
-标题行 `# pid=<pid> 令牌 <令牌> 元素 <总数>` 之后是句柄与令牌的配对说明（动作档写"用 click(token, handle) 点击。"，默认档写"目前没有工具接受句柄（动作档未开启）。"），
+标题行 `# pid=<pid> 令牌 <令牌> 元素 <总数>` 之后是标签、句柄与令牌的配对说明（动作档写"可交互元素前的 [a] 是本次快照的标签，动作工具可用 label 代替 handle"与"用 click(token, handle) 点击"；默认档写"目前没有工具接受句柄（动作档未开启）。"），
 再之后可能跟这些**警告行**，调用方据此判断输出是否完整：
 
 | 情形 | 标注 |
@@ -250,7 +262,9 @@ socket 目录建在 `TMPDIR`（若设置且存在）或系统临时目录下。
   其他第三方应用、Electron、输入法（IME）与坐标类场景仍未验证。
 
 - **`click` 除网易云（带 CEF 启动参数）外，只在自制夹具 `scu-fixture` 上真实点击过**；访达上只做过 `verify`（不点击）。
-  没有经 Cursor 宿主调用过动作工具。夹具验证的结论与缺口见
+  没有经 Cursor 宿主调用过动作工具。
+- **标签寻址只在网易云上真实验证过**：`type_text(label="b")` 与 `set_value(label="b")` 成立（2026-10-19），
+  其他应用与标签点击未验证。见 [真实应用验证](../../verification/2026-10-19-real-app-netease.md#追加快照内标签同日)。夹具验证的结论与缺口见
   [verification/2026-10-18-fixture-validation.md](../../verification/2026-10-18-fixture-validation.md)：
   `AXPress` 不看遮挡；两秒后才出现的变化会被判为已收敛；同一容器里加一个兄弟就会令路径上的句柄被保守地拒绝。
 

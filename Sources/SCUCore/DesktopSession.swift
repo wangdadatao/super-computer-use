@@ -198,6 +198,29 @@ public final class DesktopSession {
         return (r.pid, Self.locator(for: handle - 1, in: snap.entries))
     }
 
+    /// 标签 → 句柄。标签与句柄同属一个快照，不跨令牌；大小写不敏感。
+    /// 只做解析，不做策略检查；调用方应使用 `click` / `typeText` 等动作入口。
+    public func resolveLabel(token: String, label: String) throws -> Int {
+        guard let r = records[token] else {
+            throw WireError.staleSnapshot("令牌 \(token) 未签发或已被丢弃，请重新读取界面。")
+        }
+        switch r.status {
+        case .switched:
+            throw WireError.targetSwitched("令牌 \(token) 属于已被切换走的目标（pid \(r.pid)），请重新读取并绑定目标。")
+        case .stale:
+            throw WireError.staleSnapshot("令牌 \(token) 已失效：界面结构已变化，请重新读取界面。")
+        case .current:
+            break
+        }
+        guard let snap = r.snapshot else { throw WireError.internalError("当前令牌缺少快照") }
+        let wanted = label.lowercased()
+        guard let index = snap.entries.firstIndex(where: { $0.label == wanted }) else {
+            throw WireError.elementGone(
+                "标签 [\(label)] 不在令牌 \(token) 的快照里（共 \(snap.entries.count) 个元素）。请重新读取界面。")
+        }
+        return index + 1
+    }
+
     static func locator(for index: Int, in entries: [ElementTable.Entry]) -> ElementLocator {
         var steps: [PathStep] = []
         var i = index

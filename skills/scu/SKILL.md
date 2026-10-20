@@ -36,28 +36,32 @@ SCU 是一个 MCP 服务：读取 macOS 应用的无障碍树，并用 `AXPress`
 ## 核心循环
 
 ```
-list_apps → get_ax_state(pid) → 用令牌与句柄执行一个动作 → 重新 get_ax_state
+list_apps → get_ax_state(pid) → 用令牌与标签/句柄执行一个动作 → 重新 get_ax_state
 ```
 
-**每次会改变界面的动作之后都要重读。** 令牌与句柄只对一次读取有效；
-结构或取值一变，旧令牌作废（`stale_snapshot`），句柄编号也可能变。
-不要在一轮里连续点多个句柄——除非你确定界面没变（看效果摘要）。
+**每次会改变界面的动作之后都要重读。** 令牌、标签与句柄只对一次读取有效；
+结构或取值一变，旧令牌作废（`stale_snapshot`），标签与句柄编号也可能变。
+不要在一轮里连续点多个目标——除非你确定界面没变（看效果摘要）。
 
 ## 读状态：元素表怎么用
 
 `get_ax_state` 返回标题行加元素表：
 
 ```text
-# pid=1234 令牌 s1abc.7 元素 42。句柄只在该令牌有效期内可用…用 click(token, handle) 点击…
+# pid=1234 令牌 s1abc.7 元素 42。可交互元素前的 [a] 是本次快照的标签…
 [AXApplication#1] "Safari"
   [AXWindow#2] "起始页" subrole=AXStandardWindow
-    [AXButton#3] "返回" id="go-back"
-    [AXTextField#4] "地址与搜索" value="example.com"
+    [a] [AXButton#3] "返回" id="go-back" frame=(10,50,24,24)
+    [b] [AXTextField#4] "地址与搜索" value="example.com" frame=(50,50,300,28)
 ```
 
-- `[角色#句柄]`：句柄只在**本次读取与它的令牌**内有效。
+- `[a]`：**优先用它**。标签只对**本次令牌**有效，动作工具都接受 `label`；
+  标签大小写不敏感，`a` 与 `A` 等价。
+- `[角色#句柄]`：句柄是权威部分，也只在本次令牌内有效；`label` 与 `handle` 二选一。
+- `frame=(x,y,w,h)`：屏幕点坐标，只用于对照截图/位置，不参与点击。
 - 缩进表示层级；行尾 `(折叠 N)` 表示还有 N 个后代没显示。
-- 属性：`subrole=`、`desc=`、`value=`、`id=`、`state=disabled`；空值省略。
+- 属性：`subrole=`、`desc=`、`value=`、`id=`、`state=disabled`、`frame=`；空值省略。
+- 没有标签的元素（静态文本、没在角色白名单里的行）仍然可以用句柄。
 - 元素太多时默认只显示 300 个（层级优先），用 `max_elements` 或 `focus` 展开：
   - `focus`：按标题/描述/值/标识符的子串匹配，只展开命中的子树；
   - `focus_role`：按角色过滤，如 `AXButton` 或 `Button`。
@@ -176,11 +180,11 @@ open -a "<应用名>" --args --force-renderer-accessibility
 
 ```text
 1. list_apps → 找到目标应用 pid=1234
-2. get_ax_state(pid=1234) → 令牌 s1abc.7，找到 [AXTextField#4] "地址与搜索"
-3. set_value(token="s1abc.7", handle=4, value="example.com")
+2. get_ax_state(pid=1234) → 令牌 s1abc.7，找到 [b] [AXTextField#4] "地址与搜索"
+3. set_value(token="s1abc.7", label="b", value="example.com")
    → treeChanged=true，旧令牌作废
-4. get_ax_state(pid=1234) → 新令牌 s1abc.8，输入框 value 已是 example.com
-5. press_key(token="s1abc.8", handle=4, key="Return")
+4. get_ax_state(pid=1234) → 新令牌 s1abc.8，输入框 value 已是 example.com（标签可能仍是 b）
+5. press_key(token="s1abc.8", label="b", key="Return")
    → treeChanged=true
 6. get_ax_state(pid=1234) → 读取结果
 ```
@@ -188,9 +192,9 @@ open -a "<应用名>" --args --force-renderer-accessibility
 ## 示例：切换一个设置项
 
 ```text
-1. get_ax_state(pid=…) → 找到 [AXCheckBox#12] "启用同步" value=0
-2. click(token, handle=12) → noOpSuspected=false / treeChanged=true
-3. get_ax_state(pid=…) → 确认 [AXCheckBox#12] 的 value 变成 1
+1. get_ax_state(pid=…) → 找到 [c] [AXCheckBox#12] "启用同步" value=0
+2. click(token, label="c") → noOpSuspected=false / treeChanged=true
+3. get_ax_state(pid=…) → 确认 [c] [AXCheckBox#12] 的 value 变成 1
    如果 value 没变但 treeChanged=true，说明变化发生在别处，不要假定成功
 ```
 

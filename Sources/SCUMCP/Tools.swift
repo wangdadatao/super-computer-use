@@ -47,7 +47,7 @@ enum ScuTool: String, CaseIterable {
         case .click:
             return """
                 点击元素：对 get_ax_state 输出里的某个句柄执行 AXPress（无障碍的"按下"，不移动真实鼠标）。会改变应用的状态。\
-                必须同时给出该输出的令牌与句柄；令牌失效（界面结构变了）、目标已不是读取时的那个、\
+                必须给出该输出的令牌，并用句柄或标签指定目标（二者二选一）；令牌失效（界面结构变了）、目标已不是读取时的那个、\
                 或应用属于拒绝类目（终端、脚本运行器、密码管理器、系统设置、Cursor 等）时，动作不会执行，并返回分类的错误。\
                 返回的是**观察到的效果**，不是"成功"的保证：已投递只表示系统没有报错；\
                 之后会重读界面直到稳定（最多约 3 秒），报告结构是否变化。\
@@ -57,7 +57,7 @@ enum ScuTool: String, CaseIterable {
         case .typeText:
             return """
                 把文本逐字输入到指定元素：先聚焦它，再向目标进程投递按键事件。会改变应用的状态。\
-                必须同时给出 get_ax_state 输出的令牌与句柄；令牌失效、目标已不是读取时的那个、\
+                必须给出 get_ax_state 输出的令牌，并用句柄或标签指定目标（二者二选一）；令牌失效、目标已不是读取时的那个、\
                 或应用属于拒绝类目时不会执行，并返回分类的错误。\
                 输入经过应用的按键处理（与"设值"不同），可以触发自动完成、实时校验与回车等行为。\
                 文本里的换行与制表符分别按 Return 与 Tab 投递。\
@@ -68,7 +68,7 @@ enum ScuTool: String, CaseIterable {
             return """
                 向指定元素发送一个按键或组合键（先聚焦它）：如 Return、Tab、esc、cmd+c、shift+左方向键。\
                 键名用 + 分隔，修饰键顺序无关；不认识键名会拒绝，不猜测。会改变应用的状态。\
-                必须同时给出 get_ax_state 输出的令牌与句柄；令牌失效、目标对不上或应用属于拒绝类目时不会执行。\
+                必须给出 get_ax_state 输出的令牌，并用句柄或标签指定目标（二者二选一）；令牌失效、目标对不上或应用属于拒绝类目时不会执行。\
                 返回的是**观察到的效果**，不是"成功"的保证；结构变化时旧令牌作废。
                 """
         case .setValue:
@@ -77,13 +77,14 @@ enum ScuTool: String, CaseIterable {
                 这是默认的写入路径：不经过键盘与输入法，速度快、不触发按键处理；\
                 因此也不会触发自动完成、实时校验这类"输入过程中"的行为。\
                 只有元素声明了可写的 AXValue 时才执行；不支持时返回 unsupported_operation，\
-                不会自动改成逐字输入（两者的副作用不同）。必须给出令牌与句柄；\
+                不会自动改成逐字输入（两者的副作用不同）。必须给出令牌，并用句柄或标签指定目标（二者二选一）；\
                 值变化后令牌作废，需要重新 get_ax_state。
                 """
         case .getAXState:
             return """
                 读取指定应用的无障碍树，返回文本化元素表。只读，不会操作应用。\
-                每行一个元素，缩进表示层级，格式 [角色#句柄] "标题" 属性…。\
+                每行一个元素，缩进表示层级，格式 [a] [角色#句柄] "标题" 属性… frame=(x,y,w,h)。\
+                可交互元素前的 [a] 是本次快照的标签；click / type_text / press_key / set_value 可以用 label 代替 handle。\
                 输出带一个令牌，句柄与令牌配对、只在该令牌有效期内可用（界面结构变化后令牌失效）；click / type_text / press_key / set_value（仅动作档提供）接受它们。\
                 读取有总时间预算，耗尽时输出会明确标注"已截断"。\
                 元素多于 max_elements 时按层级优先显示（先看整体结构，不是先序的前 N 个），\
@@ -106,9 +107,11 @@ enum ScuTool: String, CaseIterable {
                 "type": "object",
                 "properties": [
                     "token": ["type": "string", "description": "get_ax_state 标题行里的令牌"],
-                    "handle": ["type": "integer", "minimum": 1, "description": "该输出元素表里的句柄编号（[角色#句柄] 的数字）"],
+                    "handle": ["type": "integer", "minimum": 1, "description": "该输出元素表里的句柄编号（[角色#句柄] 的数字）；与 label 二选一"],
+                    "label": ["type": "string", "description": "该输出元素表里的短标签（[a] 的字母）；与 handle 二选一"],
                 ],
-                "required": ["token", "handle"],
+                "required": ["token"],
+                "anyOf": [["required": ["handle"]], ["required": ["label"]]],
                 "additionalProperties": false,
             ]
         case .typeText:
@@ -116,10 +119,12 @@ enum ScuTool: String, CaseIterable {
                 "type": "object",
                 "properties": [
                     "token": ["type": "string", "description": "get_ax_state 标题行里的令牌"],
-                    "handle": ["type": "integer", "minimum": 1, "description": "要输入到的元素句柄"],
+                    "handle": ["type": "integer", "minimum": 1, "description": "要输入到的元素句柄；与 label 二选一"],
+                    "label": ["type": "string", "description": "该输出元素表里的短标签；与 handle 二选一"],
                     "text": ["type": "string", "minLength": 1, "maxLength": 10000, "description": "要输入的文本"],
                 ],
-                "required": ["token", "handle", "text"],
+                "required": ["token", "text"],
+                "anyOf": [["required": ["handle"]], ["required": ["label"]]],
                 "additionalProperties": false,
             ]
         case .pressKey:
@@ -127,13 +132,15 @@ enum ScuTool: String, CaseIterable {
                 "type": "object",
                 "properties": [
                     "token": ["type": "string", "description": "get_ax_state 标题行里的令牌"],
-                    "handle": ["type": "integer", "minimum": 1, "description": "接收按键的元素句柄（会先聚焦它）"],
+                    "handle": ["type": "integer", "minimum": 1, "description": "接收按键的元素句柄（会先聚焦它）；与 label 二选一"],
+                    "label": ["type": "string", "description": "该输出元素表里的短标签；与 handle 二选一"],
                     "key": [
                         "type": "string", "minLength": 1,
                         "description": "按键或组合键，如 Return、Tab、esc、cmd+c；修饰键可用 cmd/shift/alt/ctrl",
                     ],
                 ],
-                "required": ["token", "handle", "key"],
+                "required": ["token", "key"],
+                "anyOf": [["required": ["handle"]], ["required": ["label"]]],
                 "additionalProperties": false,
             ]
         case .setValue:
@@ -141,10 +148,12 @@ enum ScuTool: String, CaseIterable {
                 "type": "object",
                 "properties": [
                     "token": ["type": "string", "description": "get_ax_state 标题行里的令牌"],
-                    "handle": ["type": "integer", "minimum": 1, "description": "要写入的元素句柄"],
+                    "handle": ["type": "integer", "minimum": 1, "description": "要写入的元素句柄；与 label 二选一"],
+                    "label": ["type": "string", "description": "该输出元素表里的短标签；与 handle 二选一"],
                     "value": ["type": "string", "maxLength": 10000, "description": "要写入的值"],
                 ],
-                "required": ["token", "handle", "value"],
+                "required": ["token", "value"],
+                "anyOf": [["required": ["handle"]], ["required": ["label"]]],
                 "additionalProperties": false,
             ]
         case .getAXState:
@@ -261,51 +270,47 @@ enum ScuTool: String, CaseIterable {
                 return Outcome(text: table.text.isEmpty ? head : head + "\n" + table.text, isError: false)
 
             case .click:
-                try Self.requireNoExtra(args, allowed: ["token", "handle"])
+                try Self.requireNoExtra(args, allowed: ["token", "handle", "label"])
                 guard let token = try Self.string(args, "token") else { throw ArgumentError(message: "缺少参数 token") }
-                guard let handle = try Self.int(args, "handle", range: 1...Int(Int32.max), required: true) else {
-                    throw ArgumentError(message: "缺少参数 handle")
-                }
+                let (handle, label) = try Self.targetHandle(args, token: token, session: session)
                 let report = try session.click(token: token, handle: handle)
-                return Outcome(text: Self.actionText(report, handle: handle, verb: "点击"), isError: false)
+                return Outcome(
+                    text: Self.actionText(report, handle: handle, verb: "点击", labelRef: label), isError: false)
 
             case .typeText:
-                try Self.requireNoExtra(args, allowed: ["token", "handle", "text"])
+                try Self.requireNoExtra(args, allowed: ["token", "handle", "label", "text"])
                 guard let token = try Self.string(args, "token") else { throw ArgumentError(message: "缺少参数 token") }
-                guard let handle = try Self.int(args, "handle", range: 1...Int(Int32.max), required: true) else {
-                    throw ArgumentError(message: "缺少参数 handle")
-                }
+                let (handle, label) = try Self.targetHandle(args, token: token, session: session)
                 guard let text = try Self.string(args, "text"), !text.isEmpty else {
                     throw ArgumentError(message: "text 不能为空")
                 }
                 guard text.count <= 10000 else { throw ArgumentError(message: "text 最长 10000 个字符") }
                 let typed = try session.typeText(token: token, handle: handle, text: text)
-                return Outcome(text: Self.actionText(typed, handle: handle, verb: "输入"), isError: false)
+                return Outcome(
+                    text: Self.actionText(typed, handle: handle, verb: "输入", labelRef: label), isError: false)
 
             case .pressKey:
-                try Self.requireNoExtra(args, allowed: ["token", "handle", "key"])
+                try Self.requireNoExtra(args, allowed: ["token", "handle", "label", "key"])
                 guard let token = try Self.string(args, "token") else { throw ArgumentError(message: "缺少参数 token") }
-                guard let handle = try Self.int(args, "handle", range: 1...Int(Int32.max), required: true) else {
-                    throw ArgumentError(message: "缺少参数 handle")
-                }
+                let (handle, label) = try Self.targetHandle(args, token: token, session: session)
                 guard let key = try Self.string(args, "key"), !key.isEmpty else {
                     throw ArgumentError(message: "key 不能为空")
                 }
                 let pressed = try session.pressKey(token: token, handle: handle, key: key)
-                return Outcome(text: Self.actionText(pressed, handle: handle, verb: "按键"), isError: false)
+                return Outcome(
+                    text: Self.actionText(pressed, handle: handle, verb: "按键", labelRef: label), isError: false)
 
             case .setValue:
-                try Self.requireNoExtra(args, allowed: ["token", "handle", "value"])
+                try Self.requireNoExtra(args, allowed: ["token", "handle", "label", "value"])
                 guard let token = try Self.string(args, "token") else { throw ArgumentError(message: "缺少参数 token") }
-                guard let handle = try Self.int(args, "handle", range: 1...Int(Int32.max), required: true) else {
-                    throw ArgumentError(message: "缺少参数 handle")
-                }
+                let (handle, label) = try Self.targetHandle(args, token: token, session: session)
                 guard let value = try Self.stringAllowingEmpty(args, "value") else {
                     throw ArgumentError(message: "缺少参数 value")
                 }
                 guard value.count <= 10000 else { throw ArgumentError(message: "value 最长 10000 个字符") }
                 let written = try session.setValue(token: token, handle: handle, value: value)
-                return Outcome(text: Self.actionText(written, handle: handle, verb: "设值"), isError: false)
+                return Outcome(
+                    text: Self.actionText(written, handle: handle, verb: "设值", labelRef: label), isError: false)
             }
         } catch let e as ArgumentError {
             return Outcome(text: "[invalid_argument] \(e.message)", isError: true)
@@ -340,6 +345,12 @@ enum ScuTool: String, CaseIterable {
             h += "按层级优先显示；行尾 (折叠 N) 表示其下还有 N 个后代未显示。用 focus 看某一部分，或调大 max_elements。"
         }
         h += "句柄只在该令牌有效期内可用（界面结构变化后令牌失效）；"
+        if !table.labels.isEmpty {
+            h += "可交互元素前的 [a] 是本次快照的标签，动作工具可用 label 代替 handle。"
+        }
+        if table.labelTotal > ElementTable.maxLabels {
+            h += "可交互元素超过 \(ElementTable.maxLabels) 个，只标了前 \(ElementTable.maxLabels) 个。"
+        }
         h += actionsEnabled ? "用 click(token, handle) 点击，用 type_text / press_key 输入，或用 set_value 直接写值。" : "目前没有工具接受句柄（动作档未开启）。"
         if case .deny(let category) = policy {
             h += "\n⚠️ 策略：\(appName ?? "该应用") 属于拒绝类目 \(category)，对它的动作会被拒绝（读取不受限）。"
@@ -354,7 +365,7 @@ enum ScuTool: String, CaseIterable {
         var s = "[\(e.code)] \(e.message)（retry=\(e.retry)）"
         switch e.code {
         case "stale_snapshot", "element_gone":
-            s += "\n请重新调用 get_ax_state 取得新令牌与句柄；用 focus 按文本重新定位目标。"
+            s += "\n请重新调用 get_ax_state 取得新令牌与标签/句柄；用 focus 按文本重新定位目标。"
         case "target_switched":
             s += "\n令牌属于之前读取的另一个应用：请对要操作的应用重新 get_ax_state。"
         case "unsupported_operation":
@@ -371,10 +382,13 @@ enum ScuTool: String, CaseIterable {
     }
 
     /// 点击结果的文本：先一行机器可读的摘要，再用人话解释。只陈述观察到的事实。
-    static func actionText(_ r: DesktopSession.ClickReport, handle: Int, verb: String) -> String {
+    static func actionText(
+        _ r: DesktopSession.ClickReport, handle: Int, verb: String, labelRef: String? = nil
+    ) -> String {
         func flag(_ b: Bool?) -> String { b.map { $0 ? "true" : "false" } ?? "unknown" }
         let label = [r.target.title, r.target.description].compactMap { $0 }.first { !$0.isEmpty }
         var name = "\(r.target.role)#\(handle)"
+        if let labelRef { name = "[\(labelRef)] " + name }
         if let label { name += " " + ElementTable.quote(label) }
         let secs = String(format: "%.1f", r.elapsed)
         var lines = [
@@ -402,6 +416,21 @@ enum ScuTool: String, CaseIterable {
             lines.append("目标元素已不在原位置（已消失或被替换）。")
         }
         return lines.joined(separator: "\n")
+    }
+
+    /// 解析动作目标：`handle` 与 `label` 必须二选一。
+    static func targetHandle(
+        _ args: [String: JSONValue], token: String, session: DesktopSession
+    ) throws -> (handle: Int, label: String?) {
+        let label = try Self.string(args, "label")
+        let handle = try Self.int(args, "handle", range: 1...Int(Int32.max), required: false)
+        guard (label == nil) != (handle == nil) else {
+            throw ArgumentError(message: "handle 与 label 必须二选一")
+        }
+        if let label {
+            return (try session.resolveLabel(token: token, label: label), label)
+        }
+        return (handle!, nil)
     }
 
     // MARK: - 参数校验

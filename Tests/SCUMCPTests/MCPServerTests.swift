@@ -421,6 +421,51 @@ extension JSONValue {
         #expect(reader.actionCalls[0].locator.target.title == "确定")
     }
 
+    static let labeledTree = TreeReading(
+        root: AXNode(
+            role: "AXWindow", title: "主窗口", childCount: 2,
+            children: [
+                AXNode(role: "AXButton", title: "确定", frame: Rect(x: 10, y: 20, width: 80, height: 24)),
+                AXNode(role: "AXTextField", value: "abc", frame: Rect(x: 10, y: 50, width: 200, height: 24)),
+            ]),
+        truncated: false)
+
+    @Test func labelsAreShownAndResolveToTheSameTargetAsHandles() {
+        let (t, s, reader) = rig(actions: true)
+        reader.tree = .success(Self.labeledTree)
+        let read = t.callTool(s, "get_ax_state", ["pid": 42])
+        #expect(read.text.contains("[a] [AXButton#2]"))
+        #expect(read.text.contains("frame=(10,20,80,24)"))
+        #expect(read.text.contains("标签"))
+        let tok = token(from: read)
+        let r = t.callTool(s, "click", ["token": .string(tok), "label": "a"])
+        #expect(!r.isError)
+        #expect(r.text.contains("[a] AXButton#2"))
+        #expect(reader.actionCalls.count == 1)
+        #expect(reader.actionCalls[0].locator.target.title == "确定")
+
+        let typed = t.callTool(s, "type_text", ["token": .string(tok), "label": "b", "text": "hello"])
+        #expect(!typed.isError)
+        #expect(reader.typed.count == 1 && reader.typed[0].text == "hello")
+    }
+
+    @Test func labelArgumentsAreValidatedAndUnknownLabelsAreGone() {
+        let (t, s, _) = rig(actions: true)
+        let tok = token(from: t.callTool(s, "get_ax_state", ["pid": 42]))
+        for args: JSONValue in [
+            ["token": .string(tok), "handle": 1, "label": "a"],
+            ["token": .string(tok)],
+            ["token": .string(tok), "label": "zz"],
+            ["token": .string(tok), "label": "a", "extra": true],
+        ] {
+            let r = t.callTool(s, "click", args)
+            #expect(r.isError, "\(args)")
+            #expect(
+                r.text.hasPrefix("[invalid_argument]") || r.text.hasPrefix("[element_gone]"),
+                "\(args)：\(r.text)")
+        }
+    }
+
     @Test func inputToolsAreExposedWithTruthfulAnnotations() {
         let (t, s, _) = rig(actions: true)
         let names = toolNames(t, s)

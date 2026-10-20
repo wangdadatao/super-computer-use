@@ -238,6 +238,8 @@ verification/
 ### 当前状态
 
 **P0 出口门槛已全部满足或判定不适用（2026-10-19）**；P0 之外的假设（如指示层隔离）仍未验证。
+标签寻址（[ADR-0018](../decisions/adr_0018_label_addressing.md)）已在单元测试、MCP 测试与网易云 3.1.12（CEF）上验证；
+其他真实应用尚未验证。
 权限按宿主归属，不是机器级事实（见 [macOS 权限](permissions.md)）：
 2026-10-18 的验证是在 Cursor 的 agent 会话里跑的，该宿主当时已授予辅助功能；换一个宿主要先用 `scu permissions` 确认。
 没有权限的宿主上，`scripts/check.sh` 会失败并提示；显式设置 `SCU_SKIP_LIVE=1` 才会跳过夹具与访达上的真实应用测试

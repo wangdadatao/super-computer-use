@@ -19,6 +19,35 @@ public enum ElementTable {
     static let fieldLimit = 120
     /// `focus` 命中的子树数上限。更多的命中只计数，不展开。
     public static let maxFocusMatches = 20
+    /// 一次快照里最多分配多少个标签。超出的可交互元素保留句柄，但不带标签。
+    public static let maxLabels = 300
+
+    /// 可交互角色的近似集合。不是"可点击"的完整判断：
+    /// 自绘的行、支持 AXPress 的 AXGroup 等不在其中，等读取 AXActionNames 后再补。
+    static let labelableRoles: Set<String> = [
+        "AXButton", "AXLink", "AXTextField", "AXTextArea", "AXSearchField",
+        "AXCheckBox", "AXRadioButton", "AXPopUpButton", "AXComboBox",
+        "AXMenuItem", "AXMenuButton", "AXTab", "AXSlider", "AXStepper",
+        "AXIncrementor", "AXDisclosureTriangle", "AXColorWell", "AXDateField",
+        "AXSplitButton",
+    ]
+
+    /// 快照内的一个短标签。标签只对签发它的令牌有效，不跨快照。
+    public struct Label: Equatable, Sendable {
+        public var text: String
+        public var handle: Int
+        public var role: String
+        public var title: String?
+        public var frame: Rect
+
+        public init(text: String, handle: Int, role: String, title: String?, frame: Rect) {
+            self.text = text
+            self.handle = handle
+            self.role = role
+            self.title = title
+            self.frame = frame
+        }
+    }
 
     /// 只显示树的一部分。两个条件同时给出时必须同时满足。
     public struct Focus: Equatable, Sendable {
@@ -59,6 +88,10 @@ public enum ElementTable {
         public var matches: Int?
         /// 命中范围内的元素总数；未使用 `focus` 时等于 `total`。
         public var scope: Int
+        /// 实际显示出来的标签（只含已显示的元素），供截图叠加与调试使用。
+        public var labels: [Label]
+        /// 整棵树中可标注的元素总数；超过 `maxLabels` 时大于 `labels` 的上限。
+        public var labelTotal: Int
     }
 
     /// 先序展开后的一个元素。句柄 = 下标 + 1。
@@ -68,18 +101,58 @@ public enum ElementTable {
         var parent: Int  // -1 表示根
         var size: Int  // 子树元素数，含自身
         var indexInParent: Int  // 在父节点子列表中的下标；根为 0
+        var label: String?  // 快照内的短标签；只给可交互元素分配
     }
 
     static func flatten(_ root: AXNode) -> [Entry] {
         var out: [Entry] = []
         func walk(_ n: AXNode, depth: Int, parent: Int, index: Int) {
             let i = out.count
-            out.append(Entry(node: n, depth: depth, parent: parent, size: 1, indexInParent: index))
+            out.append(
+                Entry(node: n, depth: depth, parent: parent, size: 1, indexInParent: index, label: nil))
             for (k, c) in n.children.enumerated() { walk(c, depth: depth + 1, parent: i, index: k) }
             out[i].size = out.count - i
         }
         walk(root, depth: 0, parent: -1, index: 0)
+        assignLabels(&out)
         return out
+    }
+
+    /// 按先序给可交互元素分配短标签。按树序而不是几何排序：
+    /// 窗口移动不改变标签，令牌复用时标签也稳定。
+    static func assignLabels(_ entries: inout [Entry]) {
+        var n = 0
+        for i in entries.indices {
+            guard n < maxLabels else { break }
+            let node = entries[i].node
+            guard isLabelable(node), let f = node.frame, f.width > 0, f.height > 0 else { continue }
+            entries[i].label = labelText(n)
+            n += 1
+        }
+    }
+
+    static func isLabelable(_ node: AXNode) -> Bool {
+        guard node.enabled != false else { return false }
+        return labelableRoles.contains(node.role)
+    }
+
+    /// 0 → a, 25 → z, 26 → aa, 51 → az, 52 → ba。
+    static func labelText(_ index: Int) -> String {
+        var i = index
+        var out = ""
+        repeat {
+            let scalar = UnicodeScalar(97 + i % 26)!
+            out = String(scalar) + out
+            i = i / 26 - 1
+        } while i >= 0
+        return out
+    }
+
+    static func labelableCount(_ entries: [Entry]) -> Int {
+        entries.reduce(0) { count, e in
+            guard isLabelable(e.node), let f = e.node.frame, f.width > 0, f.height > 0 else { return count }
+            return count + 1
+        }
     }
 
     public static func render(
@@ -157,12 +230,19 @@ public enum ElementTable {
             for j in r..<(r + entries[r].size) where emitted[j] {
                 let sub = entries[j].size - 1
                 let hidden = sub - (prefix[j + entries[j].size] - prefix[j + 1])
-                lines.append(line(entries[j].node, handle: j + 1, depth: entries[j].depth - base, collapsed: hidden))
+                lines.append(
+                    line(
+                        entries[j].node, handle: j + 1, depth: entries[j].depth - base,
+                        collapsed: hidden, label: entries[j].label))
             }
+        }
+        let shownLabels = entries.enumerated().compactMap { i, e -> Label? in
+            guard emitted[i], let text = e.label, let frame = e.node.frame else { return nil }
+            return Label(text: text, handle: i + 1, role: e.node.role, title: e.node.title, frame: frame)
         }
         return Result(
             text: lines.joined(separator: "\n"), total: entries.count, shown: shown, depth: maxDepth,
-            matches: matchCount, scope: scope)
+            matches: matchCount, scope: scope, labels: shownLabels, labelTotal: labelableCount(entries))
     }
 
     /// 从根到目标元素的祖先链，供 `focus` 的结果说明"这块在哪里"。
@@ -182,16 +262,23 @@ public enum ElementTable {
         return parts.isEmpty ? "（树根）" : parts.joined(separator: " > ")
     }
 
-    static func line(_ n: AXNode, handle: Int, depth: Int, collapsed: Int = 0) -> String {
-        var s = String(repeating: "  ", count: depth) + "[\(n.role)#\(handle)]"
+    static func line(_ n: AXNode, handle: Int, depth: Int, collapsed: Int = 0, label: String? = nil) -> String {
+        var s = String(repeating: "  ", count: depth)
+        if let label { s += "[\(label)] " }
+        s += "[\(n.role)#\(handle)]"
         if let t = n.title, !t.isEmpty { s += " " + quote(t) }
         if let v = n.subrole { s += " subrole=\(v)" }
         if let d = n.description, !d.isEmpty { s += " desc=" + quote(d) }
         if let v = n.value, !v.isEmpty { s += " value=" + quote(v) }
         if let i = n.identifier, !i.isEmpty { s += " id=" + quote(i) }
         if n.enabled == false { s += " state=disabled" }
+        if let f = n.frame { s += " frame=(\(coord(f.x)),\(coord(f.y)),\(coord(f.width)),\(coord(f.height)))" }
         if collapsed > 0 { s += " (折叠 \(collapsed))" }
         return s
+    }
+
+    static func coord(_ value: Double) -> String {
+        String(Int(value.rounded()))
     }
 
     /// 带引号的单行字符串：转义反斜杠、双引号与控制字符，过长则截断。

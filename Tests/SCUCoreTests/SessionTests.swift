@@ -254,6 +254,38 @@ final class ScriptedReader: DesktopReader {
         _ = try s.resolve(token: t.token.value, handle: 5)
     }
 
+    @Test func labelResolvesToHandleAndIsCaseInsensitive() throws {
+        let (s, _) = session()
+        let t = try read(s)
+        #expect(try s.resolveLabel(token: t.token.value, label: "a") == 3)
+        #expect(try s.resolveLabel(token: t.token.value, label: "A") == 3)
+        #expect(try s.resolveLabel(token: t.token.value, label: "b") == 4)
+        expectError("element_gone", retry: "after_refresh") {
+            _ = try s.resolveLabel(token: t.token.value, label: "zz")
+        }
+    }
+
+    @Test func labelSurvivesGeometryOnlyReadsButNotStructureChanges() throws {
+        let (s, r) = session()
+        let a = try read(s)
+        #expect(try s.resolveLabel(token: a.token.value, label: "a") == 3)
+
+        // 窗口移动：结构不变，令牌复用，标签不漂。
+        r.tree = TreeReading(root: Self.sampleTree(frameX: 300), truncated: false)
+        let b = try read(s)
+        #expect(b.reused && b.token == a.token)
+        #expect(try s.resolveLabel(token: b.token.value, label: "a") == 3)
+
+        // 结构变化：旧令牌失效，旧标签被拒；新快照的标签重新可用。
+        r.tree = TreeReading(root: Self.sampleTree(okTitle: "好的"), truncated: false)
+        let c = try read(s)
+        #expect(c.token != a.token)
+        expectError("stale_snapshot", retry: "after_refresh") {
+            _ = try s.resolveLabel(token: a.token.value, label: "a")
+        }
+        #expect(try s.resolveLabel(token: c.token.value, label: "a") == 3)
+    }
+
     @Test func locatorCarriesPathIndexSiblingCountAndTargetKey() throws {
         let (s, _) = session()
         let t = try read(s)

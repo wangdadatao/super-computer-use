@@ -29,6 +29,55 @@ import Testing
         #expect(ElementTable.line(plain, handle: 1, depth: 0) == "[AXButton#1]")
     }
 
+    @Test func interactiveElementsGetLabelsAndFrames() {
+        let tree = AXNode(role: "AXWindow", children: [
+            AXNode(role: "AXButton", title: "确定", frame: Rect(x: 10, y: 20, width: 80, height: 24)),
+            AXNode(role: "AXStaticText", value: "说明", frame: Rect(x: 10, y: 50, width: 200, height: 18)),
+            AXNode(role: "AXTextField", frame: Rect(x: 10, y: 80, width: 200, height: 24)),
+        ])
+        let r = ElementTable.render(tree)
+        let lines = r.text.split(separator: "\n").map(String.init)
+        #expect(lines[0] == "[AXWindow#1]")
+        #expect(lines[1].hasPrefix("  [a] [AXButton#2]"))
+        #expect(lines[1].hasSuffix("frame=(10,20,80,24)"))
+        // 静态文本不标；但它仍然带 frame，便于截图定位。
+        #expect(!lines[2].contains("[a]") && lines[2].hasSuffix("frame=(10,50,200,18)"))
+        #expect(lines[3].hasPrefix("  [b] [AXTextField#4]"))
+        #expect(r.labels.map(\.text) == ["a", "b"])
+        #expect(r.labels.map(\.handle) == [2, 4])
+        #expect(r.labelTotal == 2)
+    }
+
+    @Test func labelsSkipDisabledAndZeroSizedElements() {
+        let tree = AXNode(role: "AXWindow", children: [
+            AXNode(role: "AXButton", title: "禁用", enabled: false, frame: Rect(x: 0, y: 0, width: 40, height: 20)),
+            AXNode(role: "AXButton", title: "零宽", frame: Rect(x: 0, y: 30, width: 0, height: 20)),
+            AXNode(role: "AXButton", title: "可用", frame: Rect(x: 0, y: 60, width: 40, height: 20)),
+        ])
+        let r = ElementTable.render(tree)
+        #expect(r.labels.map(\.text) == ["a"])
+        #expect(r.labels.first?.title == "可用")
+        #expect(r.labelTotal == 1)
+    }
+
+    @Test func labelCapKeepsTheRestAddressableByHandle() {
+        let tree = AXNode(role: "AXGroup", children: (0..<(ElementTable.maxLabels + 5)).map { i in
+            AXNode(role: "AXButton", title: "b\(i)", frame: Rect(x: 0, y: Double(i), width: 10, height: 10))
+        })
+        let r = ElementTable.render(tree, maxElements: ElementTable.maxLabels + 10)
+        #expect(r.labels.count == ElementTable.maxLabels)
+        #expect(r.labelTotal == ElementTable.maxLabels + 5)
+        #expect(r.text.contains("[AXButton#\(ElementTable.maxLabels + 6)]"))
+        // 第 301 个按钮之后不再有标签，但仍可用句柄寻址。
+        let unlabeled = r.text.split(separator: "\n").first { $0.contains("[AXButton#302]") }
+        #expect(unlabeled?.contains("] [AXButton#302]") == false)
+    }
+
+    @Test func frameCoordinatesAreRoundedForDisplay() {
+        let n = AXNode(role: "AXButton", frame: Rect(x: 1.4, y: 2.6, width: 3.5, height: 4.4))
+        #expect(ElementTable.line(n, handle: 1, depth: 0) == "[AXButton#1] frame=(1,3,4,4)")
+    }
+
     @Test func textCannotBreakTheOneLinePerElementStructure() {
         let n = AXNode(role: "AXStaticText", title: "a\nb\r\nc\td\"e\\f")
         let line = ElementTable.line(n, handle: 1, depth: 0)
