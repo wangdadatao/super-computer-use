@@ -1,4 +1,4 @@
-# 真实任务第一轮（TextEdit / Calculator / Finder）
+# 真实任务第一轮（TextEdit / Calculator / Finder / Edge）
 
 - 日期：2026-10-20
 - 环境：macOS 14.4，Apple Silicon；`scu`/`scu-native` 由当前工作区构建（协议 v11）
