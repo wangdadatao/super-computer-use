@@ -70,6 +70,21 @@ SCU 的设计决策引用了一批对两套已发布实现的观察结论。本�
 | 元素表是带短 ID 的文本 | `CU-REPL`、`GB-NATIVE` | `GB-NATIVE` 工具描述："Read the app's accessibility tree as text (no image): one element per line" |
 | 位置寻址（帧内序号） | `CU-SKY`、`GB-NATIVE` | `CU-SKY` 的 `Click.d.ts` 注释 "Element index from the latest `get_app_state()` text"；`GB-NATIVE` 有 `element_id` 与 `snapshot_id` |
 
+### 坐标与截图（2026-10-19 复核）
+
+| 结论 | 来源 | 证据 |
+| --- | --- | --- |
+| Codex 的截图是**目标窗口**，坐标以窗口截图的逻辑像素计 | `CU-SKY` | `docs/sky-window-api.md`：`Screenshot.width/height` 注释 "logical pixels"；`Screenshot.originX/originY` 是屏幕原点；`ClickInput.x/y` 注释 "in the app-window screenshot" |
+| Codex 的点击可传 `element_index` 或 `x/y`；有元素时优先元素 | `CU-SKY` | `docs/sky-window-api.md`：`click` "either an indexed element … or a coordinate in the app window"；`CU-PLUGIN-OLD` SKILL.md："Prefer `element_index`-based actions … fall back to using screenshots and coordinate clicks" |
+| Codex 的坐标动作可绑定 `screenshotId`，截图必须为目标窗口缓存 | `CU-SKY` | `docs/sky-window2-api.md`：`screenshotId` "when supplied, it must be cached for the target window" |
+| Codex 让模型直接看窗口截图定位，不预先枚举按钮坐标 | `CU-PLUGIN-OLD` | SKILL.md：`get_app_state` 返回 `{ text, screenshot }`；截图用 `nodeRepl.emitImage` 读入；`click({ app, x, y })` |
+| Codex 的 `element_index` 只对最新状态有效 | `CU-PLUGIN-OLD` | SKILL.md："forces you to re-derive fresh `element_index` values … instead of reusing stale ones" |
+
+**复核记录**：`CU-SKY` 为 `@oai/sky` `0.7.8`，
+`docs/sky-window-api.md` sha256 `18d387e9…`、`docs/sky-window2-api.md` sha256 `85fa55b9…`；
+`CU-PLUGIN-OLD` 的 `skills/computer-use/SKILL.md` sha256 `8e6a753c…`。
+采集方法：直接读取 JS 包内 API 文档与技能文件（2026-10-19）。
+
 ### 状态与失效
 
 | 结论 | 来源 | 证据 |
