@@ -13,14 +13,14 @@ SCU 是一个 MCP 服务：读取 macOS 应用的无障碍树，并用 `AXPress`
 | 能做 | 不能做 |
 | --- | --- |
 | 读取**已在运行**的应用的无障碍树（文本元素表） | 启动应用、切换前台应用 |
-| 截图、看画面、按截图坐标点击（`get_screenshot` / `click_at`） | 滚动、拖拽、右键、长按 |
+| 截图、看画面、按截图坐标点击/滚动/拖拽（`get_screenshot` / `click_at` / `scroll_at` / `drag`） | 右键、长按 |
 | 点击元素（`AXPress`） | 输入法（中文等）未验证；粘贴、剪贴板 |
 | 逐字输入文本（`type_text`）、发送按键/组合键（`press_key`） | 审批/确认层：危险动作只能靠你与用户确认 |
 | 直接写元素的值（`set_value`，要求元素可写） | |
 | 知道动作是否改变了界面、是否疑似空操作 | |
 
 只读档只有 `check_permissions` / `list_apps` / `get_ax_state` / `get_screenshot`；
-`click` / `click_at` / `type_text` / `press_key` / `set_value` 需要服务以 `--actions` 启动。
+`click` / `click_at` / `scroll_at` / `drag` / `type_text` / `press_key` / `set_value` 需要服务以 `--actions` 启动。
 如果调用这些工具返回"未知工具"（JSON-RPC `-32602`），说明动作档没开，请用户改启动参数。
 
 ## 第一次使用
@@ -98,6 +98,18 @@ click_at(token, screenshot_id, x, y)
   说明画面有变化；两者都 false 才是 `noOpSuspected`，不要重复点；
 - 越界返回 `invalid_coordinates`；窗口移动/截图过期返回 `stale_geometry`。
 
+### 滚动与拖拽
+
+```text
+scroll_at(token, screenshot_id, x, y, dx, dy)   # dy>0 向下，dx>0 向右
+drag(token, screenshot_id, from_x, from_y, to_x, to_y, duration_ms=400)
+```
+
+- 同样需要截图与前台窗口；都会移动真实光标；
+- 滚动/拖拽后重读 AX 树并比较全图像素比例；
+- 拖拽可能移动文件或列表项，**没有审批层**；不确定就不要拖；
+- 起终点相同或越界返回 `invalid_coordinates`。
+
 ## 选哪个动作
 
 | 意图 | 用 |
@@ -107,6 +119,8 @@ click_at(token, screenshot_id, x, y)
 | 需要在输入过程中触发搜索/校验/自动完成 | `type_text` |
 | 提交、Tab、Escape、快捷键 | `press_key` |
 | AX 点不动、或没有 AX 元素的网页/画布控件 | `click_at`（先 `get_screenshot`，最后手段） |
+| 列表/画布滚动 | `scroll_at` |
+| 拖动列表项/画布对象 | `drag`（高风险，先确认起终点） |
 
 **`set_value` 是默认写入路径**：快、不经过输入法、不触发按键处理。它要求元素声明 `AXValue` 可写；
 不可写时会返回 `unsupported_operation`，**不要**自己改成逐字输入再试一遍——那会改变副作用，

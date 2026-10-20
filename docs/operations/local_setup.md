@@ -61,10 +61,11 @@ git config core.hooksPath scripts/hooks
 | 树的文本输出与字段覆盖率统计 | `TreeFormatter`、`FieldCoverage` | 已实现，覆盖率有测试 |
 | 文本化元素表（本次读取内的句柄、转义、层级优先的元素数上限、`focus` 展开） | `ElementTable` | 已实现，有测试 |
 | 快照内短标签与 `frame`：可交互元素带 `[a]`，四个动作工具接受 `label`（[ADR-0018](../decisions/adr_0018_label_addressing.md)） | `ElementTable`、`DesktopSession`、`Tools` | 已实现，有单元与 MCP 测试；已在网易云 3.1.12（CEF）上按标签点击、输入与设值；
-左侧栏这类 `AXGroup` 能标出，但 `AXPress` 是空操作，需要坐标点击（尚未实现） |
+左侧栏这类 `AXGroup` 能标出，但 `AXPress` 是空操作，已由 `click_at` 补上 |
 | 窗口截图与标签叠加：`get_screenshot(token)` 截目标窗口，返回 PNG、`windowFrame`、`scale`、`screenshot_id`（[ADR-0019](../decisions/adr_0019_window_screenshot.md)） | `ScreenCapture.swift`、`ScreenshotOverlay.swift`、`Tools` | 已实现，有 MCP 测试；已在网易云上截图 1600×1138 |
-| 坐标点击：`click_at(token, screenshot_id, x, y)` 激活目标窗口后用真实鼠标事件点击（[ADR-0020](../decisions/adr_0020_coordinate_click.md)） | `Mouse.swift`、`WindowActivation.swift`、`DesktopSession` | 已实现，有 MCP 测试；已在网易云左侧栏从推荐切到精选 |
-| MCP stdio 服务：只读的 `check_permissions`、`list_apps`、`get_ax_state`、`get_screenshot`；加 `--actions` 额外提供 `click`、`click_at`、`type_text`、`press_key`、`set_value`（见 [MCP 接入面](../interfaces/mcp_surface.md)） | `SCUMCP`、`scu mcp`、`NativeSession` | 已实现，有单元测试与真实管道的端到端测试；只读工具已在 Cursor 一个宿主里跑通。**`click` 已在自制夹具应用 `scu-fixture` 与网易云 3.1.12（CEF）上用真实 `AXPress` 验证过**（见 [夹具验证](../../verification/2026-10-18-fixture-validation.md) 与 [网易云验证](../../verification/2026-10-19-real-app-netease.md)），其他 Electron 等第三方应用未验证（见 [MCP 接入面的未验证项](../interfaces/mcp_surface.md#未验证项)） |
+| 坐标点击：`click_at(token, screenshot_id, x, y)` 激活目标窗口后用真实鼠标事件点击（[ADR-0020](../decisions/adr_0020_coordinate_click.md)） | `Mouse.swift`、`WindowActivation.swift`、`DesktopSession` | 已实现，有 MCP 测试；已在网易云左侧栏从推荐切到精选，截图 diff 约 43% |
+| 滚动与拖拽：`scroll_at` / `drag` 按截图坐标投递滚轮/拖拽事件（[ADR-0021](../decisions/adr_0021_scroll_and_drag.md)） | `Mouse.swift`、`DesktopSession`、`Tools` | 已实现，有 MCP 测试；滚动已在网易云验证（diff 约 0.387）；拖拽真实应用未验证 |
+| MCP stdio 服务：只读的 `check_permissions`、`list_apps`、`get_ax_state`、`get_screenshot`；加 `--actions` 额外提供 `click`、`click_at`、`scroll_at`、`drag`、`type_text`、`press_key`、`set_value`（见 [MCP 接入面](../interfaces/mcp_surface.md)） | `SCUMCP`、`scu mcp`、`NativeSession` | 已实现，有单元测试与真实管道的端到端测试；只读工具已在 Cursor 一个宿主里跑通。**`click` 已在自制夹具应用 `scu-fixture` 与网易云 3.1.12（CEF）上用真实 `AXPress` 验证过**（见 [夹具验证](../../verification/2026-10-18-fixture-validation.md) 与 [网易云验证](../../verification/2026-10-19-real-app-netease.md)），其他 Electron 等第三方应用未验证（见 [MCP 接入面的未验证项](../interfaces/mcp_surface.md#未验证项)） |
 | 会话：快照令牌签发与复用、按路径加核对键定位句柄、`click`（`AXPress`）、轮询式收敛与效果摘要（[ADR-0015](../decisions/adr_0015_handle_resolution_by_path.md)） | `DesktopSession` | 已实现，有假读取器的单元测试、真实访达的 `verify` 测试与夹具上的真实点击测试 |
 | 定位器：沿路径逐层核对子节点数与角色，再核对目标核对键，通过后 `press` / `verify` | `AXLocator`、`NativeServer` | 已实现，有测试（线协议 v4 的 `performAction`） |
 | 输入与按键：先聚焦目标元素，再把 Unicode 键盘事件与组合键投递到目标进程（不激活应用）；设值走无障碍 `AXValue` | `Input.swift`、`DesktopSession` | 已实现，有按键解析单元测试、会话层测试与夹具上的真实输入/提交/设值测试 |
@@ -74,7 +75,7 @@ git config core.hooksPath scripts/hooks
 | K1~K4 候选键与匹配键计算（纯函数，无状态） | `IdentityAnalyzer` | 已实现，有测试（含唯一性的伪随机性质测试） |
 | 各档位分布统计（整树 / 窗口内可交互 / 菜单栏 / 按 role），K1 与标签的多种口径 | `IdentityReport`、`scu identity` | 已实现。**只呈现分布，不给成败结论**（ADR-0013「基线先行」） |
 
-**尚未实现**：滚动与拖拽、应用启动、审批与租约、指示层；
+**尚未实现**：应用启动、审批与租约、指示层；
 句柄注册表（跨快照延续，K4 验证不成立，**不实现**，见 [ADR-0013](../decisions/adr_0013_p0_vertical_slice.md#暂缓句柄注册表)）。
 
 **`verify`（只定位核对、不执行）在原生层与会话层已实现，没有向 MCP 暴露。**
@@ -82,7 +83,7 @@ git config core.hooksPath scripts/hooks
 命令行：
 
 ```bash
-scu mcp [--actions]                 # MCP stdio 服务；默认只读，--actions 额外暴露 click / click_at / type_text / press_key / set_value；stdout 只有协议消息，诊断写 stderr
+scu mcp [--actions]                 # MCP stdio 服务；默认只读，--actions 额外暴露 click / click_at / scroll_at / drag / type_text / press_key / set_value；stdout 只有协议消息，诊断写 stderr
 scu permissions                     # 检查辅助功能权限
 scu apps                            # 列出可绑定的应用与 pid
 scu dump --pid <pid> [--depth N] [--budget-ms M]
@@ -110,7 +111,7 @@ scu identity --pid <pid> [--depth N] [--budget-ms M] [--by-role] [--show-k4]
 }
 ```
 
-要让 AI 能点击，把 `args` 改成 `["mcp", "--actions"]` 并重载（`click` 会真实作用于应用；网易云 CEF 已实测，其他第三方应用见 [MCP 接入面的未验证项](../interfaces/mcp_surface.md#未验证项)）。
+要让 AI 能点击/滚动/拖拽，把 `args` 改成 `["mcp", "--actions"]` 并重载（会真实作用于应用；网易云 CEF 已实测，其他第三方应用见 [MCP 接入面的未验证项](../interfaces/mcp_surface.md#未验证项)）。
 
 **辅助功能权限归属于启动 `scu mcp` 的宿主**，不是整台机器。接入后第一件事是让模型调用
 `check_permissions`；未授权时按[macOS 权限](permissions.md)给宿主授权。

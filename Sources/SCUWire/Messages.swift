@@ -2,7 +2,7 @@ import Foundation
 
 /// 协议层 ↔ 原生层的协议版本。单调递增整数，两侧必须完全相等（ADR-0012）。
 /// 编译期常量：不是运行时可变状态。
-public let scuNativeProtocolVersion = 8
+public let scuNativeProtocolVersion = 9
 
 /// `dumpTree` 允许的最大深度。超出时原生层拒绝，不做静默截断。
 public let scuMaxTreeDepth = 64
@@ -306,6 +306,10 @@ public enum Request: Sendable, Equatable {
     case captureWindow(pid: Int32)
     /// 在全局屏幕坐标 (x, y) 投递一次鼠标左键点击。坐标由协议层从截图换算。
     case clickAt(pid: Int32, x: Double, y: Double)
+    /// 在全局坐标 (x, y) 投递滚轮事件，dx/dy 为像素增量。
+    case scrollAt(pid: Int32, x: Double, y: Double, dx: Double, dy: Double)
+    /// 从全局坐标 (fromX, fromY) 拖到 (toX, toY)，持续 durationMs。
+    case dragAt(pid: Int32, fromX: Double, fromY: Double, toX: Double, toY: Double, durationMs: Int)
 }
 
 public enum Response: Sendable, Equatable {
@@ -326,11 +330,12 @@ public enum Response: Sendable, Equatable {
 
 extension Request: Codable {
     private enum Key: String, CodingKey {
-        case type, protocolVersion, pid, maxDepth, budgetMs, locator, action, text, key, value, x, y
+        case type, protocolVersion, pid, maxDepth, budgetMs, locator, action, text, key, value, x, y,
+            dx, dy, fromX, fromY, toX, toY, durationMs
     }
     private enum Kind: String, Codable {
         case hello, checkPermissions, listApps, dumpTree, performAction, typeText, pressKey, setValue
-        case captureWindow, clickAt
+        case captureWindow, clickAt, scrollAt, dragAt
     }
 
     public init(from decoder: any Decoder) throws {
@@ -370,6 +375,21 @@ extension Request: Codable {
                 pid: try c.decode(Int32.self, forKey: .pid),
                 x: try c.decode(Double.self, forKey: .x),
                 y: try c.decode(Double.self, forKey: .y))
+        case .scrollAt:
+            self = .scrollAt(
+                pid: try c.decode(Int32.self, forKey: .pid),
+                x: try c.decode(Double.self, forKey: .x),
+                y: try c.decode(Double.self, forKey: .y),
+                dx: try c.decode(Double.self, forKey: .dx),
+                dy: try c.decode(Double.self, forKey: .dy))
+        case .dragAt:
+            self = .dragAt(
+                pid: try c.decode(Int32.self, forKey: .pid),
+                fromX: try c.decode(Double.self, forKey: .fromX),
+                fromY: try c.decode(Double.self, forKey: .fromY),
+                toX: try c.decode(Double.self, forKey: .toX),
+                toY: try c.decode(Double.self, forKey: .toY),
+                durationMs: try c.decode(Int.self, forKey: .durationMs))
         }
     }
 
@@ -414,6 +434,21 @@ extension Request: Codable {
             try c.encode(pid, forKey: .pid)
             try c.encode(x, forKey: .x)
             try c.encode(y, forKey: .y)
+        case .scrollAt(let pid, let x, let y, let dx, let dy):
+            try c.encode(Kind.scrollAt, forKey: .type)
+            try c.encode(pid, forKey: .pid)
+            try c.encode(x, forKey: .x)
+            try c.encode(y, forKey: .y)
+            try c.encode(dx, forKey: .dx)
+            try c.encode(dy, forKey: .dy)
+        case .dragAt(let pid, let fromX, let fromY, let toX, let toY, let durationMs):
+            try c.encode(Kind.dragAt, forKey: .type)
+            try c.encode(pid, forKey: .pid)
+            try c.encode(fromX, forKey: .fromX)
+            try c.encode(fromY, forKey: .fromY)
+            try c.encode(toX, forKey: .toX)
+            try c.encode(toY, forKey: .toY)
+            try c.encode(durationMs, forKey: .durationMs)
         }
     }
 }

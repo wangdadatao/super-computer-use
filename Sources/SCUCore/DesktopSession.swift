@@ -294,7 +294,9 @@ public final class DesktopSession {
     ///
     /// 截图必须属于当前令牌，且窗口位置/缩放未变；否则拒绝。
     /// 点击后只观察 AX 树是否变化；坐标点击的像素级变化留给截图 diff。
-    public func clickAt(token: String, screenshotID: String, x: Double, y: Double) throws -> CoordinateReport {
+    private func coordinateContext(
+        token: String, screenshotID: String
+    ) throws -> (Record, Snapshot, ScreenshotBinding) {
         guard let r = records[token] else {
             throw WireError.staleSnapshot("令牌 \(token) 未签发或已被丢弃，请重新读取界面。")
         }
@@ -310,10 +312,6 @@ public final class DesktopSession {
         guard let binding = screenshotBindings[screenshotID], binding.token == token else {
             throw WireError.staleGeometry("截图 \(screenshotID) 不存在、已过期或不属于令牌 \(token)，请重新 get_screenshot。")
         }
-        guard x >= 0, y >= 0, x < Double(binding.width), y < Double(binding.height) else {
-            throw WireError.invalidCoordinates(
-                "坐标 (\(x), \(y)) 不在截图 \(screenshotID) 的 \(binding.width)×\(binding.height) 范围内。")
-        }
 
         let identity: Identity
         if let known = r.identity {
@@ -325,13 +323,23 @@ public final class DesktopSession {
         if case .deny(let category) = policy.evaluate(pid: r.pid, bundleId: identity.bundleId) {
             throw WireError.policyDenied(category: category, app: identity.name ?? "pid \(r.pid)")
         }
+        return (r, snap, binding)
+    }
 
-        let start = Date()
-        let global = (
-            x: binding.windowFrame.x + x / binding.scale,
-            y: binding.windowFrame.y + y / binding.scale)
-        _ = try reader.clickAt(pid: r.pid, x: global.x, y: global.y)
+    private func checkPoint(_ x: Double, _ y: Double, in binding: ScreenshotBinding) throws {
+        guard x >= 0, y >= 0, x < Double(binding.width), y < Double(binding.height) else {
+            throw WireError.invalidCoordinates(
+                "坐标 (\(x), \(y)) 不在截图 \(binding.width)×\(binding.height) 范围内。")
+        }
+    }
 
+    private func globalPoint(x: Double, y: Double, binding: ScreenshotBinding) -> (x: Double, y: Double) {
+        (binding.windowFrame.x + x / binding.scale, binding.windowFrame.y + y / binding.scale)
+    }
+
+    private func observeCoordinate(
+        token: String, r: Record, snap: Snapshot, binding: ScreenshotBinding, start: Date
+    ) -> CoordinateReport {
         settle.sleep(settle.interval)
         var observed = false
         var changed: Bool?
@@ -365,6 +373,51 @@ public final class DesktopSession {
             screenshotChanged: screenshotChanged, diffRatio: diffRatio,
             geometryChanged: geometryChanged, tokenInvalidated: invalidated,
             noOpSuspected: noOp, elapsed: Date().timeIntervalSince(start))
+    }
+
+    /// 在截图坐标 (x, y) 点击。坐标以截图左上角为原点，单位是图像像素。
+    public func clickAt(token: String, screenshotID: String, x: Double, y: Double) throws -> CoordinateReport {
+        let (r, snap, binding) = try coordinateContext(token: token, screenshotID: screenshotID)
+        try checkPoint(x, y, in: binding)
+        let start = Date()
+        let point = globalPoint(x: x, y: y, binding: binding)
+        _ = try reader.clickAt(pid: r.pid, x: point.x, y: point.y)
+        return observeCoordinate(token: token, r: r, snap: snap, binding: binding, start: start)
+    }
+
+    /// 在截图坐标 (x, y) 滚动。dy > 0 表示向下，dx > 0 表示向右。
+    public func scrollAt(
+        token: String, screenshotID: String, x: Double, y: Double, dx: Double, dy: Double
+    ) throws -> CoordinateReport {
+        let (r, snap, binding) = try coordinateContext(token: token, screenshotID: screenshotID)
+        try checkPoint(x, y, in: binding)
+        guard abs(dx) + abs(dy) > 0 else {
+            throw WireError.invalidCoordinates("滚动增量不能为 0。")
+        }
+        let start = Date()
+        let point = globalPoint(x: x, y: y, binding: binding)
+        _ = try reader.scrollAt(pid: r.pid, x: point.x, y: point.y, dx: dx, dy: dy)
+        return observeCoordinate(token: token, r: r, snap: snap, binding: binding, start: start)
+    }
+
+    /// 从截图坐标 (fromX, fromY) 拖到 (toX, toY)。
+    public func drag(
+        token: String, screenshotID: String,
+        fromX: Double, fromY: Double, toX: Double, toY: Double, durationMs: Int
+    ) throws -> CoordinateReport {
+        let (r, snap, binding) = try coordinateContext(token: token, screenshotID: screenshotID)
+        try checkPoint(fromX, fromY, in: binding)
+        try checkPoint(toX, toY, in: binding)
+        guard fromX != toX || fromY != toY else {
+            throw WireError.invalidCoordinates("拖拽的起点与终点相同。")
+        }
+        let start = Date()
+        let from = globalPoint(x: fromX, y: fromY, binding: binding)
+        let to = globalPoint(x: toX, y: toY, binding: binding)
+        _ = try reader.dragAt(
+            pid: r.pid, fromX: from.x, fromY: from.y, toX: to.x, toY: to.y,
+            durationMs: max(100, min(2_000, durationMs)))
+        return observeCoordinate(token: token, r: r, snap: snap, binding: binding, start: start)
     }
 
     /// 标签 → 句柄。标签与句柄同属一个快照，不跨令牌；大小写不敏感。

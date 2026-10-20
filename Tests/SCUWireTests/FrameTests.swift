@@ -49,6 +49,28 @@ import Testing
         #expect(request["y"] as? Double == 34.0)
     }
 
+    @Test func scrollAndDragRequestShapes() throws {
+        let scrollFrame = try WireFormatTests.json(
+            RequestFrame(
+                id: 10,
+                request: .scrollAt(pid: 7, x: 1.5, y: 2.5, dx: 0, dy: 120)))
+        let scroll = scrollFrame["request"] as! [String: Any]
+        #expect(scroll["type"] as? String == "scrollAt")
+        #expect(scroll["pid"] as? Int == 7)
+        #expect(scroll["dy"] as? Double == 120)
+
+        let dragFrame = try WireFormatTests.json(
+            RequestFrame(
+                id: 11,
+                request: .dragAt(
+                    pid: 7, fromX: 1, fromY: 2, toX: 3, toY: 4, durationMs: 400)))
+        let drag = dragFrame["request"] as! [String: Any]
+        #expect(drag["type"] as? String == "dragAt")
+        #expect(drag["fromX"] as? Double == 1)
+        #expect(drag["toY"] as? Double == 4)
+        #expect(drag["durationMs"] as? Int == 400)
+    }
+
     @Test func failureCarriesStructuredError() throws {
         let err = WireError.versionMismatch(client: 2, server: 1)
         let data = try Frame.encode(ResponseFrame(id: 1, response: .failure(err)))

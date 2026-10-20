@@ -127,6 +127,26 @@ public struct NativeServer: Sendable {
             } catch {
                 return .failure(.actionFailed("坐标点击失败：\(error)"))
             }
+        case .scrollAt(let pid, let x, let y, let dx, let dy):
+            do {
+                try Mouse.scrollAt(pid: pid, x: x, y: y, dx: dx, dy: dy)
+                return .acted
+            } catch let e as WireError {
+                return .failure(e)
+            } catch {
+                return .failure(.actionFailed("滚动失败：\(error)"))
+            }
+        case .dragAt(let pid, let fromX, let fromY, let toX, let toY, let durationMs):
+            do {
+                try Mouse.dragAt(
+                    pid: pid, fromX: fromX, fromY: fromY, toX: toX, toY: toY,
+                    durationMs: durationMs)
+                return .acted
+            } catch let e as WireError {
+                return .failure(e)
+            } catch {
+                return .failure(.actionFailed("拖拽失败：\(error)"))
+            }
         }
 
     /// 把动作结果或错误统一映射为应答，避免三类动作各写一遍。

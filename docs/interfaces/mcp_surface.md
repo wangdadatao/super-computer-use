@@ -1,7 +1,7 @@
 # MCP 接入面（只读档与动作档）
 
 `scu mcp` 以 MCP stdio 服务运行，是接入层的第一个实现。**默认只读**：
-能读取应用与无障碍树，不能改变任何东西。**`scu mcp --actions` 额外暴露 `click`、`click_at`、`type_text`、`press_key`、`set_value`**（动作档）。
+能读取应用与无障碍树，不能改变任何东西。**`scu mcp --actions` 额外暴露 `click`、`click_at`、`scroll_at`、`drag`、`type_text`、`press_key`、`set_value`**（动作档）。
 完整的会话 API 与 `js` 工具面是拟实施设计，见[协议总览](protocol_overview.md)。
 
 ## 导航
@@ -44,6 +44,8 @@
 | `get_screenshot` | `token` | 截取令牌对应的目标窗口，叠加标签，返回 PNG 与 `screenshot_id`；需要屏幕录制权限 |
 | `click`（仅 `--actions`） | `token`、`handle` 或 `label`（二选一） | 对目标执行 `AXPress`；见下 |
 | `click_at`（仅 `--actions`） | `token`、`screenshot_id`、`x`、`y` | 在截图坐标投递真实鼠标点击；见下 |
+| `scroll_at`（仅 `--actions`） | `token`、`screenshot_id`、`x`、`y`、`dx`、`dy` | 在截图坐标投递滚轮事件；见下 |
+| `drag`（仅 `--actions`） | `token`、`screenshot_id`、`from_x`、`from_y`、`to_x`、`to_y`、`duration_ms` | 在截图坐标拖拽；见下 |
 | `type_text`（仅 `--actions`） | `token`、`handle` 或 `label`（二选一）、`text` | 先聚焦元素，再把文本逐字输入；见下 |
 | `press_key`（仅 `--actions`） | `token`、`handle` 或 `label`（二选一）、`key` | 先聚焦元素，再发送按键或组合键；见下 |
 | `set_value`（仅 `--actions`） | `token`、`handle` 或 `label`（二选一）、`value` | 通过无障碍接口直接写值，要求元素可写；见下 |
@@ -102,6 +104,18 @@ effect: delivered=true observed=true converged=true treeChanged=false targetChan
    全图比例不定位变化区域，也不证明点中了目标；不要重复点。
 
 设计见 [ADR-0020](../decisions/adr_0020_coordinate_click.md)。
+
+### `scroll_at`
+
+在截图坐标 `(x,y)` 投递滚轮事件。`dy > 0` 向下，`dx > 0` 向右；增量为 0 返回
+`invalid_coordinates`。与 `click_at` 相同：截图绑定令牌、先激活目标窗口、真实事件；
+滚动后重读 AX 树并比较全图像素比例。设计见 [ADR-0021](../decisions/adr_0021_scroll_and_drag.md)。
+
+### `drag`
+
+在截图坐标内从 `(from_x, from_y)` 拖到 `(to_x, to_y)`，`duration_ms` 默认 400。起终点相同或越界
+返回 `invalid_coordinates`。拖拽可能移动文件/列表项，属于高风险动作；没有审批层之前只用于
+低风险、可逆的场景。验证同样是 AX 树 + 全图像素比例。
 
 ### `type_text`、`press_key` 与 `set_value`
 
@@ -312,7 +326,8 @@ socket 目录建在 `TMPDIR`（若设置且存在）或系统临时目录下。
   `check_permissions`、`list_apps`、`get_ax_state` 的调用都成功。Cursor 还在工具列表里额外注入了一个 `mcp_auth`，不是本服务提供的。
 - **`get_screenshot` / `click_at` 只在网易云 3.1.12 上验证过**：截图 1600×1138、`scale=1.514`；
   左侧栏坐标点击从「推荐」切到「精选」并成功返回（2026-10-20）。
-  其他应用、多窗口选择、窗口移动后的过期判断、像素级 diff 未验证。
+  滚动已在网易云验证（推荐页上下滚动，diff 约 0.387）；拖拽只有单元/MCP 测试，真实应用未验证。
+  其他应用、多窗口选择、窗口移动后的过期判断、区域级 diff 未验证。
   `isError` 的呈现、其他宿主（Claude Desktop 等）都未观察。
 - **宿主的权限归属只有一个数据点。** 在上述 Cursor 环境里，`check_permissions` 返回已授予。
   这只说明该环境下成立，不能推到其他宿主或其他机器；归属的是哪个进程（Cursor 本体还是辅助进程）没有核对。

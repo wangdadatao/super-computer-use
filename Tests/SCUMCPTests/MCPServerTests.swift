@@ -22,12 +22,24 @@ final class FakeReader: DesktopReader {
     private(set) var pressed: [(pid: Int32, locator: ElementLocator, key: String)] = []
     private(set) var written: [(pid: Int32, locator: ElementLocator, value: String)] = []
     private(set) var coordinateClicks: [(pid: Int32, x: Double, y: Double)] = []
+    private(set) var scrolls: [(pid: Int32, x: Double, y: Double, dx: Double, dy: Double)] = []
+    private(set) var drags: [(pid: Int32, fromX: Double, fromY: Double, toX: Double, toY: Double, durationMs: Int)] = []
     var capture: Result<WindowCapture, WireError> = .failure(.unsupportedOperation("没有配置截图"))
 
     func checkPermissions() throws -> Bool { try permissions.get() }
     func captureWindow(pid: Int32) throws -> WindowCapture { try capture.get() }
     func clickAt(pid: Int32, x: Double, y: Double) throws -> ActionOutcome {
         coordinateClicks.append((pid, x, y))
+        return .acted
+    }
+    func scrollAt(pid: Int32, x: Double, y: Double, dx: Double, dy: Double) throws -> ActionOutcome {
+        scrolls.append((pid, x, y, dx, dy))
+        return .acted
+    }
+    func dragAt(
+        pid: Int32, fromX: Double, fromY: Double, toX: Double, toY: Double, durationMs: Int
+    ) throws -> ActionOutcome {
+        drags.append((pid, fromX, fromY, toX, toY, durationMs))
         return .acted
     }
     func listApps() throws -> [AppInfo] { try apps.get() }
@@ -587,6 +599,64 @@ extension JSONValue {
         ])
         #expect(stale.isError && stale.text.hasPrefix("[stale_geometry]"))
         #expect(reader.coordinateClicks.isEmpty)
+    }
+
+    @Test func scrollAndDragUseScreenshotCoordinates() {
+        let (t, s, reader) = rig(actions: true)
+        reader.capture = .success(WindowCapture(
+            png: Self.makePNG(width: 400, height: 300), width: 400, height: 300, scale: 2,
+            windowFrame: Rect(x: 100, y: 200, width: 200, height: 150)))
+        let read = t.callTool(s, "get_ax_state", ["pid": 42])
+        let tok = token(from: read)
+        let shot = t.callTool(s, "get_screenshot", ["token": .string(tok)])
+        let sid = shot.text.split(separator: "\n").first
+            .flatMap { $0.split(separator: " ").first { $0.hasPrefix("screenshot_id=") } }
+            .map { String($0.dropFirst("screenshot_id=".count)) } ?? ""
+
+        let scrolled = t.callTool(s, "scroll_at", [
+            "token": .string(tok), "screenshot_id": .string(sid),
+            "x": 40, "y": 60, "dx": 0, "dy": 120,
+        ])
+        #expect(!scrolled.isError)
+        #expect(reader.scrolls.count == 1)
+        #expect(reader.scrolls[0].x == 120 && reader.scrolls[0].y == 230)
+        #expect(reader.scrolls[0].dx == 0 && reader.scrolls[0].dy == 120)
+
+        let dragged = t.callTool(s, "drag", [
+            "token": .string(tok), "screenshot_id": .string(sid),
+            "from_x": 20, "from_y": 30, "to_x": 60, "to_y": 80, "duration_ms": 300,
+        ])
+        #expect(!dragged.isError)
+        #expect(reader.drags.count == 1)
+        #expect(reader.drags[0].fromX == 110 && reader.drags[0].fromY == 215)
+        #expect(reader.drags[0].toX == 130 && reader.drags[0].toY == 240)
+        #expect(reader.drags[0].durationMs == 300)
+    }
+
+    @Test func scrollAndDragRejectZeroDeltaOrSamePoint() {
+        let (t, s, reader) = rig(actions: true)
+        reader.capture = .success(WindowCapture(
+            png: Self.makePNG(width: 400, height: 300), width: 400, height: 300, scale: 1,
+            windowFrame: Rect(x: 0, y: 0, width: 400, height: 300)))
+        let read = t.callTool(s, "get_ax_state", ["pid": 42])
+        let tok = token(from: read)
+        let shot = t.callTool(s, "get_screenshot", ["token": .string(tok)])
+        let sid = shot.text.split(separator: "\n").first
+            .flatMap { $0.split(separator: " ").first { $0.hasPrefix("screenshot_id=") } }
+            .map { String($0.dropFirst("screenshot_id=".count)) } ?? ""
+
+        let zeroScroll = t.callTool(s, "scroll_at", [
+            "token": .string(tok), "screenshot_id": .string(sid),
+            "x": 10, "y": 10, "dx": 0, "dy": 0,
+        ])
+        #expect(zeroScroll.isError && zeroScroll.text.hasPrefix("[invalid_coordinates]"))
+
+        let samePoint = t.callTool(s, "drag", [
+            "token": .string(tok), "screenshot_id": .string(sid),
+            "from_x": 10, "from_y": 10, "to_x": 10, "to_y": 10,
+        ])
+        #expect(samePoint.isError && samePoint.text.hasPrefix("[invalid_coordinates]"))
+        #expect(reader.scrolls.isEmpty && reader.drags.isEmpty)
     }
 
     @Test func inputToolsAreExposedWithTruthfulAnnotations() {

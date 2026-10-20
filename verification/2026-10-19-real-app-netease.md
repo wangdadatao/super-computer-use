@@ -133,6 +133,20 @@ delivered=true observed=true converged=true treeChanged=false targetChanged=fals
 `CGS_REQUIRE_INIT` 断言并崩溃；叠加用 CoreGraphics + CoreText，因为 NSImage 的 TIFF 中转
 在无 GUI 会话里会失败。
 
+## 追加：滚动（2026-10-20）
+
+`scroll_at(token, screenshot_id, 900, 700, 0, 600)`（dy > 0 向下）：
+
+- `treeChanged=true`、`screenshotChanged=true`、`diffRatio=0.3868`、`geometryChanged=false`；
+- 画面从「推荐歌单」滚到「榜单精选」区域。
+
+再用 `dy=-600` 向上滚：
+
+- `treeChanged=false`（滚动位置不在 AX 摘要里）、`screenshotChanged=true`、`diffRatio=0.3879`；
+- 画面回到上方。说明“树不变但图变”的情况确实存在，不能只看树。
+
+拖拽只有单元/MCP 测试，未在真实应用上执行（可能移动列表项/文件）。
+
 ## 限定
 
 - 只测了一个应用、一个版本（`3.1.12`）；其他 CEF/Electron 应用是否支持该参数未知。

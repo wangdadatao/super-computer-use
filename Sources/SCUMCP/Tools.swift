@@ -12,6 +12,8 @@ enum ScuTool: String, CaseIterable {
     case getScreenshot = "get_screenshot"
     case click
     case clickAt = "click_at"
+    case scrollAt = "scroll_at"
+    case drag
     case typeText = "type_text"
     case pressKey = "press_key"
     case setValue = "set_value"
@@ -32,6 +34,8 @@ enum ScuTool: String, CaseIterable {
         case .getScreenshot: return "截取窗口并叠加标签"
         case .click: return "点击元素"
         case .clickAt: return "按截图坐标点击"
+        case .scrollAt: return "按截图坐标滚动"
+        case .drag: return "按截图坐标拖拽"
         case .typeText: return "向元素输入文本"
         case .pressKey: return "向元素发送按键"
         case .setValue: return "直接写入元素的值"
@@ -56,6 +60,22 @@ enum ScuTool: String, CaseIterable {
                 返回 PNG 图像与 screenshot_id；图像坐标以窗口左上角为原点，`scale` 是图像像素 / 窗口点。\
                 文本元素表仍是权威：徽标太小、重叠或被裁掉时，按 get_ax_state 的标签选择。\
                 屏幕录制权限按宿主应用归属，未授予时返回 system_permission_missing。
+                """
+        case .scrollAt:
+            return """
+                在 get_screenshot 的截图坐标 (x, y) 投递滚轮事件。会改变应用的状态。\
+                坐标以截图左上角为原点，单位是图像像素；必须给出令牌与 screenshot_id。\
+                dy > 0 表示向下滚，dx > 0 表示向右滚；增量为 0 会被拒绝。\
+                点击前会激活并 raise 目标窗口；滚动后重读 AX 树并比较全图像素比例。\
+                返回 noOpSuspected=true 时不要反复滚；先用 get_screenshot 核实。
+                """
+        case .drag:
+            return """
+                在 get_screenshot 的截图坐标内从 (from_x, from_y) 拖到 (to_x, to_y)。\
+                会移动真实光标并可能改变应用状态（移动文件/列表项/画布）。\
+                坐标以截图左上角为原点；必须给出令牌与 screenshot_id；duration_ms 默认 400，范围 100...2000。\
+                点击前会激活并 raise 目标窗口；拖拽后重读 AX 树并比较全图像素比例。\
+                这是高风险动作：调用前应确认起点/终点，不要对不确定的界面拖拽。
                 """
         case .clickAt:
             return """
@@ -144,6 +164,35 @@ enum ScuTool: String, CaseIterable {
                     "y": ["type": "integer", "minimum": 0, "description": "截图内的 y 像素（左上角原点）"],
                 ],
                 "required": ["token", "screenshot_id", "x", "y"],
+                "additionalProperties": false,
+            ]
+        case .scrollAt:
+            return [
+                "type": "object",
+                "properties": [
+                    "token": ["type": "string", "description": "get_ax_state 标题行里的令牌"],
+                    "screenshot_id": ["type": "string", "description": "get_screenshot 返回的 screenshot_id"],
+                    "x": ["type": "integer", "minimum": 0, "description": "滚动位置 x（截图像素）"],
+                    "y": ["type": "integer", "minimum": 0, "description": "滚动位置 y（截图像素）"],
+                    "dx": ["type": "integer", "description": "水平增量；正数向右，默认 0"],
+                    "dy": ["type": "integer", "description": "垂直增量；正数向下"],
+                ],
+                "required": ["token", "screenshot_id", "x", "y", "dy"],
+                "additionalProperties": false,
+            ]
+        case .drag:
+            return [
+                "type": "object",
+                "properties": [
+                    "token": ["type": "string", "description": "get_ax_state 标题行里的令牌"],
+                    "screenshot_id": ["type": "string", "description": "get_screenshot 返回的 screenshot_id"],
+                    "from_x": ["type": "integer", "minimum": 0, "description": "起点 x（截图像素）"],
+                    "from_y": ["type": "integer", "minimum": 0, "description": "起点 y（截图像素）"],
+                    "to_x": ["type": "integer", "minimum": 0, "description": "终点 x（截图像素）"],
+                    "to_y": ["type": "integer", "minimum": 0, "description": "终点 y（截图像素）"],
+                    "duration_ms": ["type": "integer", "minimum": 100, "maximum": 2000, "description": "拖拽时长，默认 400"],
+                ],
+                "required": ["token", "screenshot_id", "from_x", "from_y", "to_x", "to_y"],
                 "additionalProperties": false,
             ]
         case .click:
@@ -354,7 +403,55 @@ enum ScuTool: String, CaseIterable {
                 let report = try session.clickAt(
                     token: token, screenshotID: screenshotID, x: Double(x), y: Double(y))
                 return Outcome(
-                    text: Self.coordinateText(report, x: x, y: y), isError: false)
+                    text: Self.coordinateText(
+                        report, action: "点击", detail: "截图坐标 (\(x), \(y))"), isError: false)
+
+            case .scrollAt:
+                try Self.requireNoExtra(args, allowed: ["token", "screenshot_id", "x", "y", "dx", "dy"])
+                guard let token = try Self.string(args, "token") else { throw ArgumentError(message: "缺少参数 token") }
+                guard let screenshotID = try Self.string(args, "screenshot_id") else {
+                    throw ArgumentError(message: "缺少参数 screenshot_id")
+                }
+                guard let x = try Self.int(args, "x", range: 0...100_000, required: true),
+                    let y = try Self.int(args, "y", range: 0...100_000, required: true),
+                    let dy = try Self.int(args, "dy", range: -100_000...100_000, required: true)
+                else {
+                    throw ArgumentError(message: "x、y、dy 必须是坐标整数")
+                }
+                let dx = try Self.int(args, "dx", range: -100_000...100_000, required: false) ?? 0
+                let report = try session.scrollAt(
+                    token: token, screenshotID: screenshotID,
+                    x: Double(x), y: Double(y), dx: Double(dx), dy: Double(dy))
+                return Outcome(
+                    text: Self.coordinateText(
+                        report, action: "滚动",
+                        detail: "截图坐标 (\(x), \(y)) 增量 (\(dx), \(dy))"), isError: false)
+
+            case .drag:
+                try Self.requireNoExtra(
+                    args, allowed: [
+                        "token", "screenshot_id", "from_x", "from_y", "to_x", "to_y", "duration_ms",
+                    ])
+                guard let token = try Self.string(args, "token") else { throw ArgumentError(message: "缺少参数 token") }
+                guard let screenshotID = try Self.string(args, "screenshot_id") else {
+                    throw ArgumentError(message: "缺少参数 screenshot_id")
+                }
+                guard let fromX = try Self.int(args, "from_x", range: 0...100_000, required: true),
+                    let fromY = try Self.int(args, "from_y", range: 0...100_000, required: true),
+                    let toX = try Self.int(args, "to_x", range: 0...100_000, required: true),
+                    let toY = try Self.int(args, "to_y", range: 0...100_000, required: true)
+                else {
+                    throw ArgumentError(message: "from_x、from_y、to_x、to_y 必须是坐标整数")
+                }
+                let duration = try Self.int(args, "duration_ms", range: 100...2_000, required: false) ?? 400
+                let report = try session.drag(
+                    token: token, screenshotID: screenshotID,
+                    fromX: Double(fromX), fromY: Double(fromY),
+                    toX: Double(toX), toY: Double(toY), durationMs: duration)
+                return Outcome(
+                    text: Self.coordinateText(
+                        report, action: "拖拽",
+                        detail: "截图坐标 (\(fromX), \(fromY)) → (\(toX), \(toY))"), isError: false)
 
             case .typeText:
                 try Self.requireNoExtra(args, allowed: ["token", "handle", "label", "text"])
@@ -469,11 +566,11 @@ enum ScuTool: String, CaseIterable {
     }
 
     /// 坐标点击结果。没有元素身份，只报告树变化；像素变化需要截图 diff。
-    static func coordinateText(_ r: CoordinateReport, x: Int, y: Int) -> String {
+    static func coordinateText(_ r: CoordinateReport, action: String, detail: String) -> String {
         func flag(_ b: Bool?) -> String { b.map { $0 ? "true" : "false" } ?? "unknown" }
         let secs = String(format: "%.1f", r.elapsed)
         var lines = [
-            "已对 pid \(r.pid) 的截图坐标 (\(x), \(y)) 投递点击。",
+            "已对 pid \(r.pid) 的\(detail) 投递\(action)。",
             "effect: observed=\(flag(r.observed)) treeChanged=\(flag(r.treeChanged)) "
                 + "screenshotChanged=\(flag(r.screenshotChanged)) "
                 + "diffRatio=\(r.diffRatio.map { String(format: "%.4f", $0) } ?? "unknown") "
