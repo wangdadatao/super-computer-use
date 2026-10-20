@@ -142,7 +142,7 @@ public enum AXBackend {
             if CFGetTypeID(v) == AXValueGetTypeID(), AXValueGetType(v as! AXValue) == .axError { return nil }
             return v
         }
-        let node = AXNode(
+        var node = AXNode(
             role: asString(got(0)) ?? "AXUnknown",
             subrole: asString(got(1)),
             title: asString(got(2)),
@@ -153,11 +153,12 @@ public enum AXBackend {
             enabled: asBool(got(7)),
             frame: asFrame(position: got(8), size: got(9)),
             children: [])
+        node.actions = actionNames(el, role: node.role)
         return (node, wantChildren ? asElements(got(10)) ?? [] : [])
     }
 
     static func fallbackReadNode(_ el: AXUIElement, wantChildren: Bool) -> (node: AXNode, children: [AXUIElement]) {
-        let node = AXNode(
+        var node = AXNode(
             role: string(el, kAXRoleAttribute) ?? "AXUnknown",
             subrole: string(el, kAXSubroleAttribute),
             title: string(el, kAXTitleAttribute),
@@ -168,6 +169,7 @@ public enum AXBackend {
             enabled: bool(el, kAXEnabledAttribute),
             frame: frame(el),
             children: [])
+        node.actions = actionNames(el, role: node.role)
         return (node, wantChildren ? elements(el, kAXChildrenAttribute) ?? [] : [])
     }
 
@@ -180,6 +182,21 @@ public enum AXBackend {
     }
 
     static func string(_ el: AXUIElement, _ attr: String) -> String? { asString(copy(el, attr)) }
+
+    /// 只对可能"角色不是按钮但可点击"的容器读动作名；按钮/链接/输入框已经在角色白名单里。
+    /// 这是额外的 AX 调用，限制角色范围避免为整棵树翻倍。
+    static let actionProbeRoles: Set<String> = ["AXGroup", "AXCell", "AXRow"]
+
+    static func actionNames(_ el: AXUIElement, role: String) -> [String]? {
+        guard actionProbeRoles.contains(role) else { return nil }
+        var out: CFArray?
+        guard AXUIElementCopyActionNames(el, &out) == .success,
+            let names = out as? [String], !names.isEmpty
+        else {
+            return nil
+        }
+        return names
+    }
     static func bool(_ el: AXUIElement, _ attr: String) -> Bool? { asBool(copy(el, attr)) }
     static func elements(_ el: AXUIElement, _ attr: String) -> [AXUIElement]? { asElements(copy(el, attr)) }
     static func valueText(_ el: AXUIElement) -> String? { asValueText(copy(el, kAXValueAttribute)) }

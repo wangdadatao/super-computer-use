@@ -120,20 +120,62 @@ public enum ElementTable {
 
     /// 按先序给可交互元素分配短标签。按树序而不是几何排序：
     /// 窗口移动不改变标签，令牌复用时标签也稳定。
+    ///
+    /// **优先叶子**：父容器和子按钮都可点击时只标子按钮，避免同一个区域叠两个标签。
+    /// 左栏这种"AXGroup + AXPress、内部只有文字/图标"的行没有可标子元素，会保留标签。
     static func assignLabels(_ entries: inout [Entry]) {
-        var n = 0
-        for i in entries.indices {
-            guard n < maxLabels else { break }
-            let node = entries[i].node
-            guard isLabelable(node), let f = node.frame, f.width > 0, f.height > 0 else { continue }
+        for (n, i) in labelCandidateIndices(entries).prefix(maxLabels).enumerated() {
             entries[i].label = labelText(n)
-            n += 1
         }
+    }
+
+    static func labelCandidateIndices(_ entries: [Entry]) -> [Int] {
+        var candidates = Set<Int>()
+        for (i, entry) in entries.enumerated() {
+            guard isLabelable(entry.node) else { continue }
+            guard let frame = entry.node.frame, frame.width > 0, frame.height > 0 else { continue }
+            candidates.insert(i)
+        }
+        guard !candidates.isEmpty else { return [] }
+
+        var selected: [Int] = []
+        for i in entries.indices {
+            guard candidates.contains(i) else { continue }
+            let node = entries[i].node
+            let isRoleTarget = labelableRoles.contains(node.role)
+            let end = i + entries[i].size
+            let hasRoleDescendant = ((i + 1)..<end).contains { j in
+                labelableRoles.contains(entries[j].node.role) && candidates.contains(j)
+            }
+
+            // 按钮/链接/输入框总是标；卡片容器里已有这些控件时，不再标外层容器。
+            if isRoleTarget {
+                selected.append(i)
+                continue
+            }
+            if hasRoleDescendant { continue }
+
+            // 非角色目标（支持 AXPress 的 AXGroup/AXRow）只标最外层：
+            // 外层卡片已经承担点击时，内部的图片/标题分组不再重复标。
+            var parent = entries[i].parent
+            var hasLabelableAncestor = false
+            while parent >= 0 {
+                if candidates.contains(parent) {
+                    hasLabelableAncestor = true
+                    break
+                }
+                parent = entries[parent].parent
+            }
+            if !hasLabelableAncestor { selected.append(i) }
+        }
+        return selected
     }
 
     static func isLabelable(_ node: AXNode) -> Bool {
         guard node.enabled != false else { return false }
-        return labelableRoles.contains(node.role)
+        if labelableRoles.contains(node.role) { return true }
+        // 网页侧边栏/表格行常见：角色是 AXGroup/AXRow，但平台声明了 AXPress。
+        return node.actions?.contains("AXPress") == true
     }
 
     /// 0 → a, 25 → z, 26 → aa, 51 → az, 52 → ba。
@@ -149,10 +191,7 @@ public enum ElementTable {
     }
 
     static func labelableCount(_ entries: [Entry]) -> Int {
-        entries.reduce(0) { count, e in
-            guard isLabelable(e.node), let f = e.node.frame, f.width > 0, f.height > 0 else { return count }
-            return count + 1
-        }
+        labelCandidateIndices(entries).count
     }
 
     public static func render(
@@ -271,6 +310,7 @@ public enum ElementTable {
         if let d = n.description, !d.isEmpty { s += " desc=" + quote(d) }
         if let v = n.value, !v.isEmpty { s += " value=" + quote(v) }
         if let i = n.identifier, !i.isEmpty { s += " id=" + quote(i) }
+        if let actions = n.actions, !actions.isEmpty { s += " actions=[\(actions.joined(separator: ","))]" }
         if n.enabled == false { s += " state=disabled" }
         if let f = n.frame { s += " frame=(\(coord(f.x)),\(coord(f.y)),\(coord(f.width)),\(coord(f.height)))" }
         if collapsed > 0 { s += " (折叠 \(collapsed))" }

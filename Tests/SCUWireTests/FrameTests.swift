@@ -17,7 +17,8 @@ import Testing
     @Test func responseWithTreeRoundTrip() throws {
         let tree = AXNode(
             role: "AXWindow", title: "t",
-            children: [AXNode(role: "AXButton", identifier: "ok", description: "确定", enabled: true)])
+            children: [AXNode(role: "AXButton", identifier: "ok", description: "确定", enabled: true,
+                                actions: ["AXPress"])])
         let frame = ResponseFrame(id: 1, response: .tree(tree, truncated: true))
         let data = try Frame.encode(frame)
         #expect(try Frame.decode(ResponseFrame.self, body: data.dropFirst(4)) == frame)

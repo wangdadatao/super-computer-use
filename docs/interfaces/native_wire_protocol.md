@@ -75,7 +75,8 @@ agent 侧的会话 API 见[协议总览](protocol_overview.md)，两者是不同
 - 元素 `frame` 与 `windowFrame` 同为全局点，换算：`图像坐标 = (frame - windowFrame) * scale`。
 
 `AXNode` 是原生层如实返回的平台事实：`role`、`subrole?`、`title?`、`identifier?`、`value?`、
-`roleDescription?`、`description?`、`enabled?`、`frame?`、`childCount?`、`children`。可选字段缺失时**省略**，不填空串。
+`roleDescription?`、`description?`、`enabled?`、`actions?`、`frame?`、`childCount?`、`children`。可选字段缺失时**省略**，不填空串。
+`actions` 是平台声明的动作名（`AXUIElementCopyActionNames`），只对 `AXGroup`/`AXCell`/`AXRow` 读取，用于识别“角色不是按钮但支持 `AXPress`”的容器；空数组省略。
 原生层不判断元素"是不是同一个"，那是协议层的职责。
 
 `childCount` 是平台报告的**真实**子节点数，只在读取过该节点的子节点时有值（深度上限处的节点没有）。
@@ -101,11 +102,12 @@ agent 侧的会话 API 见[协议总览](protocol_overview.md)，两者是不同
    消息中同时给出双方版本，然后关闭连接。不降级运行。
 4. 版本号是编译期常量，来源见实现中的 `scuNativeProtocolVersion`。
 
-当前版本 **6**。版本 1 → 2：`dumpTree` 增加 `budgetMs`，`tree` 应答增加 `truncated`，
+当前版本 **7**。版本 1 → 2：`dumpTree` 增加 `budgetMs`，`tree` 应答增加 `truncated`，
 `AXNode` 增加 `description`。版本 2 → 3：`AXNode` 增加 `childCount`；新增请求 `performAction`，
 新增应答 `acted`、`located`、`stale`（[ADR-0015](../decisions/adr_0015_handle_resolution_by_path.md)）。
 版本 3 → 4：新增 `typeText` / `pressKey`；4 → 5：新增 `setValue`（[ADR-0016](../decisions/adr_0016_input_and_keys.md)）；
-5 → 6：新增 `captureWindow` 请求与 `windowCapture` 应答（[ADR-0019](../decisions/adr_0019_window_screenshot.md)）。
+5 → 6：新增 `captureWindow` 请求与 `windowCapture` 应答（[ADR-0019](../decisions/adr_0019_window_screenshot.md)）；
+6 → 7：`AXNode` 增加 `actions`，用于把支持 `AXPress` 的分组/行纳入标签（[ADR-0018](../decisions/adr_0018_label_addressing.md)）。
 
 线格式本身的任何不兼容变更（字段改名、`type` 增删、语义变化）都要提升版本号。
 
@@ -170,6 +172,6 @@ agent 侧的会话 API 见[协议总览](protocol_overview.md)，两者是不同
 
 读取应答超时的**映射**（关闭连接、终止子进程、`platform_unavailable`）在 `NativeClient.call` 中实现；测试只覆盖到等待可读时抛出超时，没有覆盖后面的清理路径。
 
-当前协议版本为 **6**（P0 时为 3；v1 依次加入 `typeText` / `pressKey` 与 `setValue`；
-v2 加入 `captureWindow`）。消息目录覆盖当前需要的九种请求；变更通知等随能力增加，
+当前协议版本为 **7**（P0 时为 3；v1 依次加入 `typeText` / `pressKey` 与 `setValue`；
+v2 加入 `captureWindow` 与 `AXNode.actions`）。消息目录覆盖当前需要的九种请求；变更通知等随能力增加，
 每增加一种都要在此登记并视情况提升版本号。

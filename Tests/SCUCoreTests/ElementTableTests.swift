@@ -60,6 +60,39 @@ import Testing
         #expect(r.labelTotal == 1)
     }
 
+    @Test func pressableGroupsAreLabeledButNotWhenTheyContainRoleTargets() {
+        let sidebar = AXNode(
+            role: "AXGroup", actions: ["AXPress"], frame: Rect(x: 0, y: 0, width: 160, height: 36),
+            children: [AXNode(role: "AXStaticText", value: "推荐", frame: Rect(x: 20, y: 9, width: 28, height: 18))])
+        let card = AXNode(
+            role: "AXGroup", actions: ["AXPress"], frame: Rect(x: 200, y: 0, width: 200, height: 200),
+            children: [
+                AXNode(role: "AXButton", title: "播放", frame: Rect(x: 210, y: 10, width: 20, height: 20))
+            ])
+        let tree = AXNode(role: "AXWindow", children: [sidebar, card])
+        let r = ElementTable.render(tree)
+        #expect(r.labels.map(\.text) == ["a", "b"])
+        #expect(r.labels.map(\.role) == ["AXGroup", "AXButton"])
+        #expect(r.labels.map(\.handle) == [2, 5])
+        let groupLine = r.text.split(separator: "\n").first { $0.contains("[AXGroup#2]") }
+        #expect(groupLine?.contains("actions=[AXPress]") == true)
+        // 外层卡片包含按钮时不重复标；只标卡片里的按钮。
+        let cardLine = r.text.split(separator: "\n").first { $0.contains("[AXGroup#4]") }
+        #expect(cardLine?.hasPrefix("  [AXGroup#4]") == true)
+    }
+
+    @Test func nestedPressableGroupsOnlyLabelTheOutermost() {
+        let inner = AXNode(
+            role: "AXGroup", actions: ["AXPress"], frame: Rect(x: 10, y: 10, width: 80, height: 30),
+            children: [AXNode(role: "AXStaticText", value: "内层", frame: Rect(x: 20, y: 15, width: 40, height: 18))])
+        let outer = AXNode(
+            role: "AXGroup", actions: ["AXPress"], frame: Rect(x: 0, y: 0, width: 160, height: 60),
+            children: [inner])
+        let r = ElementTable.render(AXNode(role: "AXWindow", children: [outer]))
+        #expect(r.labels.map(\.handle) == [2])
+        #expect(r.labelTotal == 1)
+    }
+
     @Test func labelCapKeepsTheRestAddressableByHandle() {
         let tree = AXNode(role: "AXGroup", children: (0..<(ElementTable.maxLabels + 5)).map { i in
             AXNode(role: "AXButton", title: "b\(i)", frame: Rect(x: 0, y: Double(i), width: 10, height: 10))

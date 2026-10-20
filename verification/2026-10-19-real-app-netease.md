@@ -78,6 +78,31 @@
 第一次动作后 0.5 秒重读时 value 还未出现，第二次动作后才出现；说明动作后的读取仍可能落在中间状态，
 与收敛启发式的已知缺口一致。**标签解析与按标签动作本身成立**；标签仍只对签发它的令牌有效。
 
+## 追加：左侧栏标签与 AXPress 空操作（2026-10-20）
+
+用户观察到左侧栏（推荐/精选/播客/漫游/关注…）没有标签。原因是它们不是 `AXButton`，
+而是 `AXGroup` 包 `AXImage` + `AXStaticText`；原角色白名单漏掉了。
+
+读取 `AXActionNames` 后（线协议 v7），这些行现在带标签：
+
+```text
+[e] [AXGroup#19] actions=[AXPress,AXShowMenu,AXScrollToVisible] frame=(-1745,126,164,36)
+[f] [AXGroup#23] actions=[AXPress,AXShowMenu,AXScrollToVisible] frame=(-1745,166,164,36)
+```
+
+但 `click(label="e")` / `click(label="f")` 都返回：
+
+```text
+delivered=true observed=true converged=true treeChanged=false targetChanged=false noOpSuspected=true
+```
+
+界面没有切换，说明 **`AXPress` 对这些网页侧栏是空操作**。标签解决了“选目标”，
+没有解决“让应用响应”；这类控件需要真实鼠标坐标点击（`click_at`，尚未实现）。
+不要对 `noOpSuspected` 反复重试。
+
+同一轮截图里有 63 个标签。我们收紧了规则：按钮/输入框总是标；包含控件的容器不重复标；
+非角色的 `AXPress` 分组只标最外层。仍然密集，下一步需要 `max_labels` 或按区域筛选。
+
 ## 追加：窗口截图与标签叠加（2026-10-20）
 
 屏幕录制权限在宿主上授予后，验证 [ADR-0019](../docs/decisions/adr_0019_window_screenshot.md)：

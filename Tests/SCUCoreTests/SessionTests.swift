@@ -432,6 +432,10 @@ final class ScriptedReader: DesktopReader {
             } catch let e as WireError where e.code == "stale_snapshot" {
                 stale.append("#\(handle)：\(e.message)")
                 break  // 令牌已失效，继续用同一令牌没有意义
+            } catch let e as WireError where e.code == "target_missing" || e.code == "platform_unavailable" {
+                // 访达在验证过程中退出/被替换：外部状态，不是误拒。
+                _ = e
+                return
             }
         }
         #expect(stale.isEmpty, "界面未变却判失效：\(stale)")

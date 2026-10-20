@@ -2,7 +2,7 @@ import Foundation
 
 /// 协议层 ↔ 原生层的协议版本。单调递增整数，两侧必须完全相等（ADR-0012）。
 /// 编译期常量：不是运行时可变状态。
-public let scuNativeProtocolVersion = 6
+public let scuNativeProtocolVersion = 7
 
 /// `dumpTree` 允许的最大深度。超出时原生层拒绝，不做静默截断。
 public let scuMaxTreeDepth = 64
@@ -153,6 +153,9 @@ public struct AXNode: Codable, Sendable, Equatable {
     /// `AXDescription`。许多控件（如工具栏按钮）用它而不是 `title` 作标签。
     public var description: String?
     public var enabled: Bool?
+    /// 平台声明的动作名（`AXUIElementCopyActionNames`）；空数组省略。
+    /// 用于识别"角色不是按钮、但支持 AXPress"的行/分组（如网页侧边栏）。
+    public var actions: [String]?
     public var frame: Rect?
     /// 平台报告的**真实**子节点数；只在读取过该节点的子节点时有值（深度上限处为 nil）。
     /// 广度优先读树预算耗尽时 `children` 可能短于它，动作定位器的"子节点总数"取自这里（ADR-0015）。
@@ -162,8 +165,8 @@ public struct AXNode: Codable, Sendable, Equatable {
     public init(
         role: String, subrole: String? = nil, title: String? = nil,
         identifier: String? = nil, value: String? = nil, roleDescription: String? = nil,
-        description: String? = nil, enabled: Bool? = nil, frame: Rect? = nil, childCount: Int? = nil,
-        children: [AXNode] = []
+        description: String? = nil, enabled: Bool? = nil, actions: [String]? = nil,
+        frame: Rect? = nil, childCount: Int? = nil, children: [AXNode] = []
     ) {
         self.role = role
         self.subrole = subrole
@@ -173,6 +176,7 @@ public struct AXNode: Codable, Sendable, Equatable {
         self.roleDescription = roleDescription
         self.description = description
         self.enabled = enabled
+        self.actions = actions
         self.frame = frame
         self.childCount = childCount
         self.children = children
