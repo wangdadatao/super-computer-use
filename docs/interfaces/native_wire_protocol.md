@@ -51,6 +51,7 @@ agent 侧的会话 API 见[协议总览](protocol_overview.md)，两者是不同
 | `typeText` | `pid: int`、`locator: ElementLocator`、`text: string` | 定位并核对目标，聚焦它，再把文本逐字投递到目标进程。`text` 上限 10000 字符，空串被拒绝。见 [ADR-0016](../decisions/adr_0016_input_and_keys.md) |
 | `pressKey` | `pid: int`、`locator: ElementLocator`、`key: string` | 定位并核对目标，聚焦它，再发送按键或组合键（`cmd+shift+t`）。不认识的键名被拒绝。见 [ADR-0016](../decisions/adr_0016_input_and_keys.md) |
 | `setValue` | `pid: int`、`locator: ElementLocator`、`value: string` | 定位并核对目标，通过无障碍接口直接写 `AXValue`。**元素必须声明该属性可写**，否则返回 `unsupported_operation`；空串是合法值。见 [ADR-0016](../decisions/adr_0016_input_and_keys.md) |
+| `captureWindow` | `pid: int` | 截取该进程的一个窗口。选择 `windowLayer == 0`、on-screen、面积最大的窗口；需要屏幕录制权限，未授予时返回 `system_permission_missing`。见 [ADR-0019](../decisions/adr_0019_window_screenshot.md) |
 
 ### 应答
 
@@ -63,9 +64,15 @@ agent 侧的会话 API 见[协议总览](protocol_overview.md)，两者是不同
 | `acted` | — | `performAction(press)`、`typeText`、`pressKey`、`setValue`：动作已投递给平台且平台未报错。**不代表界面已经变化** |
 | `located` | — | `performAction(verify)`：定位器与界面现状一致 |
 | `stale` | `stale: StaleDetail` | `performAction`：定位器与界面现状不符，**没有执行任何动作** |
+| `windowCapture` | `capture: WindowCapture` | `captureWindow`：PNG 与坐标映射元数据。见下 |
 | `failure` | `error: WireError` | 任意请求 |
 
 `frame` 是 `{x, y, width, height}`（均为浮点数）。
+
+`WindowCapture` 是 `{png: base64, width: int, height: int, scale: double, windowFrame: Rect, windowTitle?: string}`：
+- `width/height` 是图像像素；`scale` 是图像像素 / 窗口点；
+- `windowFrame` 是窗口在全局屏幕坐标（点）中的位置，副屏可为负；
+- 元素 `frame` 与 `windowFrame` 同为全局点，换算：`图像坐标 = (frame - windowFrame) * scale`。
 
 `AXNode` 是原生层如实返回的平台事实：`role`、`subrole?`、`title?`、`identifier?`、`value?`、
 `roleDescription?`、`description?`、`enabled?`、`frame?`、`childCount?`、`children`。可选字段缺失时**省略**，不填空串。
@@ -94,9 +101,11 @@ agent 侧的会话 API 见[协议总览](protocol_overview.md)，两者是不同
    消息中同时给出双方版本，然后关闭连接。不降级运行。
 4. 版本号是编译期常量，来源见实现中的 `scuNativeProtocolVersion`。
 
-当前版本 **3**。版本 1 → 2：`dumpTree` 增加 `budgetMs`，`tree` 应答增加 `truncated`，
+当前版本 **6**。版本 1 → 2：`dumpTree` 增加 `budgetMs`，`tree` 应答增加 `truncated`，
 `AXNode` 增加 `description`。版本 2 → 3：`AXNode` 增加 `childCount`；新增请求 `performAction`，
 新增应答 `acted`、`located`、`stale`（[ADR-0015](../decisions/adr_0015_handle_resolution_by_path.md)）。
+版本 3 → 4：新增 `typeText` / `pressKey`；4 → 5：新增 `setValue`（[ADR-0016](../decisions/adr_0016_input_and_keys.md)）；
+5 → 6：新增 `captureWindow` 请求与 `windowCapture` 应答（[ADR-0019](../decisions/adr_0019_window_screenshot.md)）。
 
 线格式本身的任何不兼容变更（字段改名、`type` 增删、语义变化）都要提升版本号。
 
@@ -161,6 +170,6 @@ agent 侧的会话 API 见[协议总览](protocol_overview.md)，两者是不同
 
 读取应答超时的**映射**（关闭连接、终止子进程、`platform_unavailable`）在 `NativeClient.call` 中实现；测试只覆盖到等待可读时抛出超时，没有覆盖后面的清理路径。
 
-当前协议版本为 **5**（P0 时为 3；v1 依次加入 `typeText` / `pressKey` 与 `setValue`）。
-消息目录只覆盖到 v1 目前需要的八种请求。屏幕捕获、变更通知等随 P0 推进增加，
+当前协议版本为 **6**（P0 时为 3；v1 依次加入 `typeText` / `pressKey` 与 `setValue`；
+v2 加入 `captureWindow`）。消息目录覆盖当前需要的九种请求；变更通知等随能力增加，
 每增加一种都要在此登记并视情况提升版本号。

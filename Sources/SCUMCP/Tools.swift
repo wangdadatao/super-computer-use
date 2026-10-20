@@ -9,12 +9,15 @@ enum ScuTool: String, CaseIterable {
     case checkPermissions = "check_permissions"
     case listApps = "list_apps"
     case getAXState = "get_ax_state"
+    case getScreenshot = "get_screenshot"
     case click
     case typeText = "type_text"
     case pressKey = "press_key"
     case setValue = "set_value"
 
-    var isAction: Bool { self != .checkPermissions && self != .listApps && self != .getAXState }
+    var isAction: Bool {
+        self != .checkPermissions && self != .listApps && self != .getAXState && self != .getScreenshot
+    }
 
     static func available(actions: Bool) -> [ScuTool] {
         allCases.filter { actions || !$0.isAction }
@@ -25,6 +28,7 @@ enum ScuTool: String, CaseIterable {
         case .checkPermissions: return "检查辅助功能权限"
         case .listApps: return "列出应用"
         case .getAXState: return "读取无障碍树"
+        case .getScreenshot: return "截取窗口并叠加标签"
         case .click: return "点击元素"
         case .typeText: return "向元素输入文本"
         case .pressKey: return "向元素发送按键"
@@ -43,6 +47,13 @@ enum ScuTool: String, CaseIterable {
             return """
                 列出可读取的正在运行的应用，每行 pid、名称、bundle id（制表符分隔）。只读。\
                 get_ax_state 需要这里的 pid。
+                """
+        case .getScreenshot:
+            return """
+                截取 get_ax_state 令牌对应的目标窗口，并在图上叠加可交互元素的短标签；只读，需要屏幕录制权限。\
+                返回 PNG 图像与 screenshot_id；图像坐标以窗口左上角为原点，`scale` 是图像像素 / 窗口点。\
+                文本元素表仍是权威：徽标太小、重叠或被裁掉时，按 get_ax_state 的标签选择。\
+                屏幕录制权限按宿主应用归属，未授予时返回 system_permission_missing。
                 """
         case .click:
             return """
@@ -102,6 +113,15 @@ enum ScuTool: String, CaseIterable {
         switch self {
         case .checkPermissions, .listApps:
             return ["type": "object", "properties": [:], "additionalProperties": false]
+        case .getScreenshot:
+            return [
+                "type": "object",
+                "properties": [
+                    "token": ["type": "string", "description": "get_ax_state 标题行里的令牌"],
+                ],
+                "required": ["token"],
+                "additionalProperties": false,
+            ]
         case .click:
             return [
                 "type": "object",
@@ -214,9 +234,15 @@ enum ScuTool: String, CaseIterable {
 
     /// 执行工具。参数错误与原生层错误都以 `Outcome.isError` 返回，而不是协议错误：
     /// 模型能读到文本并自行纠正。
+    struct ImageContent: Sendable {
+        var data: Data
+        var mimeType: String
+    }
+
     struct Outcome {
         var text: String
         var isError: Bool
+        var images: [ImageContent] = []
     }
 
     func run(arguments: JSONValue?, session: DesktopSession, actionsEnabled: Bool = false) -> Outcome {
@@ -268,6 +294,19 @@ enum ScuTool: String, CaseIterable {
                     truncated: reading.truncated, focused: focus != nil, token: state.token,
                     policy: state.policy, appName: state.appName, actionsEnabled: actionsEnabled)
                 return Outcome(text: table.text.isEmpty ? head : head + "\n" + table.text, isError: false)
+
+            case .getScreenshot:
+                try Self.requireNoExtra(args, allowed: ["token"])
+                guard let token = try Self.string(args, "token") else { throw ArgumentError(message: "缺少参数 token") }
+                let shot = try session.captureScreenshot(token: token)
+                let overlaid = ScreenshotOverlay.render(capture: shot.capture, labels: shot.labels) ?? shot.capture.png
+                let text = """
+                    screenshot_id=\(shot.id) 图像 \(shot.capture.width)x\(shot.capture.height) scale=\(String(format: "%.3f", shot.capture.scale)) window=(\(Int(shot.capture.windowFrame.x)),\(Int(shot.capture.windowFrame.y)),\(Int(shot.capture.windowFrame.width)),\(Int(shot.capture.windowFrame.height)))
+                    图上 [a] 是快照标签；文本表可能因 max_elements/focus 只显示一部分，未在文本表出现的标签也仍可用。\n标签只对本次令牌有效；截图绑定窗口位置与缩放，窗口移动后需要重新截。
+                    """
+                return Outcome(
+                    text: text, isError: false,
+                    images: [Self.ImageContent(data: overlaid, mimeType: "image/png")])
 
             case .click:
                 try Self.requireNoExtra(args, allowed: ["token", "handle", "label"])
@@ -376,7 +415,11 @@ enum ScuTool: String, CaseIterable {
             break
         }
         if e.code == "system_permission_missing" {
-            s += "\n权限按宿主应用归属：请给启动本服务的应用授予辅助功能权限，可用 check_permissions 确认。"
+            if e.message.contains("屏幕录制") {
+                s += "\n权限按宿主应用归属：请在 系统设置 > 隐私与安全性 > 屏幕录制 中授权启动本服务的宿主应用，然后重启该宿主。"
+            } else {
+                s += "\n权限按宿主应用归属：请给启动本服务的应用授予辅助功能权限，可用 check_permissions 确认。"
+            }
         }
         return s
     }

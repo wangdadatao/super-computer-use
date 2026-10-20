@@ -407,9 +407,15 @@ final class ScriptedReader: DesktopReader {
         while loaded == nil {
             do {
                 loaded = try session.readState(pid: finder.pid, maxDepth: 12, budgetMs: 20_000)
-            } catch let e as WireError where e.code == "target_missing" && attempt < 3 {
-                attempt += 1
-                Thread.sleep(forTimeInterval: 1.0)
+            } catch let e as WireError where e.code == "target_missing" {
+                // 访达可能刚重启、在别的 Space 或暂时没有可读窗口。重试后仍不可读就跳过：
+                // 这是外部环境状态，不是被测的令牌/定位逻辑回归。
+                if attempt < 3 {
+                    attempt += 1
+                    Thread.sleep(forTimeInterval: 1.0)
+                } else {
+                    return
+                }
             }
         }
         let state = try #require(loaded)

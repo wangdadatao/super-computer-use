@@ -8,6 +8,19 @@ public struct SnapshotToken: Hashable, Sendable, CustomStringConvertible {
     public var description: String { value }
 }
 
+/// 一次窗口截图，连同签发它的令牌。标签是快照里的全部标签，截图时按窗口裁剪。
+public struct SessionScreenshot: Sendable {
+    public var id: String
+    public var capture: WindowCapture
+    public var labels: [ElementTable.Label]
+
+    public init(id: String, capture: WindowCapture, labels: [ElementTable.Label]) {
+        self.id = id
+        self.capture = capture
+        self.labels = labels
+    }
+}
+
 /// 一次读取的结果，附带令牌。
 public struct SessionState: Sendable {
     public var token: SnapshotToken
@@ -58,6 +71,13 @@ public final class DesktopSession {
         var budgetMs: Int
     }
 
+    /// 截图的坐标绑定：窗口位置/缩放变化后，旧截图不能用于坐标动作。
+    struct ScreenshotBinding {
+        var token: String
+        var windowFrame: Rect
+        var scale: Double
+    }
+
     /// 动作之后等待界面稳定的参数。启发式初值，见 ADR-0011 的追加记录。
     public struct Settle {
         public var interval: TimeInterval
@@ -78,6 +98,10 @@ public final class DesktopSession {
     }
 
     public let reader: DesktopReader
+
+    private var screenshotBindings: [String: ScreenshotBinding] = [:]
+    private var screenshotOrder: [String] = []
+    private var screenshotCounter = 0
     private let policy: PolicyGate
     private let settle: Settle
     private let retained: Int
@@ -196,6 +220,40 @@ public final class DesktopSession {
             throw WireError.elementGone("句柄 #\(handle) 不在令牌 \(token) 的快照里（共 \(snap.entries.count) 个元素）。")
         }
         return (r.pid, Self.locator(for: handle - 1, in: snap.entries))
+    }
+
+    /// 对当前令牌的目标窗口截图。返回图像、元数据与快照里的全部标签。
+    ///
+    /// 截图不改变令牌；但截图绑定窗口位置/缩放，供后续坐标动作判断是否过期。
+    public func captureScreenshot(token: String) throws -> SessionScreenshot {
+        guard let r = records[token] else {
+            throw WireError.staleSnapshot("令牌 \(token) 未签发或已被丢弃，请重新读取界面。")
+        }
+        switch r.status {
+        case .switched:
+            throw WireError.targetSwitched("令牌 \(token) 属于已被切换走的目标（pid \(r.pid)），请重新读取并绑定目标。")
+        case .stale:
+            throw WireError.staleSnapshot("令牌 \(token) 已失效：界面结构已变化，请重新读取界面。")
+        case .current:
+            break
+        }
+        guard let snap = r.snapshot else { throw WireError.internalError("当前令牌缺少快照") }
+        let capture = try reader.captureWindow(pid: r.pid)
+        let labels = snap.entries.enumerated().compactMap { index, entry -> ElementTable.Label? in
+            guard let text = entry.label, let frame = entry.node.frame else { return nil }
+            return ElementTable.Label(
+                text: text, handle: index + 1, role: entry.node.role,
+                title: entry.node.title, frame: frame)
+        }
+        screenshotCounter += 1
+        let id = "g\(nonce).\(screenshotCounter)"
+        screenshotBindings[id] = ScreenshotBinding(
+            token: token, windowFrame: capture.windowFrame, scale: capture.scale)
+        screenshotOrder.append(id)
+        while screenshotOrder.count > 16 {
+            screenshotBindings[screenshotOrder.removeFirst()] = nil
+        }
+        return SessionScreenshot(id: id, capture: capture, labels: labels)
     }
 
     /// 标签 → 句柄。标签与句柄同属一个快照，不跨令牌；大小写不敏感。

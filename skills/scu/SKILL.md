@@ -18,7 +18,7 @@ SCU 是一个 MCP 服务：读取 macOS 应用的无障碍树，并用 `AXPress`
 | 直接写元素的值（`set_value`，要求元素可写） | 输入法（中文等）未验证；粘贴、剪贴板 |
 | 知道动作是否改变了界面、是否疑似空操作 | 审批/确认层：危险动作只能靠你与用户确认 |
 
-只读档只有 `check_permissions` / `list_apps` / `get_ax_state`；
+只读档只有 `check_permissions` / `list_apps` / `get_ax_state` / `get_screenshot`；
 `click` / `type_text` / `press_key` / `set_value` 需要服务以 `--actions` 启动。
 如果调用这些工具返回"未知工具"（JSON-RPC `-32602`），说明动作档没开，请用户改启动参数。
 
@@ -36,7 +36,7 @@ SCU 是一个 MCP 服务：读取 macOS 应用的无障碍树，并用 `AXPress`
 ## 核心循环
 
 ```
-list_apps → get_ax_state(pid) → 用令牌与标签/句柄执行一个动作 → 重新 get_ax_state
+list_apps → get_ax_state(pid) → 需要时 get_screenshot(token) → 用令牌与标签/句柄执行一个动作 → 重新 get_ax_state
 ```
 
 **每次会改变界面的动作之后都要重读。** 令牌、标签与句柄只对一次读取有效；
@@ -67,6 +67,17 @@ list_apps → get_ax_state(pid) → 用令牌与标签/句柄执行一个动作 
   - `focus_role`：按角色过滤，如 `AXButton` 或 `Button`。
 - 标题行有 `⚠️ 已截断` / `⚠️ 已达深度上限` / `⚠️ 策略：…` 时，先读警告再决定下一步。
 - 推荐流程：先看概览 → 用 `focus` 展开目标区域 → 再有针对性地动作。
+
+## 看界面：get_screenshot
+
+`get_screenshot(token)` 截取当前令牌对应的**目标窗口**，把元素表里的 `[a]` 标签画在图上。
+它只用来补布局信息；**文本元素表仍是权威**：
+
+- 徽标太小、重叠或被裁掉时，按 `get_ax_state` 的标签选，不靠图猜；
+- 需要屏幕录制权限（与辅助功能是两项独立授权，按宿主归属）；没有时返回
+  `system_permission_missing`，让用户去“系统设置 > 隐私与安全性 > 屏幕录制”授权并重启宿主；
+- 返回的 `screenshot_id` 绑定窗口位置与缩放，窗口移动后要重新截；
+- 截图不落盘、不写日志；不要把它当长期证据或上传到外部。
 
 ## 选哪个动作
 

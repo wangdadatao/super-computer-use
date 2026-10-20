@@ -94,14 +94,16 @@ public final class MCPServer {
     /// 给模型的整体使用说明。工具的细节在各自的 description 里。
     static let instructions = """
         SCU（SuperComputerUse）当前是只读档：只能读取 macOS 应用的无障碍树，不能点击、输入或改变任何东西。\
-        典型流程：list_apps 取得 pid，再用 get_ax_state 读取元素表。\
-        元素表里的句柄与标题行的令牌配对，令牌失效后不可用。读取不到时先用 check_permissions 确认宿主应用的辅助功能权限。
+        典型流程：list_apps 取得 pid，再用 get_ax_state 读取元素表；需要看界面时用 get_screenshot。\
+        元素表里的标签/句柄与标题行的令牌配对，令牌失效后不可用。读取不到时先用 check_permissions 确认宿主应用的辅助功能权限；
+        截图还需要屏幕录制权限，两者按宿主应用归属。
         """
 
     static let actionInstructions = """
         SCU（SuperComputerUse）动作档：可以读取 macOS 应用的无障碍树，用 click 点击元素，\
         用 type_text 逐字输入文本，用 press_key 发送按键或组合键，用 set_value 直接写值。\
-        典型流程：list_apps 取得 pid，get_ax_state 读取元素表（标题行有令牌），再用 click / type_text / press_key / set_value（都要 token 与 handle）。\
+        典型流程：list_apps 取得 pid，get_ax_state 读取元素表（标题行有令牌），再用 click / type_text / press_key / set_value（token 加 handle 或 label）。\
+        需要看界面时用 get_screenshot（需要屏幕录制权限）；图上会叠加与元素表一致的 [a] 标签。\
         动作前会核对目标仍是读取时的那个，不是就拒绝并告诉你原因；点击后会报告观察到的效果，\
         结构变化时令牌作废需重读，"疑似空操作"需要你核实。终端、脚本运行器、密码管理器、系统设置、Cursor 等属于拒绝类目，\
         拒绝不可协商，请让用户自己完成。读取不到时先用 check_permissions 确认宿主应用的辅助功能权限。
@@ -115,8 +117,18 @@ public final class MCPServer {
             return error(id: id, code: -32602, "未知工具：\(name)")
         }
         let outcome = tool.run(arguments: params?["arguments"], session: session, actionsEnabled: actionsEnabled)
+        var content: [JSONValue] = [
+            .object(["type": .string("text"), "text": .string(outcome.text)])
+        ]
+        for image in outcome.images {
+            content.append(.object([
+                "type": .string("image"),
+                "data": .string(image.data.base64EncodedString()),
+                "mimeType": .string(image.mimeType),
+            ]))
+        }
         return result(id: id, [
-            "content": [["type": "text", "text": .string(outcome.text)]],
+            "content": .array(content),
             "isError": .bool(outcome.isError),
         ])
     }

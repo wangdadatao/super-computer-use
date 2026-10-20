@@ -110,6 +110,14 @@ public struct NativeServer: Sendable {
             return actionResponse {
                 try AXBackend.setValue(pid: pid, locator: locator, value: value)
             }
+        case .captureWindow(let pid):
+            do {
+                return .windowCapture(try ScreenCapture.captureWindow(pid: pid))
+            } catch let e as WireError {
+                return .failure(e)
+            } catch {
+                return .failure(.platformUnavailable("截图失败：\(error)"))
+            }
         }
 
     /// 把动作结果或错误统一映射为应答，避免三类动作各写一遍。

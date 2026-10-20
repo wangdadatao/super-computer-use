@@ -23,6 +23,21 @@ import Testing
         #expect(try Frame.decode(ResponseFrame.self, body: data.dropFirst(4)) == frame)
     }
 
+    @Test func windowCaptureRequestAndResponseRoundTrip() throws {
+        let requestFrame = try WireFormatTests.json(RequestFrame(id: 8, request: .captureWindow(pid: 42)))
+        let request = requestFrame["request"] as! [String: Any]
+        #expect(request["type"] as? String == "captureWindow")
+        #expect(request["pid"] as? Int == 42)
+
+        let capture = WindowCapture(
+            png: Data([0x89, 0x50, 0x4E, 0x47]), width: 1600, height: 1138, scale: 1.514,
+            windowFrame: Rect(x: -1769, y: 36, width: 1057, height: 752), windowTitle: "窗口")
+        let frame = ResponseFrame(id: 8, response: .windowCapture(capture))
+        let data = try Frame.encode(frame)
+        let back = try Frame.decode(ResponseFrame.self, body: data.dropFirst(4))
+        #expect(back == frame)
+    }
+
     @Test func failureCarriesStructuredError() throws {
         let err = WireError.versionMismatch(client: 2, server: 1)
         let data = try Frame.encode(ResponseFrame(id: 1, response: .failure(err)))

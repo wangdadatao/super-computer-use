@@ -2,7 +2,7 @@ import Foundation
 
 /// 协议层 ↔ 原生层的协议版本。单调递增整数，两侧必须完全相等（ADR-0012）。
 /// 编译期常量：不是运行时可变状态。
-public let scuNativeProtocolVersion = 5
+public let scuNativeProtocolVersion = 6
 
 /// `dumpTree` 允许的最大深度。超出时原生层拒绝，不做静默截断。
 public let scuMaxTreeDepth = 64
@@ -41,6 +41,13 @@ public struct WireError: Error, Codable, Sendable, Equatable {
         WireError(
             code: "system_permission_missing", layer: "platform", retry: "after_user_action",
             message: "未授予系统权限：\(what)")
+    }
+
+    /// 截图需要屏幕录制权限；它与辅助功能是两项独立授权，按宿主进程归属。
+    public static func screenRecordingMissing() -> WireError {
+        WireError(
+            code: "system_permission_missing", layer: "platform", retry: "after_user_action",
+            message: "未授予屏幕录制权限：请在 系统设置 > 隐私与安全性 > 屏幕录制 中授权启动本服务的宿主应用，然后重启该宿主。")
     }
 
     public static func targetMissing(pid: Int32) -> WireError {
@@ -107,6 +114,30 @@ public struct Rect: Codable, Sendable, Equatable {
         self.y = y
         self.width = width
         self.height = height
+    }
+}
+
+/// 一次窗口截图：PNG 与把元素 frame 映射到图像像素所需的元数据。
+/// `windowFrame` 是窗口在全局屏幕坐标（点）中的位置，可能是负值（副屏在左侧）。
+public struct WindowCapture: Codable, Sendable, Equatable {
+    public var png: Data
+    /// 图像像素宽高。
+    public var width: Int
+    public var height: Int
+    /// 图像像素 / 窗口点；Retina 或缩放后不一定等于 1。
+    public var scale: Double
+    public var windowFrame: Rect
+    public var windowTitle: String?
+
+    public init(
+        png: Data, width: Int, height: Int, scale: Double, windowFrame: Rect, windowTitle: String? = nil
+    ) {
+        self.png = png
+        self.width = width
+        self.height = height
+        self.scale = scale
+        self.windowFrame = windowFrame
+        self.windowTitle = windowTitle
     }
 }
 
@@ -257,6 +288,8 @@ public enum Request: Sendable, Equatable {
     case pressKey(pid: Int32, locator: ElementLocator, key: String)
     /// 通过无障碍接口直接写元素的值（要求元素声明 AXValue 可写）。
     case setValue(pid: Int32, locator: ElementLocator, value: String)
+    /// 截取目标应用的一个窗口，返回 PNG 与坐标映射元数据。
+    case captureWindow(pid: Int32)
 }
 
 public enum Response: Sendable, Equatable {
@@ -270,6 +303,8 @@ public enum Response: Sendable, Equatable {
     case located
     /// 定位器与界面现状不符，**没有执行动作**。
     case stale(StaleDetail)
+    /// 窗口截图。
+    case windowCapture(WindowCapture)
     case failure(WireError)
 }
 
@@ -279,6 +314,7 @@ extension Request: Codable {
     }
     private enum Kind: String, Codable {
         case hello, checkPermissions, listApps, dumpTree, performAction, typeText, pressKey, setValue
+        case captureWindow
     }
 
     public init(from decoder: any Decoder) throws {
@@ -311,6 +347,8 @@ extension Request: Codable {
                 pid: try c.decode(Int32.self, forKey: .pid),
                 locator: try c.decode(ElementLocator.self, forKey: .locator),
                 value: try c.decode(String.self, forKey: .value))
+        case .captureWindow:
+            self = .captureWindow(pid: try c.decode(Int32.self, forKey: .pid))
         }
     }
 
@@ -347,15 +385,20 @@ extension Request: Codable {
             try c.encode(pid, forKey: .pid)
             try c.encode(locator, forKey: .locator)
             try c.encode(value, forKey: .value)
+        case .captureWindow(let pid):
+            try c.encode(Kind.captureWindow, forKey: .type)
+            try c.encode(pid, forKey: .pid)
         }
     }
 }
 
 extension Response: Codable {
     private enum Key: String, CodingKey {
-        case type, protocolVersion, accessibility, apps, tree, truncated, error, stale
+        case type, protocolVersion, accessibility, apps, tree, truncated, error, stale, capture
     }
-    private enum Kind: String, Codable { case hello, permissions, apps, tree, acted, located, stale, failure }
+    private enum Kind: String, Codable {
+        case hello, permissions, apps, tree, acted, located, stale, windowCapture, failure
+    }
 
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: Key.self)
@@ -369,6 +412,7 @@ extension Response: Codable {
         case .acted: self = .acted
         case .located: self = .located
         case .stale: self = .stale(try c.decode(StaleDetail.self, forKey: .stale))
+        case .windowCapture: self = .windowCapture(try c.decode(WindowCapture.self, forKey: .capture))
         case .failure: self = .failure(try c.decode(WireError.self, forKey: .error))
         }
     }
@@ -394,6 +438,9 @@ extension Response: Codable {
         case .stale(let d):
             try c.encode(Kind.stale, forKey: .type)
             try c.encode(d, forKey: .stale)
+        case .windowCapture(let capture):
+            try c.encode(Kind.windowCapture, forKey: .type)
+            try c.encode(capture, forKey: .capture)
         case .failure(let e):
             try c.encode(Kind.failure, forKey: .type)
             try c.encode(e, forKey: .error)

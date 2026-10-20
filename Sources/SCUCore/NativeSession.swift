@@ -23,6 +23,7 @@ public protocol DesktopReader {
     func typeText(pid: Int32, locator: ElementLocator, text: String) throws -> ActionOutcome
     func pressKey(pid: Int32, locator: ElementLocator, key: String) throws -> ActionOutcome
     func setValue(pid: Int32, locator: ElementLocator, value: String) throws -> ActionOutcome
+    func captureWindow(pid: Int32) throws -> WindowCapture
 }
 
 extension DesktopReader {
@@ -37,6 +38,10 @@ extension DesktopReader {
 
     public func setValue(pid: Int32, locator: ElementLocator, value: String) throws -> ActionOutcome {
         throw WireError.unsupportedOperation("这个读取器不支持设值")
+    }
+
+    public func captureWindow(pid: Int32) throws -> WindowCapture {
+        throw WireError.unsupportedOperation("这个读取器不支持窗口截图")
     }
 }
 
@@ -157,6 +162,17 @@ public final class NativeSession: DesktopReader {
             case .stale(let d): return .stale(d)
             default: throw WireError.internalError("设值应答类型错误")
             }
+        }
+    }
+
+    public func captureWindow(pid: Int32) throws -> WindowCapture {
+        try withClient { c in
+            guard case .windowCapture(let capture) = try c.call(
+                .captureWindow(pid: pid), timeoutMs: 35_000)
+            else {
+                throw WireError.internalError("截图的应答类型错误")
+            }
+            return capture
         }
     }
 

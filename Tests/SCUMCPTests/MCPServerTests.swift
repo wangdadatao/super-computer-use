@@ -1,5 +1,9 @@
+import AppKit
+import CoreGraphics
 import Foundation
+import ImageIO
 import Testing
+import UniformTypeIdentifiers
 
 @testable import SCUCore
 @testable import SCUMCP
@@ -17,8 +21,10 @@ final class FakeReader: DesktopReader {
     private(set) var typed: [(pid: Int32, locator: ElementLocator, text: String)] = []
     private(set) var pressed: [(pid: Int32, locator: ElementLocator, key: String)] = []
     private(set) var written: [(pid: Int32, locator: ElementLocator, value: String)] = []
+    var capture: Result<WindowCapture, WireError> = .failure(.unsupportedOperation("没有配置截图"))
 
     func checkPermissions() throws -> Bool { try permissions.get() }
+    func captureWindow(pid: Int32) throws -> WindowCapture { try capture.get() }
     func listApps() throws -> [AppInfo] { try apps.get() }
     func readTree(pid: Int32, maxDepth: Int, budgetMs: Int) throws -> TreeReading {
         treeCalls.append((pid, maxDepth, budgetMs))
@@ -46,6 +52,7 @@ final class FakeReader: DesktopReader {
 struct ToolReply: Equatable {
     var text: String
     var isError: Bool
+    var images: [JSONValue] = []
 }
 
 @Suite struct MCPServerTests {
@@ -63,8 +70,10 @@ struct ToolReply: Equatable {
         var params: [String: JSONValue] = ["name": .string(name)]
         if let args { params["arguments"] = args }
         let r = request(s, "tools/call", params: .object(params))
-        let text = r["result"]?["content"]?.arrayFirst?["text"]?.stringValue ?? ""
-        return ToolReply(text: text, isError: r["result"]?["isError"] == .bool(true))
+        let content = r["result"]?["content"]?.arrayValues ?? []
+        let text = content.first?["text"]?.stringValue ?? ""
+        let images = content.filter { $0["type"]?.stringValue == "image" }
+        return ToolReply(text: text, isError: r["result"]?["isError"] == .bool(true), images: images)
     }
 
     // MARK: - 握手与目录
@@ -91,7 +100,7 @@ struct ToolReply: Equatable {
         let r = request(server, "tools/list")
         guard case .array(let tools)? = r["result"]?["tools"] else { Issue.record("缺少 tools"); return }
         let names = tools.compactMap { $0["name"]?.stringValue }
-        #expect(names == ["check_permissions", "list_apps", "get_ax_state"])
+        #expect(names == ["check_permissions", "list_apps", "get_ax_state", "get_screenshot"])
         for t in tools {
             // 只读档的核心承诺：没有任何工具会改变桌面状态。
             #expect(t["annotations"]?["readOnlyHint"] == .bool(true))
@@ -385,7 +394,7 @@ extension JSONValue {
 
     @Test func clickIsHiddenAndRejectedByDefault() {
         let (t, s, reader) = rig(actions: false)
-        #expect(toolNames(t, s) == ["check_permissions", "list_apps", "get_ax_state"])
+        #expect(toolNames(t, s) == ["check_permissions", "list_apps", "get_ax_state", "get_screenshot"])
         let r = t.request(s, "tools/call", params: ["name": "click", "arguments": ["token": "x", "handle": 1]])
         #expect(r["error"]?["code"] == .int(-32602))  // 与未知工具同样处理
         #expect(reader.actionCalls.isEmpty)
@@ -464,6 +473,61 @@ extension JSONValue {
                 r.text.hasPrefix("[invalid_argument]") || r.text.hasPrefix("[element_gone]"),
                 "\(args)：\(r.text)")
         }
+    }
+
+    static func makePNG(width: Int = 200, height: Int = 120) -> Data {
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let context = CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+            space: colorSpace, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        context.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        let image = context.makeImage()!
+        let data = NSMutableData()
+        let destination = CGImageDestinationCreateWithData(
+            data as CFMutableData, UTType.png.identifier as CFString, 1, nil)!
+        CGImageDestinationAddImage(destination, image, nil)
+        CGImageDestinationFinalize(destination)
+        return data as Data
+    }
+
+    @Test func screenshotReturnsAnImageAndAScreenshotID() {
+        let (t, s, reader) = rig(actions: false)
+        reader.tree = .success(TreeReading(
+            root: AXNode(role: "AXWindow", children: [
+                AXNode(role: "AXButton", title: "确定", frame: Rect(x: 10, y: 20, width: 80, height: 24)),
+            ]), truncated: false))
+        reader.capture = .success(WindowCapture(
+            png: Self.makePNG(), width: 200, height: 120, scale: 1,
+            windowFrame: Rect(x: 0, y: 0, width: 200, height: 120)))
+        let read = t.callTool(s, "get_ax_state", ["pid": 42])
+        let r = t.callTool(s, "get_screenshot", ["token": .string(token(from: read))])
+        #expect(!r.isError)
+        #expect(r.text.contains("screenshot_id="))
+        #expect(r.images.count == 1)
+        #expect(r.images.first?["type"]?.stringValue == "image")
+        let imageData = r.images.first?["data"]?.stringValue ?? ""
+        #expect(imageData.count > 0)
+    }
+
+    @Test func screenshotRequiresALiveTokenAndReportsPermission() {
+        let (t, s, reader) = rig(actions: false)
+        let stale = t.callTool(s, "get_screenshot", ["token": "nope"])
+        #expect(stale.isError && stale.text.hasPrefix("[stale_snapshot]"))
+
+        let read = t.callTool(s, "get_ax_state", ["pid": 42])
+        reader.capture = .failure(.screenRecordingMissing())
+        let denied = t.callTool(s, "get_screenshot", ["token": .string(token(from: read))])
+        #expect(denied.isError && denied.text.hasPrefix("[system_permission_missing]"))
+        #expect(denied.text.contains("屏幕录制"))
+        #expect(denied.images.isEmpty)
+    }
+
+    @Test func screenshotRejectsExtraArguments() {
+        let (t, s, _) = rig(actions: false)
+        let read = t.callTool(s, "get_ax_state", ["pid": 42])
+        let r = t.callTool(s, "get_screenshot", ["token": .string(token(from: read)), "extra": true])
+        #expect(r.isError && r.text.hasPrefix("[invalid_argument]"))
     }
 
     @Test func inputToolsAreExposedWithTruthfulAnnotations() {
@@ -604,5 +668,22 @@ extension JSONValue {
         #expect(ScuTool.getAXState.description.contains("只读"))
         #expect(ScuTool.click.description.contains("会改变应用的状态"))
         #expect(ScuTool.click.isAction && !ScuTool.getAXState.isAction)
+    }
+}
+
+
+@Suite struct ScreenshotOverlayTests {
+    @Test func imageRectHandlesNegativeWindowOriginAndScale() {
+        let window = Rect(x: -1500, y: 50, width: 800, height: 600)
+        let rect = ScreenshotOverlay.imageRect(
+            Rect(x: -1489, y: 72, width: 42, height: 28), windowFrame: window, scale: 2)
+        #expect(rect == CGRect(x: 22, y: 44, width: 84, height: 56))
+    }
+
+    @Test func imageRectKeepsOffscreenFramesOffscreen() {
+        let window = Rect(x: -1500, y: 50, width: 800, height: 600)
+        let rect = ScreenshotOverlay.imageRect(
+            Rect(x: -2000, y: 10, width: 10, height: 10), windowFrame: window, scale: 1)
+        #expect(rect.minX < 0 && rect.minY < 0)
     }
 }

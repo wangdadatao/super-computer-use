@@ -33,7 +33,7 @@
 ## 工具目录
 
 每个工具都带 `title` 与 `annotations`（含 `title`、`readOnlyHint`、`destructiveHint`、`idempotentHint`、`openWorldHint`）。
-只读工具三个：`readOnlyHint: true`、`destructiveHint: false`、`idempotentHint: true`、`openWorldHint: false`；
+只读工具四个：`check_permissions`、`list_apps`、`get_ax_state`、`get_screenshot`，均为 `readOnlyHint: true`、`destructiveHint: false`、`idempotentHint: true`、`openWorldHint: false`；
 动作工具（仅 `--actions`）如实声明 `readOnlyHint: false`、`destructiveHint: true`、`idempotentHint: false`、`openWorldHint: true`。
 
 | 工具 | 参数 | 作用 |
@@ -41,6 +41,7 @@
 | `check_permissions` | 无 | 报告启动本服务的宿主是否有辅助功能权限。权限未授予不算工具错误，是对状态的如实报告 |
 | `list_apps` | 无 | 每行 `pid<TAB>名称<TAB>bundle id`（无 bundle id 时为 `-`） |
 | `get_ax_state` | `pid`（必填）、`max_depth`、`budget_ms`、`max_elements`、`focus`、`focus_role` | 读取应用的无障碍树，返回带标签与 `frame` 的文本化元素表；`focus` 系列只展开一部分 |
+| `get_screenshot` | `token` | 截取令牌对应的目标窗口，叠加标签，返回 PNG 与 `screenshot_id`；需要屏幕录制权限 |
 | `click`（仅 `--actions`） | `token`、`handle` 或 `label`（二选一） | 对目标执行 `AXPress`；见下 |
 | `type_text`（仅 `--actions`） | `token`、`handle` 或 `label`（二选一）、`text` | 先聚焦元素，再把文本逐字输入；见下 |
 | `press_key`（仅 `--actions`） | `token`、`handle` 或 `label`（二选一）、`key` | 先聚焦元素，再发送按键或组合键；见下 |
@@ -122,6 +123,22 @@ effect: delivered=true observed=true converged=true treeChanged=false targetChan
 
 <a id="element_table_output"></a>
 
+### `get_screenshot`
+
+只读，截取 `get_ax_state` 令牌对应的**目标窗口**（不是整屏），返回一张带标签徽标的 PNG：
+
+```text
+screenshot_id=g1abc.1 图像 1600x1138 scale=1.514 window=(-1769,36,1057,752)
+图上 [a] 是 get_ax_state 的标签；标签只对本次令牌有效。
+```
+
+- **权限**：需要屏幕录制，与辅助功能是两项独立授权，按宿主进程归属；未授予时为
+  `system_permission_missing`，文案指向“屏幕录制”。
+- **坐标**：图像像素 = `(element.frame - windowFrame) * scale`；`windowFrame` 可为负（副屏）。
+- **绑定**：`screenshot_id` 绑定 `token + windowFrame + scale`；窗口移动/缩放后旧截图不能用于坐标动作。
+- **权威**：文本元素表仍为准。徽标太小、重叠或被裁掉时，按 `get_ax_state` 的标签选，不靠图猜。\n  图上可能标出文本表因 `max_elements`/`focus` 未显示的元素；这些标签仍然可用，但优先使用文本表里的。
+- **隐私**：截图只返回给调用方，不写日志、不落盘；可能包含敏感内容，不要把它当作可长期保存的证据。
+
 ## 元素表输出
 
 `get_ax_state` 返回的文本由标题行与元素表组成。元素表格式见[元素寻址](element_addressing.md#readonly_subset)。
@@ -164,7 +181,8 @@ effect: delivered=true observed=true converged=true treeChanged=false targetChan
 
 标题行携带**快照令牌**：不透明字符串，由会话签发（[ADR-0015](../decisions/adr_0015_handle_resolution_by_path.md)）。
 令牌的失效类别、复用规则与"重复使用失效令牌"的语义见[快照生命周期](../architecture/snapshot_lifecycle.md#p0_implementation)。
-令牌出现在 `get_ax_state` 的输出里；接受它的动作工具是 `click` / `type_text` / `press_key` / `set_value`（仅动作档）。
+令牌出现在 `get_ax_state` 的输出里；接受它的动作工具是 `click` / `type_text` / `press_key` / `set_value`（仅动作档），
+只读工具 `get_screenshot` 也接受同一个令牌。
 
 ### 完整性标注
 
@@ -271,6 +289,8 @@ socket 目录建在 `TMPDIR`（若设置且存在）或系统临时目录下。
 - **只在 Cursor 一个宿主里运行过**（2026-10-16，用户级 `~/.cursor/mcp.json`，macOS 26.6.2，Cursor 版本未记录）。
   观察到：握手成功；三个工具都被识别；`initialize` 的 `instructions` 被作为服务描述呈现给模型；
   `check_permissions`、`list_apps`、`get_ax_state` 的调用都成功。Cursor 还在工具列表里额外注入了一个 `mcp_auth`，不是本服务提供的。
+- **`get_screenshot` 只在网易云 3.1.12 上验证过**：1600×1138、`scale=1.514`、窗口原点为负，
+  叠加标签位置正确（2026-10-20）。其他应用、多窗口选择、窗口移动后的过期判断未验证。
   `isError` 的呈现、其他宿主（Claude Desktop 等）都未观察。
 - **宿主的权限归属只有一个数据点。** 在上述 Cursor 环境里，`check_permissions` 返回已授予。
   这只说明该环境下成立，不能推到其他宿主或其他机器；归属的是哪个进程（Cursor 本体还是辅助进程）没有核对。
