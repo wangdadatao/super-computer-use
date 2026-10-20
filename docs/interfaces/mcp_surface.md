@@ -263,8 +263,8 @@ socket 目录建在 `TMPDIR`（若设置且存在）或系统临时目录下。
 
 - **`click` 除网易云（带 CEF 启动参数）外，只在自制夹具 `scu-fixture` 上真实点击过**；访达上只做过 `verify`（不点击）。
   没有经 Cursor 宿主调用过动作工具。
-- **标签寻址只在网易云上真实验证过**：`type_text(label="b")` 与 `set_value(label="b")` 成立（2026-10-19），
-  其他应用与标签点击未验证。见 [真实应用验证](../../verification/2026-10-19-real-app-netease.md#追加快照内标签同日)。夹具验证的结论与缺口见
+- **标签寻址只在网易云上真实验证过**：`type_text(label="b")`、`set_value(label="b")` 与 `click(label="a")` 成立（2026-10-19），
+  其他应用未验证。见 [真实应用验证](../../verification/2026-10-19-real-app-netease.md#追加快照内标签同日)。夹具验证的结论与缺口见
   [verification/2026-10-18-fixture-validation.md](../../verification/2026-10-18-fixture-validation.md)：
   `AXPress` 不看遮挡；两秒后才出现的变化会被判为已收敛；同一容器里加一个兄弟就会令路径上的句柄被保守地拒绝。
 

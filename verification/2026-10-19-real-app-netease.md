@@ -72,6 +72,8 @@
 - `type_text(token, label="b", text="test")`：`delivered=true observed=true converged=true treeChanged=true
   targetChanged=true`，0.7 秒；重读搜索框出现 `value="test"`，并出现 `Test/TEST/test` 搜索建议。
 - `set_value(token, label="b", value="")`：搜索框被清空，恢复为空。
+- `click(token, label="a")`（搜索按钮）：`delivered=true observed=true converged=true treeChanged=true`，0.6 秒；
+  重读得到新令牌，动作路径成立。
 
 第一次动作后 0.5 秒重读时 value 还未出现，第二次动作后才出现；说明动作后的读取仍可能落在中间状态，
 与收敛启发式的已知缺口一致。**标签解析与按标签动作本身成立**；标签仍只对签发它的令牌有效。
