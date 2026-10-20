@@ -240,7 +240,7 @@ verification/
 **P0 出口门槛已全部满足或判定不适用（2026-10-19）**；P0 之外的假设（如指示层隔离）仍未验证。
 标签寻址（[ADR-0018](../decisions/adr_0018_label_addressing.md)）已在单元测试、MCP 测试与网易云 3.1.12（CEF）上验证；
 窗口截图与标签叠加（[ADR-0019](../decisions/adr_0019_window_screenshot.md)）已在网易云上验证（1600×1138、负窗口原点）；
-网易云左侧栏能标出 `AXGroup`，但 `AXPress` 是空操作（`noOpSuspected=true`），坐标点击尚未实现；
+网易云左侧栏能标出 `AXGroup`，但 `AXPress` 是空操作（`noOpSuspected=true`）；`click_at` 已能在该侧栏从推荐切到精选；
 其他真实应用、多窗口选择与窗口移动后的截图过期判断尚未验证。
 权限按宿主归属，不是机器级事实（见 [macOS 权限](permissions.md)）：
 2026-10-18 的验证是在 Cursor 的 agent 会话里跑的，该宿主当时已授予辅助功能；换一个宿主要先用 `scu permissions` 确认。

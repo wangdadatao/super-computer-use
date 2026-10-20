@@ -67,8 +67,8 @@ SCU **只做 UI 自动化**。不提供日历、消息、系统活动录制等
 已实现：两进程通信、版本协商、权限检测、无障碍树读取与导出、
 快照令牌与按路径定位句柄、`AXPress` 点击、输入与设值、最小效果摘要、拒绝类目、MCP 服务（默认只读，`--actions` 才暴露动作）。
 v1 功能点：读取、点击、输入、设值；元素表带快照内短标签与 `frame`，动作工具接受 `label`；
-窗口截图（`get_screenshot`）带标签叠加；
-未实现：句柄注册表、坐标动作、滚动与拖拽、应用启动、审批与租约、指示层。
+窗口截图（`get_screenshot`）带标签叠加；`click_at` 按截图坐标点击（会激活窗口、移动光标）；
+未实现：句柄注册表、滚动与拖拽、应用启动、审批与租约、指示层。
 
 **关键机制的验证**：令牌与效果摘要在受控夹具上满足（误拒 0/8；每次改值点击后都要重读）；
 输入、按键、设值在网易云音乐（CEF，带无障碍启动参数）上完成了一次真实端到端验证（搜索并播放）；
@@ -93,7 +93,7 @@ swift build && swift test
 - [skills/scu/INSTALL.md](skills/scu/INSTALL.md)：安装、宿主配置、授权与自检（授权必须由人完成）
 - [skills/scu/SKILL.md](skills/scu/SKILL.md)：何时用、核心循环（读 → 一个动作 → 重读）、动作选择、效果摘要与错误处理
 
-动作档（`--actions`）才有 `click` / `type_text` / `press_key` / `set_value`。
+动作档（`--actions`）才有 `click` / `click_at` / `type_text` / `press_key` / `set_value`。
 
 ## 文档
 

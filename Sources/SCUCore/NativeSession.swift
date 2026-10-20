@@ -24,6 +24,7 @@ public protocol DesktopReader {
     func pressKey(pid: Int32, locator: ElementLocator, key: String) throws -> ActionOutcome
     func setValue(pid: Int32, locator: ElementLocator, value: String) throws -> ActionOutcome
     func captureWindow(pid: Int32) throws -> WindowCapture
+    func clickAt(pid: Int32, x: Double, y: Double) throws -> ActionOutcome
 }
 
 extension DesktopReader {
@@ -42,6 +43,10 @@ extension DesktopReader {
 
     public func captureWindow(pid: Int32) throws -> WindowCapture {
         throw WireError.unsupportedOperation("这个读取器不支持窗口截图")
+    }
+
+    public func clickAt(pid: Int32, x: Double, y: Double) throws -> ActionOutcome {
+        throw WireError.unsupportedOperation("这个读取器不支持坐标点击")
     }
 }
 
@@ -173,6 +178,16 @@ public final class NativeSession: DesktopReader {
                 throw WireError.internalError("截图的应答类型错误")
             }
             return capture
+        }
+    }
+
+    public func clickAt(pid: Int32, x: Double, y: Double) throws -> ActionOutcome {
+        try withClient { c in
+            switch try c.call(.clickAt(pid: pid, x: x, y: y), timeoutMs: 10_000) {
+            case .acted: return .acted
+            case .failure(let e): throw e
+            default: throw WireError.internalError("坐标点击的应答类型错误")
+            }
         }
     }
 

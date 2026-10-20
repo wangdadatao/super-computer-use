@@ -28,6 +28,7 @@
 - [ADR-0017 CEF/Chromium 应用以无障碍启动参数恢复 AX 路径](adr_0017_cef_accessibility_launch.md)：识别条件、用户同意、失败时的处理。读取时机：遇到 AX 为空的应用、实现应用适配时。
 - [ADR-0018 快照内的短标签寻址](adr_0018_label_addressing.md)：标签分配、与句柄的关系、四个动作工具接受 label。读取时机：修改元素表、工具目标参数、后续截图叠加时。
 - [ADR-0019 窗口截图与标签叠加](adr_0019_window_screenshot.md)：只截目标窗口、坐标换算、权限与隐私、`screenshot_id` 绑定。读取时机：实现截图、坐标动作、指示层时。
+- [ADR-0020 坐标点击：真实鼠标事件 + 先激活窗口](adr_0020_coordinate_click.md)：`click_at` 的坐标语义、激活/raise、验证与副作用。读取时机：实现或修改坐标点击、处理网页自绘控件时。
 
 ### 范围与安全
 

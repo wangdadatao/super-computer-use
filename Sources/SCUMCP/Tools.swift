@@ -11,6 +11,7 @@ enum ScuTool: String, CaseIterable {
     case getAXState = "get_ax_state"
     case getScreenshot = "get_screenshot"
     case click
+    case clickAt = "click_at"
     case typeText = "type_text"
     case pressKey = "press_key"
     case setValue = "set_value"
@@ -30,6 +31,7 @@ enum ScuTool: String, CaseIterable {
         case .getAXState: return "读取无障碍树"
         case .getScreenshot: return "截取窗口并叠加标签"
         case .click: return "点击元素"
+        case .clickAt: return "按截图坐标点击"
         case .typeText: return "向元素输入文本"
         case .pressKey: return "向元素发送按键"
         case .setValue: return "直接写入元素的值"
@@ -54,6 +56,16 @@ enum ScuTool: String, CaseIterable {
                 返回 PNG 图像与 screenshot_id；图像坐标以窗口左上角为原点，`scale` 是图像像素 / 窗口点。\
                 文本元素表仍是权威：徽标太小、重叠或被裁掉时，按 get_ax_state 的标签选择。\
                 屏幕录制权限按宿主应用归属，未授予时返回 system_permission_missing。
+                """
+        case .clickAt:
+            return """
+                在 get_screenshot 的截图坐标 (x, y) 投递一次鼠标左键点击。会改变应用的状态。\
+                坐标以截图左上角为原点，单位是图像像素；必须同时给出令牌与 screenshot_id。\
+                点击前会核对截图属于该令牌、窗口位置/缩放未变；坐标越界返回 invalid_coordinates。\
+                返回的是**观察到的效果**：点击后重读 AX 树，报告结构是否变化。\
+                坐标点击可能只改变像素而不改 AX 树，这时会报 noOpSuspected=true；\
+                请用 get_screenshot 核实，不要反复点。屏幕保护/遮挡等情况下可能点到别处，\
+                调用前应确认目标窗口可见且在前台。
                 """
         case .click:
             return """
@@ -120,6 +132,18 @@ enum ScuTool: String, CaseIterable {
                     "token": ["type": "string", "description": "get_ax_state 标题行里的令牌"],
                 ],
                 "required": ["token"],
+                "additionalProperties": false,
+            ]
+        case .clickAt:
+            return [
+                "type": "object",
+                "properties": [
+                    "token": ["type": "string", "description": "get_ax_state 标题行里的令牌"],
+                    "screenshot_id": ["type": "string", "description": "get_screenshot 返回的 screenshot_id"],
+                    "x": ["type": "integer", "minimum": 0, "description": "截图内的 x 像素（左上角原点）"],
+                    "y": ["type": "integer", "minimum": 0, "description": "截图内的 y 像素（左上角原点）"],
+                ],
+                "required": ["token", "screenshot_id", "x", "y"],
                 "additionalProperties": false,
             ]
         case .click:
@@ -316,6 +340,22 @@ enum ScuTool: String, CaseIterable {
                 return Outcome(
                     text: Self.actionText(report, handle: handle, verb: "点击", labelRef: label), isError: false)
 
+            case .clickAt:
+                try Self.requireNoExtra(args, allowed: ["token", "screenshot_id", "x", "y"])
+                guard let token = try Self.string(args, "token") else { throw ArgumentError(message: "缺少参数 token") }
+                guard let screenshotID = try Self.string(args, "screenshot_id") else {
+                    throw ArgumentError(message: "缺少参数 screenshot_id")
+                }
+                guard let x = try Self.int(args, "x", range: 0...100_000, required: true),
+                    let y = try Self.int(args, "y", range: 0...100_000, required: true)
+                else {
+                    throw ArgumentError(message: "x 与 y 必须是坐标整数")
+                }
+                let report = try session.clickAt(
+                    token: token, screenshotID: screenshotID, x: Double(x), y: Double(y))
+                return Outcome(
+                    text: Self.coordinateText(report, x: x, y: y), isError: false)
+
             case .typeText:
                 try Self.requireNoExtra(args, allowed: ["token", "handle", "label", "text"])
                 guard let token = try Self.string(args, "token") else { throw ArgumentError(message: "缺少参数 token") }
@@ -405,10 +445,14 @@ enum ScuTool: String, CaseIterable {
         switch e.code {
         case "stale_snapshot", "element_gone":
             s += "\n请重新调用 get_ax_state 取得新令牌与标签/句柄；用 focus 按文本重新定位目标。"
+        case "stale_geometry":
+            s += "\n窗口位置/缩放或截图已变化：重新 get_screenshot，使用新的 screenshot_id。"
         case "target_switched":
             s += "\n令牌属于之前读取的另一个应用：请对要操作的应用重新 get_ax_state。"
         case "unsupported_operation":
             s += "\n该元素不能被点击；可尝试它的父元素或子元素，或换一个元素。"
+        case "invalid_coordinates":
+            s += "\n坐标不在截图范围内：重新 get_screenshot，用截图里的坐标。"
         case "policy_denied":
             s += "\n这是不可协商的拒绝，不要重试或换用别的方式绕过；请告知用户由他自己完成这一步。"
         default:
@@ -422,6 +466,29 @@ enum ScuTool: String, CaseIterable {
             }
         }
         return s
+    }
+
+    /// 坐标点击结果。没有元素身份，只报告树变化；像素变化需要截图 diff。
+    static func coordinateText(_ r: CoordinateReport, x: Int, y: Int) -> String {
+        func flag(_ b: Bool?) -> String { b.map { $0 ? "true" : "false" } ?? "unknown" }
+        let secs = String(format: "%.1f", r.elapsed)
+        var lines = [
+            "已对 pid \(r.pid) 的截图坐标 (\(x), \(y)) 投递点击。",
+            "effect: observed=\(flag(r.observed)) treeChanged=\(flag(r.treeChanged)) "
+                + "noOpSuspected=\(flag(r.noOpSuspected)) elapsed=\(secs)s",
+        ]
+        if !r.observed {
+            lines.append("⚠️ 点击已投递，但事后读不到界面，不知道效果；请用 get_screenshot 核实。")
+        } else if r.treeChanged == true {
+            lines.append("界面结构已变化，旧令牌已作废，请重新 get_ax_state。")
+        } else if r.noOpSuspected {
+            lines.append(
+                "⚠️ AX 树没有变化。坐标点击可能只改了像素/画布；用 get_screenshot 核实，不要重复点。")
+        }
+        if r.tokenInvalidated {
+            lines.append("旧令牌已失效；重新 get_ax_state 后再继续。")
+        }
+        return lines.joined(separator: "\n")
     }
 
     /// 点击结果的文本：先一行机器可读的摘要，再用人话解释。只陈述观察到的事实。

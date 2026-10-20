@@ -1,7 +1,7 @@
 # MCP 接入面（只读档与动作档）
 
 `scu mcp` 以 MCP stdio 服务运行，是接入层的第一个实现。**默认只读**：
-能读取应用与无障碍树，不能改变任何东西。**`scu mcp --actions` 额外暴露 `click`、`type_text`、`press_key`、`set_value`**（动作档）。
+能读取应用与无障碍树，不能改变任何东西。**`scu mcp --actions` 额外暴露 `click`、`click_at`、`type_text`、`press_key`、`set_value`**（动作档）。
 完整的会话 API 与 `js` 工具面是拟实施设计，见[协议总览](protocol_overview.md)。
 
 ## 导航
@@ -43,6 +43,7 @@
 | `get_ax_state` | `pid`（必填）、`max_depth`、`budget_ms`、`max_elements`、`focus`、`focus_role` | 读取应用的无障碍树，返回带标签与 `frame` 的文本化元素表；`focus` 系列只展开一部分 |
 | `get_screenshot` | `token` | 截取令牌对应的目标窗口，叠加标签，返回 PNG 与 `screenshot_id`；需要屏幕录制权限 |
 | `click`（仅 `--actions`） | `token`、`handle` 或 `label`（二选一） | 对目标执行 `AXPress`；见下 |
+| `click_at`（仅 `--actions`） | `token`、`screenshot_id`、`x`、`y` | 在截图坐标投递真实鼠标点击；见下 |
 | `type_text`（仅 `--actions`） | `token`、`handle` 或 `label`（二选一）、`text` | 先聚焦元素，再把文本逐字输入；见下 |
 | `press_key`（仅 `--actions`） | `token`、`handle` 或 `label`（二选一）、`key` | 先聚焦元素，再发送按键或组合键；见下 |
 | `set_value`（仅 `--actions`） | `token`、`handle` 或 `label`（二选一）、`value` | 通过无障碍接口直接写值，要求元素可写；见下 |
@@ -87,6 +88,19 @@ effect: delivered=true observed=true converged=true treeChanged=false targetChan
 
 <a id="input_tools"></a>
 
+### `click_at`
+
+坐标点击是**最后手段**：优先 `click`；只有 AX 动作无效或没有 AX 元素时再用。
+
+1. 坐标以 `get_screenshot` 的图像左上角为原点，单位是图像像素；越界返回 `invalid_coordinates`。
+2. `screenshot_id` 必须属于当前令牌且窗口几何未变；否则 `stale_geometry`。
+3. 点击前会激活并 raise 目标窗口，确认它成为 frontmost；失败则**不点击**，避免点到别的应用。
+4. 用真实鼠标事件（会移动光标），不是 `CGEvent.postToPid`。
+5. 点击后重读 AX 树：结构变化 → 令牌作废；不变 → `noOpSuspected=true`。
+   坐标点击可能只改像素，树不变不代表没生效；用 `get_screenshot` 核实，不要重复点。
+
+设计见 [ADR-0020](../decisions/adr_0020_coordinate_click.md)。
+
 ### `type_text`、`press_key` 与 `set_value`
 
 两者都要求**显式的目标元素**（`token`，加 `handle` 或 `label`），顺序与 `click` 相同：
@@ -128,7 +142,7 @@ effect: delivered=true observed=true converged=true treeChanged=false targetChan
 只读，截取 `get_ax_state` 令牌对应的**目标窗口**（不是整屏），返回一张带标签徽标的 PNG：
 
 ```text
-screenshot_id=g1abc.1 图像 1600x1138 scale=1.514 window=(-1769,36,1057,752)
+screenshot_id=g1abc.1 图像 1600x1138 scale=1.514 window=(353,199,1057,752)
 图上 [a] 是 get_ax_state 的标签；标签只对本次令牌有效。
 ```
 
@@ -221,6 +235,7 @@ screenshot_id=g1abc.1 图像 1600x1138 scale=1.514 window=(-1769,36,1057,752)
 | `code` | 追加的提示 |
 | --- | --- |
 | `stale_snapshot`、`element_gone` | 重新 `get_ax_state` 取得新令牌与句柄；用 `focus` 按文本重新定位 |
+| `stale_geometry`、`invalid_coordinates` | 重新 `get_screenshot`，使用截图内的坐标 |
 | `target_switched` | 令牌属于之前读取的另一个应用，对要操作的应用重新读取 |
 | `unsupported_operation` | 该元素不支持这个动作（不能点击、不接受焦点、或不认识键名）；可尝试父元素、子元素或改换方式 |
 | `policy_denied` | 不可协商，不要重试或绕过，告知用户由他自己完成 |
@@ -292,8 +307,9 @@ socket 目录建在 `TMPDIR`（若设置且存在）或系统临时目录下。
 - **只在 Cursor 一个宿主里运行过**（2026-10-16，用户级 `~/.cursor/mcp.json`，macOS 26.6.2，Cursor 版本未记录）。
   观察到：握手成功；三个工具都被识别；`initialize` 的 `instructions` 被作为服务描述呈现给模型；
   `check_permissions`、`list_apps`、`get_ax_state` 的调用都成功。Cursor 还在工具列表里额外注入了一个 `mcp_auth`，不是本服务提供的。
-- **`get_screenshot` 只在网易云 3.1.12 上验证过**：1600×1138、`scale=1.514`、窗口原点为负，
-  叠加标签位置正确（2026-10-20）。其他应用、多窗口选择、窗口移动后的过期判断未验证。
+- **`get_screenshot` / `click_at` 只在网易云 3.1.12 上验证过**：截图 1600×1138、`scale=1.514`；
+  左侧栏坐标点击从「推荐」切到「精选」并成功返回（2026-10-20）。
+  其他应用、多窗口选择、窗口移动后的过期判断、像素级 diff 未验证。
   `isError` 的呈现、其他宿主（Claude Desktop 等）都未观察。
 - **宿主的权限归属只有一个数据点。** 在上述 Cursor 环境里，`check_permissions` 返回已授予。
   这只说明该环境下成立，不能推到其他宿主或其他机器；归属的是哪个进程（Cursor 本体还是辅助进程）没有核对。

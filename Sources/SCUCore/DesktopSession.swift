@@ -9,6 +9,29 @@ public struct SnapshotToken: Hashable, Sendable, CustomStringConvertible {
 }
 
 /// 一次窗口截图，连同签发它的令牌。标签是快照里的全部标签，截图时按窗口裁剪。
+/// 坐标点击的观察结果。坐标点击没有元素身份，只能报告树是否变化；
+/// 像素级变化要等截图 diff。
+public struct CoordinateReport: Sendable {
+    public var pid: Int32
+    public var observed: Bool
+    public var treeChanged: Bool?
+    public var tokenInvalidated: Bool
+    public var noOpSuspected: Bool
+    public var elapsed: TimeInterval
+
+    public init(
+        pid: Int32, observed: Bool, treeChanged: Bool?, tokenInvalidated: Bool,
+        noOpSuspected: Bool, elapsed: TimeInterval
+    ) {
+        self.pid = pid
+        self.observed = observed
+        self.treeChanged = treeChanged
+        self.tokenInvalidated = tokenInvalidated
+        self.noOpSuspected = noOpSuspected
+        self.elapsed = elapsed
+    }
+}
+
 public struct SessionScreenshot: Sendable {
     public var id: String
     public var capture: WindowCapture
@@ -76,6 +99,8 @@ public final class DesktopSession {
         var token: String
         var windowFrame: Rect
         var scale: Double
+        var width: Int
+        var height: Int
     }
 
     /// 动作之后等待界面稳定的参数。启发式初值，见 ADR-0011 的追加记录。
@@ -248,12 +273,73 @@ public final class DesktopSession {
         screenshotCounter += 1
         let id = "g\(nonce).\(screenshotCounter)"
         screenshotBindings[id] = ScreenshotBinding(
-            token: token, windowFrame: capture.windowFrame, scale: capture.scale)
+            token: token, windowFrame: capture.windowFrame, scale: capture.scale,
+            width: capture.width, height: capture.height)
         screenshotOrder.append(id)
         while screenshotOrder.count > 16 {
             screenshotBindings[screenshotOrder.removeFirst()] = nil
         }
         return SessionScreenshot(id: id, capture: capture, labels: labels)
+    }
+
+    /// 在截图坐标 (x, y) 点击。坐标以截图左上角为原点，单位是图像像素。
+    ///
+    /// 截图必须属于当前令牌，且窗口位置/缩放未变；否则拒绝。
+    /// 点击后只观察 AX 树是否变化；坐标点击的像素级变化留给截图 diff。
+    public func clickAt(token: String, screenshotID: String, x: Double, y: Double) throws -> CoordinateReport {
+        guard let r = records[token] else {
+            throw WireError.staleSnapshot("令牌 \(token) 未签发或已被丢弃，请重新读取界面。")
+        }
+        switch r.status {
+        case .switched:
+            throw WireError.targetSwitched("令牌 \(token) 属于已被切换走的目标（pid \(r.pid)），请重新读取并绑定目标。")
+        case .stale:
+            throw WireError.staleSnapshot("令牌 \(token) 已失效：界面结构已变化，请重新读取界面。")
+        case .current:
+            break
+        }
+        guard let snap = r.snapshot else { throw WireError.internalError("当前令牌缺少快照") }
+        guard let binding = screenshotBindings[screenshotID], binding.token == token else {
+            throw WireError.staleGeometry("截图 \(screenshotID) 不存在、已过期或不属于令牌 \(token)，请重新 get_screenshot。")
+        }
+        guard x >= 0, y >= 0, x < Double(binding.width), y < Double(binding.height) else {
+            throw WireError.invalidCoordinates(
+                "坐标 (\(x), \(y)) 不在截图 \(screenshotID) 的 \(binding.width)×\(binding.height) 范围内。")
+        }
+
+        let identity: Identity
+        if let known = r.identity {
+            identity = known
+        } else {
+            identity = try lookupIdentity(pid: r.pid)
+            r.identity = identity
+        }
+        if case .deny(let category) = policy.evaluate(pid: r.pid, bundleId: identity.bundleId) {
+            throw WireError.policyDenied(category: category, app: identity.name ?? "pid \(r.pid)")
+        }
+
+        let start = Date()
+        let global = (
+            x: binding.windowFrame.x + x / binding.scale,
+            y: binding.windowFrame.y + y / binding.scale)
+        _ = try reader.clickAt(pid: r.pid, x: global.x, y: global.y)
+
+        settle.sleep(settle.interval)
+        var observed = false
+        var changed: Bool?
+        var invalidated = false
+        do {
+            let after = try readState(pid: r.pid, maxDepth: snap.maxDepth, budgetMs: snap.budgetMs)
+            observed = true
+            changed = after.token != SnapshotToken(token)
+            invalidated = changed == true
+        } catch {
+            observed = false
+        }
+        return CoordinateReport(
+            pid: r.pid, observed: observed, treeChanged: changed,
+            tokenInvalidated: invalidated, noOpSuspected: observed && changed == false,
+            elapsed: Date().timeIntervalSince(start))
     }
 
     /// 标签 → 句柄。标签与句柄同属一个快照，不跨令牌；大小写不敏感。

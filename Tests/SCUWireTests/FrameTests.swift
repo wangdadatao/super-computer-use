@@ -39,6 +39,16 @@ import Testing
         #expect(back == frame)
     }
 
+    @Test func clickAtRequestShape() throws {
+        let frame = try WireFormatTests.json(
+            RequestFrame(id: 9, request: .clickAt(pid: 7, x: 12.5, y: 34.0)))
+        let request = frame["request"] as! [String: Any]
+        #expect(request["type"] as? String == "clickAt")
+        #expect(request["pid"] as? Int == 7)
+        #expect(request["x"] as? Double == 12.5)
+        #expect(request["y"] as? Double == 34.0)
+    }
+
     @Test func failureCarriesStructuredError() throws {
         let err = WireError.versionMismatch(client: 2, server: 1)
         let data = try Frame.encode(ResponseFrame(id: 1, response: .failure(err)))

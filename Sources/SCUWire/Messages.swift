@@ -2,7 +2,7 @@ import Foundation
 
 /// 协议层 ↔ 原生层的协议版本。单调递增整数，两侧必须完全相等（ADR-0012）。
 /// 编译期常量：不是运行时可变状态。
-public let scuNativeProtocolVersion = 7
+public let scuNativeProtocolVersion = 8
 
 /// `dumpTree` 允许的最大深度。超出时原生层拒绝，不做静默截断。
 public let scuMaxTreeDepth = 64
@@ -84,6 +84,16 @@ public struct WireError: Error, Codable, Sendable, Equatable {
     /// 目标不支持所请求的动作。
     public static func unsupportedOperation(_ message: String) -> WireError {
         WireError(code: "unsupported_operation", layer: "protocol", retry: "no", message: message)
+    }
+
+    /// 截图/坐标令牌的窗口几何已变化。
+    public static func staleGeometry(_ message: String) -> WireError {
+        WireError(code: "stale_geometry", layer: "protocol", retry: "after_refresh", message: message)
+    }
+
+    /// 坐标不在截图范围内。
+    public static func invalidCoordinates(_ message: String) -> WireError {
+        WireError(code: "invalid_coordinates", layer: "protocol", retry: "no", message: message)
     }
 
     public static func internalError(_ message: String) -> WireError {
@@ -294,6 +304,8 @@ public enum Request: Sendable, Equatable {
     case setValue(pid: Int32, locator: ElementLocator, value: String)
     /// 截取目标应用的一个窗口，返回 PNG 与坐标映射元数据。
     case captureWindow(pid: Int32)
+    /// 在全局屏幕坐标 (x, y) 投递一次鼠标左键点击。坐标由协议层从截图换算。
+    case clickAt(pid: Int32, x: Double, y: Double)
 }
 
 public enum Response: Sendable, Equatable {
@@ -314,11 +326,11 @@ public enum Response: Sendable, Equatable {
 
 extension Request: Codable {
     private enum Key: String, CodingKey {
-        case type, protocolVersion, pid, maxDepth, budgetMs, locator, action, text, key, value
+        case type, protocolVersion, pid, maxDepth, budgetMs, locator, action, text, key, value, x, y
     }
     private enum Kind: String, Codable {
         case hello, checkPermissions, listApps, dumpTree, performAction, typeText, pressKey, setValue
-        case captureWindow
+        case captureWindow, clickAt
     }
 
     public init(from decoder: any Decoder) throws {
@@ -353,6 +365,11 @@ extension Request: Codable {
                 value: try c.decode(String.self, forKey: .value))
         case .captureWindow:
             self = .captureWindow(pid: try c.decode(Int32.self, forKey: .pid))
+        case .clickAt:
+            self = .clickAt(
+                pid: try c.decode(Int32.self, forKey: .pid),
+                x: try c.decode(Double.self, forKey: .x),
+                y: try c.decode(Double.self, forKey: .y))
         }
     }
 
@@ -392,6 +409,11 @@ extension Request: Codable {
         case .captureWindow(let pid):
             try c.encode(Kind.captureWindow, forKey: .type)
             try c.encode(pid, forKey: .pid)
+        case .clickAt(let pid, let x, let y):
+            try c.encode(Kind.clickAt, forKey: .type)
+            try c.encode(pid, forKey: .pid)
+            try c.encode(x, forKey: .x)
+            try c.encode(y, forKey: .y)
         }
     }
 }

@@ -24,6 +24,10 @@ enum ScreenCapture {
         // CGS_REQUIRE_INIT 断言（真实崩溃，不是可捕获的错误）。
         _ = NSApplication.shared
 
+        // 截图前把窗口带到当前 Space/显示器：否则 SCWindow.frame 可能与
+        // AX/CGWindowList 的屏幕坐标不一致，模型拿到的坐标会点空。
+        try WindowActivation.activate(pid: pid)
+
         let box = CaptureBox()
         let done = DispatchSemaphore(value: 0)
         Task.detached {

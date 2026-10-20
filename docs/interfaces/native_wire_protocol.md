@@ -52,6 +52,7 @@ agent 侧的会话 API 见[协议总览](protocol_overview.md)，两者是不同
 | `pressKey` | `pid: int`、`locator: ElementLocator`、`key: string` | 定位并核对目标，聚焦它，再发送按键或组合键（`cmd+shift+t`）。不认识的键名被拒绝。见 [ADR-0016](../decisions/adr_0016_input_and_keys.md) |
 | `setValue` | `pid: int`、`locator: ElementLocator`、`value: string` | 定位并核对目标，通过无障碍接口直接写 `AXValue`。**元素必须声明该属性可写**，否则返回 `unsupported_operation`；空串是合法值。见 [ADR-0016](../decisions/adr_0016_input_and_keys.md) |
 | `captureWindow` | `pid: int` | 截取该进程的一个窗口。选择 `windowLayer == 0`、on-screen、面积最大的窗口；需要屏幕录制权限，未授予时返回 `system_permission_missing`。见 [ADR-0019](../decisions/adr_0019_window_screenshot.md) |
+| `clickAt` | `pid: int`、`x: number`、`y: number` | 在全局屏幕坐标投递一次真实鼠标左键点击。坐标由协议层从截图换算；原生层会先激活并 raise 目标窗口，失败则不点击。见 [ADR-0020](../decisions/adr_0020_coordinate_click.md) |
 
 ### 应答
 
@@ -102,12 +103,13 @@ agent 侧的会话 API 见[协议总览](protocol_overview.md)，两者是不同
    消息中同时给出双方版本，然后关闭连接。不降级运行。
 4. 版本号是编译期常量，来源见实现中的 `scuNativeProtocolVersion`。
 
-当前版本 **7**。版本 1 → 2：`dumpTree` 增加 `budgetMs`，`tree` 应答增加 `truncated`，
+当前版本 **8**。版本 1 → 2：`dumpTree` 增加 `budgetMs`，`tree` 应答增加 `truncated`，
 `AXNode` 增加 `description`。版本 2 → 3：`AXNode` 增加 `childCount`；新增请求 `performAction`，
 新增应答 `acted`、`located`、`stale`（[ADR-0015](../decisions/adr_0015_handle_resolution_by_path.md)）。
 版本 3 → 4：新增 `typeText` / `pressKey`；4 → 5：新增 `setValue`（[ADR-0016](../decisions/adr_0016_input_and_keys.md)）；
 5 → 6：新增 `captureWindow` 请求与 `windowCapture` 应答（[ADR-0019](../decisions/adr_0019_window_screenshot.md)）；
-6 → 7：`AXNode` 增加 `actions`，用于把支持 `AXPress` 的分组/行纳入标签（[ADR-0018](../decisions/adr_0018_label_addressing.md)）。
+6 → 7：`AXNode` 增加 `actions`，用于把支持 `AXPress` 的分组/行纳入标签（[ADR-0018](../decisions/adr_0018_label_addressing.md)）；
+7 → 8：新增 `clickAt` 请求（[ADR-0020](../decisions/adr_0020_coordinate_click.md)）。
 
 线格式本身的任何不兼容变更（字段改名、`type` 增删、语义变化）都要提升版本号。
 
@@ -172,6 +174,6 @@ agent 侧的会话 API 见[协议总览](protocol_overview.md)，两者是不同
 
 读取应答超时的**映射**（关闭连接、终止子进程、`platform_unavailable`）在 `NativeClient.call` 中实现；测试只覆盖到等待可读时抛出超时，没有覆盖后面的清理路径。
 
-当前协议版本为 **7**（P0 时为 3；v1 依次加入 `typeText` / `pressKey` 与 `setValue`；
-v2 加入 `captureWindow` 与 `AXNode.actions`）。消息目录覆盖当前需要的九种请求；变更通知等随能力增加，
+当前协议版本为 **8**（P0 时为 3；v1 依次加入 `typeText` / `pressKey` 与 `setValue`；
+v2 加入 `captureWindow`、`AXNode.actions` 与 `clickAt`）。消息目录覆盖当前需要的十种请求；变更通知等随能力增加，
 每增加一种都要在此登记并视情况提升版本号。

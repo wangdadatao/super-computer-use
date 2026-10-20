@@ -118,6 +118,15 @@ public struct NativeServer: Sendable {
             } catch {
                 return .failure(.platformUnavailable("截图失败：\(error)"))
             }
+        case .clickAt(let pid, let x, let y):
+            do {
+                try Mouse.clickAt(pid: pid, x: x, y: y)
+                return .acted
+            } catch let e as WireError {
+                return .failure(e)
+            } catch {
+                return .failure(.actionFailed("坐标点击失败：\(error)"))
+            }
         }
 
     /// 把动作结果或错误统一映射为应答，避免三类动作各写一遍。

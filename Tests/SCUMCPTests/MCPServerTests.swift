@@ -21,10 +21,15 @@ final class FakeReader: DesktopReader {
     private(set) var typed: [(pid: Int32, locator: ElementLocator, text: String)] = []
     private(set) var pressed: [(pid: Int32, locator: ElementLocator, key: String)] = []
     private(set) var written: [(pid: Int32, locator: ElementLocator, value: String)] = []
+    private(set) var coordinateClicks: [(pid: Int32, x: Double, y: Double)] = []
     var capture: Result<WindowCapture, WireError> = .failure(.unsupportedOperation("没有配置截图"))
 
     func checkPermissions() throws -> Bool { try permissions.get() }
     func captureWindow(pid: Int32) throws -> WindowCapture { try capture.get() }
+    func clickAt(pid: Int32, x: Double, y: Double) throws -> ActionOutcome {
+        coordinateClicks.append((pid, x, y))
+        return .acted
+    }
     func listApps() throws -> [AppInfo] { try apps.get() }
     func readTree(pid: Int32, maxDepth: Int, budgetMs: Int) throws -> TreeReading {
         treeCalls.append((pid, maxDepth, budgetMs))
@@ -528,6 +533,60 @@ extension JSONValue {
         let read = t.callTool(s, "get_ax_state", ["pid": 42])
         let r = t.callTool(s, "get_screenshot", ["token": .string(token(from: read)), "extra": true])
         #expect(r.isError && r.text.hasPrefix("[invalid_argument]"))
+    }
+
+    @Test func clickAtUsesScreenshotCoordinatesAndRequiresBinding() {
+        let (t, s, reader) = rig(actions: true)
+        reader.tree = .success(TreeReading(
+            root: AXNode(role: "AXWindow", children: [
+                AXNode(role: "AXButton", title: "确定", frame: Rect(x: 20, y: 30, width: 40, height: 20)),
+            ]), truncated: false))
+        reader.capture = .success(WindowCapture(
+            png: Self.makePNG(width: 400, height: 300), width: 400, height: 300, scale: 2,
+            windowFrame: Rect(x: 100, y: 200, width: 200, height: 150)))
+        let read = t.callTool(s, "get_ax_state", ["pid": 42])
+        let tok = token(from: read)
+        let shot = t.callTool(s, "get_screenshot", ["token": .string(tok)])
+        let sid = shot.text.split(separator: "\n").first
+            .flatMap { $0.split(separator: " ").first { $0.hasPrefix("screenshot_id=") } }
+            .map { String($0.dropFirst("screenshot_id=".count)) } ?? ""
+        #expect(!sid.isEmpty)
+
+        let r = t.callTool(s, "click_at", [
+            "token": .string(tok), "screenshot_id": .string(sid), "x": 40, "y": 60,
+        ])
+        #expect(!r.isError)
+        #expect(r.text.contains("截图坐标 (40, 60)"))
+        #expect(reader.coordinateClicks.count == 1)
+        // 图像坐标 → 全局点：(100 + 40/2, 200 + 60/2)
+        #expect(reader.coordinateClicks[0].pid == 42)
+        #expect(reader.coordinateClicks[0].x == 120)
+        #expect(reader.coordinateClicks[0].y == 230)
+    }
+
+    @Test func clickAtRejectsOutOfBoundsCoordinatesAndStaleScreenshots() {
+        let (t, s, reader) = rig(actions: true)
+        reader.capture = .success(WindowCapture(
+            png: Self.makePNG(width: 400, height: 300), width: 400, height: 300, scale: 1,
+            windowFrame: Rect(x: 0, y: 0, width: 400, height: 300)))
+        let read = t.callTool(s, "get_ax_state", ["pid": 42])
+        let tok = token(from: read)
+        let shot = t.callTool(s, "get_screenshot", ["token": .string(tok)])
+        let sid = shot.text.split(separator: "\n").first
+            .flatMap { $0.split(separator: " ").first { $0.hasPrefix("screenshot_id=") } }
+            .map { String($0.dropFirst("screenshot_id=".count)) } ?? ""
+
+        let out = t.callTool(s, "click_at", [
+            "token": .string(tok), "screenshot_id": .string(sid), "x": 400, "y": 10,
+        ])
+        #expect(out.isError && out.text.hasPrefix("[invalid_coordinates]"))
+        #expect(reader.coordinateClicks.isEmpty)
+
+        let stale = t.callTool(s, "click_at", [
+            "token": .string(tok), "screenshot_id": "nope", "x": 1, "y": 1,
+        ])
+        #expect(stale.isError && stale.text.hasPrefix("[stale_geometry]"))
+        #expect(reader.coordinateClicks.isEmpty)
     }
 
     @Test func inputToolsAreExposedWithTruthfulAnnotations() {

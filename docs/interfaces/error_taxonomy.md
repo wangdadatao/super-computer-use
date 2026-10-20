@@ -71,7 +71,8 @@ interface ScuError {
 | code | layer | retry | 含义 |
 | --- | --- | --- | --- |
 | `stale_snapshot` | protocol | `after_refresh` | 快照令牌失效，树已变化 |
-| `stale_geometry` | protocol | `after_refresh` | 坐标令牌失效，窗口几何已变化 |
+| `stale_geometry` | protocol | `after_refresh` | 坐标令牌/截图失效，窗口几何已变化 |
+| `invalid_coordinates` | protocol | `no` | 坐标不在截图范围内；v2 新增 |
 | `target_switched` | protocol | `after_rebind` | 令牌属于已解绑的目标 |
 | `target_missing` | protocol | `no` | 目标不存在或已退出 |
 | `element_gone` | protocol | `after_refresh` | 引用在新快照中无法匹配 |
@@ -82,15 +83,16 @@ interface ScuError {
 | `authorization_timeout` | policy | `after_user_action` | 授权提示超时未响应 |
 | `confirmation_denied` | policy | `no` | 用户在审批提示中明确拒绝 |
 | `confirmation_timeout` | policy | `after_user_action` | 审批提示超时未响应 |
-| `system_permission_missing` | platform | `after_user_action` | 系统权限未授予（辅助功能；屏幕录制是设计目标，P0 尚未检测） |
+| `system_permission_missing` | platform | `after_user_action` | 系统权限未授予（辅助功能或屏幕录制） |
 | `platform_unavailable` | platform | `immediate` | 原生层不可达或崩溃 |
 | `action_failed` | platform | `immediate` | 目标仍在、定位核对通过，但平台拒绝或未能完成动作（如 `AXPress` 返回 `cannotComplete`）。P0 新增，见 [ADR-0015](../decisions/adr_0015_handle_resolution_by_path.md) |
 | `protocol_version_mismatch` | boundary | `no` | 两侧协议版本不一致 |
 | `internal_error` | boundary | `immediate` | 未归类的内部故障 |
 
-**P0 实际发出的码**：`stale_snapshot`、`target_switched`、`element_gone`、`unsupported_operation`、`policy_denied`、
-`system_permission_missing`、`target_missing`、`platform_unavailable`、`action_failed`、`protocol_version_mismatch`、`internal_error`。
-`stale_geometry`、`ambiguous_reference`、`authorization_*`、`confirmation_*` 是设计目标，尚无构造它们的代码（坐标令牌、目标歧义、审批都未实现）。
+**当前实际发出的码**：`stale_snapshot`、`stale_geometry`、`invalid_coordinates`、`target_switched`、`element_gone`、
+`unsupported_operation`、`policy_denied`、`system_permission_missing`、`target_missing`、`platform_unavailable`、
+`action_failed`、`protocol_version_mismatch`、`internal_error`。
+`ambiguous_reference`、`authorization_*`、`confirmation_*` 是设计目标，尚无构造它们的代码（目标歧义、审批未实现）。
 
 **接入层（MCP）自己的码**不经原生层，没有 `layer` 与 `retry`，工具文本里不带 `（retry=…）`：
 

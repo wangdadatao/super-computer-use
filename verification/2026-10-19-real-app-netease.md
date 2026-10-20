@@ -68,7 +68,7 @@
 应用以同样参数重启（pid `7554`）后，验证 [ADR-0018](../docs/decisions/adr_0018_label_addressing.md) 的标签寻址：
 
 - `get_ax_state` 输出 457 个元素；搜索按钮带 `[a] [AXButton#118] "search" frame=(-1489,72,42,28)`，
-  搜索框带 `[b] [AXTextField#132] frame=(-1447,71,216,30)`（窗口在副屏，x 为负）。
+  搜索框带 `[b] [AXTextField#132] frame=(-1447,71,216,30)`（当时窗口不在当前 Space，x 为负）。
 - `type_text(token, label="b", text="test")`：`delivered=true observed=true converged=true treeChanged=true
   targetChanged=true`，0.7 秒；重读搜索框出现 `value="test"`，并出现 `Test/TEST/test` 搜索建议。
 - `set_value(token, label="b", value="")`：搜索框被清空，恢复为空。
@@ -97,18 +97,32 @@ delivered=true observed=true converged=true treeChanged=false targetChanged=fals
 ```
 
 界面没有切换，说明 **`AXPress` 对这些网页侧栏是空操作**。标签解决了“选目标”，
-没有解决“让应用响应”；这类控件需要真实鼠标坐标点击（`click_at`，尚未实现）。
+没有解决“让应用响应”；这类控件需要真实鼠标坐标点击；`click_at` 已由 [ADR-0020](../docs/decisions/adr_0020_coordinate_click.md) 实现，见下一节。
 不要对 `noOpSuspected` 反复重试。
 
 同一轮截图里有 63 个标签。我们收紧了规则：按钮/输入框总是标；包含控件的容器不重复标；
 非角色的 `AXPress` 分组只标最外层。仍然密集，下一步需要 `max_labels` 或按区域筛选。
+
+## 追加：坐标点击与窗口原点（2026-10-20）
+
+在左侧栏 `AXPress` 空操作后，实现 `click_at` 并验证：
+
+1. 第一次用截图坐标 (160,224) 点击「精选」，`treeChanged=true`，但页面没有切换。
+   原因不是点击没投递，而是窗口当时不在当前 Space：截图元数据 `window=(-1769,36,...)`，
+   AX/CGWindowList 的真实窗口位置是 `(353,199,...)`。按旧原点换算出的全局点在屏幕外。
+2. 改为**截图前与点击前都激活并 raise 目标窗口**后，截图元数据变为 `window=(353,199,1057,752)`，
+   同一图像坐标 (160,224) 点击成功：左侧栏切到「精选」，`treeChanged=true`。
+3. 再用同一窗口截图坐标 (160,163) 点击「推荐」，切回推荐，`treeChanged=true`。
+
+同时确认：`CGEvent.postToPid` 的鼠标事件对网易云侧栏不生效；全局鼠标事件（会移动光标）生效。
+代价是抢前台与移动光标；点击前若目标不能成为 frontmost，会取消而不是盲点。
 
 ## 追加：窗口截图与标签叠加（2026-10-20）
 
 屏幕录制权限在宿主上授予后，验证 [ADR-0019](../docs/decisions/adr_0019_window_screenshot.md)：
 
 - `get_screenshot(token)` 返回 `screenshot_id=g4eek2l.1`，图像 `1600×1138`，`scale=1.514`，
-  `window=(-1769,36,1057,752)`；窗口在副屏，原点为负。
+  `window=(-1769,36,1057,752)`；这是激活前截图的元数据，窗口当时不在当前 Space，原点为负。
 - 截图只含网易云窗口，不含整屏；搜索框附近能看到 `[a]`/`[b]` 徽标，卡片与播放器上也有标签。
 - 图像与文本元素表的标签一致；文本清单仍是权威。
 - 截图只写入 `/tmp` 用于本次核对，**没有入库**：画面含用户的音乐库与推荐内容，不适合作为长期证据。

@@ -87,7 +87,7 @@ P0 是一条**最小竖切**：从读取真实应用的无障碍树，到身份�
 | 契约 | P0 实现 | 补齐时机 |
 | --- | --- | --- |
 | [`ScuError`](../interfaces/error_taxonomy.md#error_structure) | 只有 `code`、`layer`、`retry`、`message`；无 `details`、`candidates` | 出现需要它们的错误（如目标歧义）时 |
-| [原生层线协议](../interfaces/native_wire_protocol.md)消息目录 | P0 时为 5 种请求（握手、权限、应用列表、读树、`performAction`；协议版本 3）；v1 加了 `typeText` / `pressKey` / `setValue`，版本 5；v2 加了 `captureWindow`，版本 6 | 随 P0 动作与令牌工作增加 |
+| [原生层线协议](../interfaces/native_wire_protocol.md)消息目录 | P0 时为 5 种请求（握手、权限、应用列表、读树、`performAction`；协议版本 3）；v1 加了 `typeText` / `pressKey` / `setValue`，版本 5；v2 加了 `captureWindow`、`AXNode.actions`、`clickAt`，版本 8 | 随 P0 动作与令牌工作增加 |
 | 未知字段 | 解码时被忽略，版本相等规则兜底 | 待定 |
 
 ## 出口门槛

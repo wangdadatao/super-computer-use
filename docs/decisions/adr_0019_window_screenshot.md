@@ -37,6 +37,8 @@ WindowCapture {
 ### 3. `get_screenshot(token)` 绑定快照
 
 - 只接受 `get_ax_state` 签发的令牌；令牌失效则拒绝；
+- **截图前激活并 raise 目标窗口**：窗口在别的 Space/显示器时，`SCWindow.frame` 可能与真实屏幕坐标不一致；
+  激活后截图，坐标才可用于点击（见 [ADR-0020](adr_0020_coordinate_click.md)）；
 - 从快照里取全部标签，按窗口裁剪后叠加；
 - 返回 `screenshot_id`，绑定 `token + windowFrame + scale`，供后续坐标动作判断过期；
 - 文本元素表仍是权威：徽标太小、重叠、被裁掉时，模型应按标签选择，不靠图猜。
@@ -64,15 +66,15 @@ WindowCapture {
 **接受了徽标可能遮挡内容。** 标签画在元素左上角；密集 UI 会重叠。文本清单是兜底，
 不把“图上没看清”当成“元素不存在”。
 
-**没有做坐标点击。** `screenshot_id` 已经为它留好绑定；`click_at` 是下一步，
-需要单独决定鼠标事件投递方式（postToPid / 真实光标 / 虚拟光标）。
+**坐标点击另见 [ADR-0020](adr_0020_coordinate_click.md)。** 本 ADR 只提供截图与绑定；
+真实鼠标投递、激活窗口与 `click_at` 的语义由 ADR-0020 决定。
 
 ## 后果
 
 - 线协议升到 v6：新增 `captureWindow` 请求与 `windowCapture` 应答；
 - MCP 新增只读工具 `get_screenshot`，返回文本元数据 + PNG 图像内容；
 - 新增 CoreGraphics/CoreText 叠加，避免 NSImage 在无 GUI 会话里的 TIFF 失败；
-- 后续 `click_at` 复用 `screenshot_id` 与坐标换算；
+- `click_at` 复用 `screenshot_id` 与坐标换算（ADR-0020）；
 - 截图权限、隐私与窗口选择写入已知限制。
 
 ## 相关文档
