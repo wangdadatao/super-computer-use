@@ -161,6 +161,7 @@ drag(token, screenshot_id, from_x, from_y, to_x, to_y, duration_ms=400)
 
 **`press_key`** 的键名用 `+` 分隔，修饰键顺序无关：`Return`、`Tab`、`esc`、`cmd+c`、`shift+left`。
 同样会先 raise 目标窗口、聚焦目标元素，再发键。输入与按键都会切换前台，`set_value` 不会。
+如果元素已经是 first responder，不会重复设焦点，所以 `cmd+a` 后紧跟 `type_text` 会保留全选并替换选区。
 快捷键要发给能成为 first responder 的内容元素（列表、文本框、画布），不要发给 `AXWindow` 根：
 对窗口发快捷键可能只改变焦点，不触发应用命令（访达新建文件夹就是这样失败的）。
 

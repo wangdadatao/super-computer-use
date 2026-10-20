@@ -33,7 +33,7 @@ extension AXBackend {
             return .stale(detail)
         case .found(let element):
             prepareKeyboardTarget(element, pid: pid)
-            try focus(element)
+            try focus(element, pid: pid)
             let source = CGEventSource(stateID: .combinedSessionState)
             for character in text {
                 switch character {
@@ -60,7 +60,7 @@ extension AXBackend {
             return .stale(detail)
         case .found(let element):
             prepareKeyboardTarget(element, pid: pid)
-            try focus(element)
+            try focus(element, pid: pid)
             postKey(combo, pid: pid, source: CGEventSource(stateID: .combinedSessionState))
             return .acted
         }
@@ -146,9 +146,23 @@ extension AXBackend {
         return nil
     }
 
+    /// 应用当前的 first responder。用于避免对已聚焦元素重复设焦点（会折叠选区）。
+    static func focusedElement(pid: Int32) -> AXUIElement? {
+        let app = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(app, messagingTimeout)
+        guard let value = copy(app, kAXFocusedUIElementAttribute),
+            CFGetTypeID(value) == AXUIElementGetTypeID()
+        else { return nil }
+        return value as! AXUIElement
+    }
+
     /// 把焦点设到目标元素。焦点是异步生效的，等它被读回为 true 最多约 300 毫秒；
     /// 元素不报告焦点状态时不视为失败（部分控件不支持 AXFocused 的读取）。
-    static func focus(_ element: AXUIElement) throws {
+    static func focus(_ element: AXUIElement, pid: Int32) throws {
+        // 已是焦点时不要重复 SetAttribute：TextEdit 等控件会在重设焦点时把选区折叠成插入点，
+        // 从而破坏前一个 press_key(cmd+a) 建立的全选状态。
+        // 不能用元素的 AXFocused 判断：TextEdit 的 AXTextArea 在成为 first responder 后仍可能报 false。
+        if let focused = focusedElement(pid: pid), CFEqual(focused, element) { return }
         let status = AXUIElementSetAttributeValue(element, kAXFocusedAttribute as CFString, kCFBooleanTrue)
         switch status {
         case .success:

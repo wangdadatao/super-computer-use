@@ -167,7 +167,8 @@ effect: delivered=true observed=true converged=true treeChanged=false targetChan
 两者都要求**显式的目标元素**（`token`，加 `handle` 或 `label`），顺序与 `click` 相同：
 策略 → 令牌 → 原生层沿路径核对 → 聚焦该元素 → 投递键盘事件 → 事后观察。
 
-- **聚焦**：先 raise 元素所在的窗口，必要时激活应用；再设置元素的 `AXFocused`，最多等约 300 毫秒被读回为 true。
+- **聚焦**：先 raise 元素所在的窗口，必要时激活应用；元素已是 first responder 时不重复设焦点（避免折叠选区），
+  否则设置 `AXFocused` 并等待读回。
   不接受"当前的焦点元素"这种隐式目标，因为写错位置可能触发搜索、发送或提交，代价不可逆。
 - **投递**：`CGEvent` 键盘事件直接投递到目标进程（`postToPid`）。事件进的是进程，
   真正接收文字的是 key window 的 first responder，所以多窗口下必须 raise 目标窗口；

@@ -242,7 +242,7 @@ verification/
 窗口截图与标签叠加（[ADR-0019](../decisions/adr_0019_window_screenshot.md)）已在网易云上验证（1600×1138、负窗口原点）；
 网易云左侧栏能标出 `AXGroup`，但 `AXPress` 是空操作（`noOpSuspected=true`）；`click_at` 已能在该侧栏从推荐切到精选（截图 diff 约 43%）；
 `scroll_at` 已在推荐页上下滚动（diff 约 0.387）；`drag` 只有单元/MCP 测试，真实应用未验证；`launch_app` 已在计算器冷启动与网易云（已运行）上验证；连接级应用允许列表有单元/MCP 测试，读取门禁已在网易云/访达上验证；多窗口目标与 `get_ax_state(window)` 绑定有单元/MCP 测试；`list_windows` 与窗口根已在 TextEdit 两个文档窗口上实测（标题/frame、根为 `AXWindow`、错误标题返回 `window_not_found`）；
-真实任务第一轮（[2026-10-20](../../verification/2026-10-20-real-tasks.md)）覆盖 6 个任务：TextEdit 编辑/保存/多窗口隔离、计算器 7×8、Edge 本地页面链接、访达新建文件夹（部分）与 TextEdit 撤销（失败）；发现并修复了“输入写进另一个窗口”的 key window 问题，输入法与撤销仍不合格。
+真实任务第一轮（[2026-10-20](../../verification/2026-10-20-real-tasks.md)）覆盖 6 个任务：TextEdit 编辑/保存/多窗口隔离、计算器 7×8、Edge 本地页面链接、访达新建文件夹（部分）与 TextEdit 全选/替换/撤销；发现并修复了“输入写进另一个窗口”的 key window 问题与“重设焦点折叠选区”问题，输入法残留仍是风险。
 访达内联重命名仍无法定位（AX 树没有重命名输入框），先记为缺口，不引入隐式焦点写入；
 坐标动作前的指示环靠人工观察，不能截图验证；
 其他真实应用、多窗口选择与窗口移动后的截图过期判断尚未验证。

@@ -51,7 +51,7 @@ K4 正式验证（[2026-10-18](2026-10-18-identity-k4.md)，不成立）、令�
 真实应用端到端（[2026-10-19](2026-10-19-real-app-netease.md)，网易云 CEF）、审批触发
 （[2026-10-20](2026-10-20-approval-triggers.md)，Grok/Codex 静态分析）、窗口列表与窗口根
 （[2026-10-20](2026-10-20-window-root.md)，TextEdit 两窗口）、真实任务第一轮
-（[2026-10-20](2026-10-20-real-tasks.md)，6 个任务：4 个通过、1 个部分通过、1 个失败）。
+（[2026-10-20](2026-10-20-real-tasks.md)，6 个任务：5 个通过、1 个部分通过）。
 指示层隔离（需要屏幕录制）等 P0 之外的假设仍未验证。
 门槛见 [ADR-0013](../docs/decisions/adr_0013_p0_vertical_slice.md)；
 权限状态见 [docs/operations/permissions.md](../docs/operations/permissions.md)。

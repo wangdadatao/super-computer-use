@@ -32,7 +32,8 @@ v1 第一项实现两个动作：
 1. 策略检查（先于令牌）
 2. 令牌与句柄解析（会话层）
 3. 原生层沿路径与核对键校验（ADR-0015）
-4. raise 元素所在的窗口并激活应用（见 §3），设置该元素的 `AXFocused`，等它被读回为 true（最多约 300 毫秒）
+4. raise 元素所在的窗口并激活应用（见 §3）；如果元素已经是应用的 first responder，**不重复设置焦点**
+   （重设会把 TextEdit 等控件的选区折叠成插入点）；否则设置 `AXFocused` 并等待读回
 5. 投递键盘事件
 
 **不接受隐式的"当前焦点"**。写错位置可能触发搜索、发送消息或提交表单，代价不可逆；
@@ -110,6 +111,20 @@ B 的值被改写——路径核对与 `AXFocused` 都不足以改变 key window
 证据见 [窗口根实测](../../verification/2026-10-20-window-root.md#追加多窗口输入修正)。
 
 协议不变；`set_value` 不经过这条路径，仍可在后台写入。
+
+## 追加记录（2026-10-20，选区委缩）
+
+修复多窗口输入后，TextEdit 的“全选 → 替换”仍然不稳定：`cmd+a` 后 `type_text` 有时把文字插到开头，
+而不是替换选区。原因是 `typeText` 每次都对目标重设 `AXFocused`；即使元素已经是 first responder，
+重复设置也会把 TextEdit 的选区折叠成插入点。
+
+修正：读应用的 `kAXFocusedUIElementAttribute`，与目标元素相同就跳过设焦点；
+焦点判断不再依赖元素自己的 `AXFocused`（TextEdit 的 `AXTextArea` 会成为 first responder 但仍可能报 false）。
+修正后 `cmd+a` + `type_text("changed\n")` 得到 `Changed\n`；两次撤销回到 `original\n`
+（第一次撤销只撤掉自动大写，第二次撤掉插入；这是 TextEdit 的撤销栈，不是 SCU 错误）。
+
+同轮任务里曾看到 `cmd+a` 前出现中文“个护”。在干净文档上无法复现；按现有的 pinyin 键盘布局测试，
+按键产生的是 `ge hu`，`cmd+a` 不会提交成中文。暂按宿主输入法残留状态处理，不据此改键事件实现。
 
 ## 追加记录（2026-10-19，设值）
 
