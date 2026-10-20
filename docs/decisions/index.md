@@ -34,7 +34,8 @@
 - [ADR-0023 坐标动作前的可见指示环](adr_0023_indicator.md)：120ms 圆环、窗口属性与不进入截图。读取时机：实现指示层、坐标动作反馈时。
 - [ADR-0024 连接级应用允许列表](adr_0024_app_authorization.md)：一个 `scu mcp` 进程一个作用域、启动参数与文件、读取/动作前置检查。读取时机：接入新宿主、配置应用授权、处理 `app_not_authorized` 时。
 - [ADR-0025 多窗口：截图与激活使用同一个目标窗口](adr_0025_window_target.md)：最大非最小化窗口、frame 匹配、失败关闭。读取时机：修改截图/坐标动作的窗口选择、处理多窗口应用时。
-- [ADR-0026 窗口选择：绑定截图与坐标动作](adr_0026_window_selection.md)：`get_ax_state(window)`、令牌绑定、元素表仍为整个应用。读取时机：多窗口、截图目标、窗口标题变化时。
+- [ADR-0026 窗口选择：绑定截图与坐标动作](adr_0026_window_selection.md)：`get_ax_state(window)`、令牌绑定；元素表仍是整个应用的限制已由 ADR-0027 补齐。读取时机：多窗口、截图目标、窗口标题变化时。
+- [ADR-0027 窗口列表与窗口根定位](adr_0027_window_root_locator.md)：`list_windows`、`get_ax_state(window)` 以窗口为根、元素动作携带窗口标题。读取时机：多窗口任务、窗口改名、显式选择窗口时。
 
 ### 范围与安全
 

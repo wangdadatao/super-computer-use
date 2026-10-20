@@ -18,11 +18,22 @@ public struct TreeReading: Equatable, Sendable {
 public protocol DesktopReader {
     func checkPermissions() throws -> Bool
     func listApps() throws -> [AppInfo]
-    func readTree(pid: Int32, maxDepth: Int, budgetMs: Int) throws -> TreeReading
-    func performAction(pid: Int32, locator: ElementLocator, action: ActionKind) throws -> ActionOutcome
-    func typeText(pid: Int32, locator: ElementLocator, text: String) throws -> ActionOutcome
-    func pressKey(pid: Int32, locator: ElementLocator, key: String) throws -> ActionOutcome
-    func setValue(pid: Int32, locator: ElementLocator, value: String) throws -> ActionOutcome
+    func listWindows(pid: Int32) throws -> [WindowInfo]
+    func readTree(
+        pid: Int32, windowTitle: String?, maxDepth: Int, budgetMs: Int
+    ) throws -> TreeReading
+    func performAction(
+        pid: Int32, windowTitle: String?, locator: ElementLocator, action: ActionKind
+    ) throws -> ActionOutcome
+    func typeText(
+        pid: Int32, windowTitle: String?, locator: ElementLocator, text: String
+    ) throws -> ActionOutcome
+    func pressKey(
+        pid: Int32, windowTitle: String?, locator: ElementLocator, key: String
+    ) throws -> ActionOutcome
+    func setValue(
+        pid: Int32, windowTitle: String?, locator: ElementLocator, value: String
+    ) throws -> ActionOutcome
     func captureWindow(pid: Int32, windowTitle: String?) throws -> WindowCapture
     func clickAt(pid: Int32, windowTitle: String?, x: Double, y: Double) throws -> ActionOutcome
     func scrollAt(
@@ -35,16 +46,27 @@ public protocol DesktopReader {
 }
 
 extension DesktopReader {
+    /// 测试替身默认不支持窗口列表；真实读取器实现它。
+    public func listWindows(pid: Int32) throws -> [WindowInfo] {
+        throw WireError.unsupportedOperation("这个读取器不支持窗口列表")
+    }
+
     /// 测试替身默认不支持输入；真实读取器实现它。
-    public func typeText(pid: Int32, locator: ElementLocator, text: String) throws -> ActionOutcome {
+    public func typeText(
+        pid: Int32, windowTitle: String?, locator: ElementLocator, text: String
+    ) throws -> ActionOutcome {
         throw WireError.unsupportedOperation("这个读取器不支持逐字输入")
     }
 
-    public func pressKey(pid: Int32, locator: ElementLocator, key: String) throws -> ActionOutcome {
+    public func pressKey(
+        pid: Int32, windowTitle: String?, locator: ElementLocator, key: String
+    ) throws -> ActionOutcome {
         throw WireError.unsupportedOperation("这个读取器不支持按键")
     }
 
-    public func setValue(pid: Int32, locator: ElementLocator, value: String) throws -> ActionOutcome {
+    public func setValue(
+        pid: Int32, windowTitle: String?, locator: ElementLocator, value: String
+    ) throws -> ActionOutcome {
         throw WireError.unsupportedOperation("这个读取器不支持设值")
     }
 
@@ -136,11 +158,22 @@ public final class NativeSession: DesktopReader {
         }
     }
 
-    public func readTree(pid: Int32, maxDepth: Int, budgetMs: Int) throws -> TreeReading {
+    public func listWindows(pid: Int32) throws -> [WindowInfo] {
+        try withClient { c in
+            guard case .windows(let windows) = try c.call(.listWindows(pid: pid)) else {
+                throw WireError.internalError("窗口列表的应答类型错误")
+            }
+            return windows
+        }
+    }
+
+    public func readTree(
+        pid: Int32, windowTitle: String?, maxDepth: Int, budgetMs: Int
+    ) throws -> TreeReading {
         try withClient { c in
             // 客户端等待上限 = 时间预算 + 余量（单次 AX 调用最多再耗 2 秒，加上编码与传输）。
             guard case .tree(let root, let truncated) = try c.call(
-                .dumpTree(pid: pid, maxDepth: maxDepth, budgetMs: budgetMs),
+                .dumpTree(pid: pid, windowTitle: windowTitle, maxDepth: maxDepth, budgetMs: budgetMs),
                 timeoutMs: Int32(budgetMs + 10_000))
             else {
                 throw WireError.internalError("读树的应答类型错误")
@@ -149,9 +182,11 @@ public final class NativeSession: DesktopReader {
         }
     }
 
-    public func performAction(pid: Int32, locator: ElementLocator, action: ActionKind) throws -> ActionOutcome {
+    public func performAction(
+        pid: Int32, windowTitle: String?, locator: ElementLocator, action: ActionKind
+    ) throws -> ActionOutcome {
         try withClient { c in
-            switch try c.call(.performAction(pid: pid, locator: locator, action: action), timeoutMs: 30_000) {
+            switch try c.call(.performAction(pid: pid, windowTitle: windowTitle, locator: locator, action: action), timeoutMs: 30_000) {
             case .acted: return .acted
             case .located: return .located
             case .stale(let d): return .stale(d)
@@ -160,9 +195,11 @@ public final class NativeSession: DesktopReader {
         }
     }
 
-    public func typeText(pid: Int32, locator: ElementLocator, text: String) throws -> ActionOutcome {
+    public func typeText(
+        pid: Int32, windowTitle: String?, locator: ElementLocator, text: String
+    ) throws -> ActionOutcome {
         try withClient { c in
-            switch try c.call(.typeText(pid: pid, locator: locator, text: text), timeoutMs: 30_000) {
+            switch try c.call(.typeText(pid: pid, windowTitle: windowTitle, locator: locator, text: text), timeoutMs: 30_000) {
             case .acted: return .acted
             case .stale(let d): return .stale(d)
             default: throw WireError.internalError("输入应答类型错误")
@@ -170,9 +207,11 @@ public final class NativeSession: DesktopReader {
         }
     }
 
-    public func pressKey(pid: Int32, locator: ElementLocator, key: String) throws -> ActionOutcome {
+    public func pressKey(
+        pid: Int32, windowTitle: String?, locator: ElementLocator, key: String
+    ) throws -> ActionOutcome {
         try withClient { c in
-            switch try c.call(.pressKey(pid: pid, locator: locator, key: key), timeoutMs: 30_000) {
+            switch try c.call(.pressKey(pid: pid, windowTitle: windowTitle, locator: locator, key: key), timeoutMs: 30_000) {
             case .acted: return .acted
             case .stale(let d): return .stale(d)
             default: throw WireError.internalError("按键应答类型错误")
@@ -180,9 +219,11 @@ public final class NativeSession: DesktopReader {
         }
     }
 
-    public func setValue(pid: Int32, locator: ElementLocator, value: String) throws -> ActionOutcome {
+    public func setValue(
+        pid: Int32, windowTitle: String?, locator: ElementLocator, value: String
+    ) throws -> ActionOutcome {
         try withClient { c in
-            switch try c.call(.setValue(pid: pid, locator: locator, value: value), timeoutMs: 30_000) {
+            switch try c.call(.setValue(pid: pid, windowTitle: windowTitle, locator: locator, value: value), timeoutMs: 30_000) {
             case .acted: return .acted
             case .stale(let d): return .stale(d)
             default: throw WireError.internalError("设值应答类型错误")

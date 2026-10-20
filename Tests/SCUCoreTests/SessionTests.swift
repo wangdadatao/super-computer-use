@@ -10,13 +10,19 @@ final class ScriptedReader: DesktopReader {
     /// 非空时，每次读树按顺序取一项，取完后一直返回最后一项；`Error` 项让那次读取失败。
     var script: [Result<TreeReading, WireError>] = []
     private(set) var readCount = 0
+    private(set) var readWindowTitles: [String?] = []
     func readCountReset() { readCount = 0 }
     var apps: Result<[AppInfo], WireError> = .success([AppInfo(pid: 10, name: "演示", bundleId: "com.example.demo")])
     private(set) var listAppsCalls = 0
+    var windows: Result<[WindowInfo], WireError> = .success([
+        WindowInfo(title: "主", frame: Rect(x: 0, y: 0, width: 100, height: 80))
+    ])
+    private(set) var listWindowsCalls: [Int32] = []
     private(set) var captureTitles: [String?] = []
     var capture: Result<WindowCapture, WireError> = .failure(.unsupportedOperation("没有配置截图"))
     var action: Result<ActionOutcome, WireError> = .success(.acted)
     private(set) var actionCalls: [(pid: Int32, locator: ElementLocator, action: ActionKind)] = []
+    private(set) var actionWindowTitles: [String?] = []
     private(set) var typed: [(pid: Int32, locator: ElementLocator, text: String)] = []
     private(set) var pressed: [(pid: Int32, locator: ElementLocator, key: String)] = []
     private(set) var written: [(pid: Int32, locator: ElementLocator, value: String)] = []
@@ -28,7 +34,14 @@ final class ScriptedReader: DesktopReader {
         listAppsCalls += 1
         return try apps.get()
     }
-    func readTree(pid: Int32, maxDepth: Int, budgetMs: Int) throws -> TreeReading {
+    func listWindows(pid: Int32) throws -> [WindowInfo] {
+        listWindowsCalls.append(pid)
+        return try windows.get()
+    }
+    func readTree(
+        pid: Int32, windowTitle: String?, maxDepth: Int, budgetMs: Int
+    ) throws -> TreeReading {
+        readWindowTitles.append(windowTitle)
         defer { readCount += 1 }
         guard !script.isEmpty else { return tree }
         return try script[min(readCount, script.count - 1)].get()
@@ -37,26 +50,38 @@ final class ScriptedReader: DesktopReader {
         captureTitles.append(windowTitle)
         return try capture.get()
     }
-    func performAction(pid: Int32, locator: ElementLocator, action kind: ActionKind) throws -> ActionOutcome {
+    func performAction(
+        pid: Int32, windowTitle: String?, locator: ElementLocator, action kind: ActionKind
+    ) throws -> ActionOutcome {
         actionCalls.append((pid, locator, kind))
+        actionWindowTitles.append(windowTitle)
         onAction?()
         return try action.get()
     }
 
-    func typeText(pid: Int32, locator: ElementLocator, text: String) throws -> ActionOutcome {
+    func typeText(
+        pid: Int32, windowTitle: String?, locator: ElementLocator, text: String
+    ) throws -> ActionOutcome {
         typed.append((pid, locator, text))
+        actionWindowTitles.append(windowTitle)
         onAction?()
         return try action.get()
     }
 
-    func pressKey(pid: Int32, locator: ElementLocator, key: String) throws -> ActionOutcome {
+    func pressKey(
+        pid: Int32, windowTitle: String?, locator: ElementLocator, key: String
+    ) throws -> ActionOutcome {
         pressed.append((pid, locator, key))
+        actionWindowTitles.append(windowTitle)
         onAction?()
         return try action.get()
     }
 
-    func setValue(pid: Int32, locator: ElementLocator, value: String) throws -> ActionOutcome {
+    func setValue(
+        pid: Int32, windowTitle: String?, locator: ElementLocator, value: String
+    ) throws -> ActionOutcome {
         written.append((pid, locator, value))
+        actionWindowTitles.append(windowTitle)
         onAction?()
         return try action.get()
     }
@@ -233,8 +258,13 @@ final class FakeLauncher: AppLauncher, @unchecked Sendable {
         #expect(a.token == b.token && b.reused)
         #expect(a.windowTitle == "A")
 
+        #expect(r.readWindowTitles == ["A", "A"])
+
         let c = try s.readState(pid: 10, maxDepth: 12, budgetMs: 1000, windowTitle: "B")
         #expect(c.token != a.token && !c.reused)
+        #expect(r.readWindowTitles == ["A", "A", "B"])
+        _ = try s.click(token: c.token.value, handle: 3)
+        #expect(r.actionWindowTitles == ["B"])
         expectError("stale_snapshot", retry: "after_refresh") {
             _ = try s.resolve(token: a.token.value, handle: 3)
         }
@@ -255,6 +285,31 @@ final class FakeLauncher: AppLauncher, @unchecked Sendable {
             _ = try s.readState(pid: 10, maxDepth: 12, budgetMs: 1000)
         }
         #expect(r.readCount == 0)
+    }
+
+    @Test func listWindowsRespectsTheAllowlistBeforeEnumerating() throws {
+        let r = ScriptedReader()
+        r.apps = .success([AppInfo(pid: 10, name: "演示", bundleId: "com.example.demo")])
+        let s = DesktopSession(
+            reader: r,
+            appAuthorization: AppAuthorization(mode: .allowlist, bundleIds: ["com.other"]))
+        expectError("app_not_authorized", retry: "no") {
+            _ = try s.listWindows(pid: 10)
+        }
+        #expect(r.listWindowsCalls.isEmpty)
+    }
+
+    @Test func listWindowsReturnsWindowTitlesAndFrames() throws {
+        let r = ScriptedReader()
+        r.apps = .success([AppInfo(pid: 10, name: "演示", bundleId: "com.example.demo")])
+        let s = DesktopSession(
+            reader: r,
+            appAuthorization: AppAuthorization(mode: .allowlist, bundleIds: ["com.example.demo"]))
+        let windows = try s.listWindows(pid: 10)
+        #expect(windows == [
+            WindowInfo(title: "主", frame: Rect(x: 0, y: 0, width: 100, height: 80))
+        ])
+        #expect(r.listWindowsCalls == [10])
     }
 
     @Test func allowlistMatchesBundleIdsCaseInsensitively() throws {

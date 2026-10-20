@@ -8,6 +8,7 @@ import SCUWire
 enum ScuTool: String, CaseIterable {
     case checkPermissions = "check_permissions"
     case listApps = "list_apps"
+    case listWindows = "list_windows"
     case getAXState = "get_ax_state"
     case getScreenshot = "get_screenshot"
     case launchApp = "launch_app"
@@ -20,7 +21,8 @@ enum ScuTool: String, CaseIterable {
     case setValue = "set_value"
 
     var isAction: Bool {
-        self != .checkPermissions && self != .listApps && self != .getAXState && self != .getScreenshot
+        self != .checkPermissions && self != .listApps && self != .listWindows
+            && self != .getAXState && self != .getScreenshot
     }
 
     static func available(actions: Bool) -> [ScuTool] {
@@ -31,6 +33,7 @@ enum ScuTool: String, CaseIterable {
         switch self {
         case .checkPermissions: return "检查辅助功能权限"
         case .listApps: return "列出应用"
+        case .listWindows: return "列出窗口"
         case .getAXState: return "读取无障碍树"
         case .getScreenshot: return "截取窗口并叠加标签"
         case .launchApp: return "启动应用"
@@ -55,6 +58,12 @@ enum ScuTool: String, CaseIterable {
             return """
                 列出可读取的正在运行的应用，每行 pid、名称、bundle id（制表符分隔）。只读。\
                 get_ax_state 需要这里的 pid。
+                """
+        case .listWindows:
+            return """
+                列出指定应用可枚举的窗口，每行标题与 frame（左上角原点）。只读。\
+                标题是 get_ax_state 的 window、get_screenshot 的窗口绑定与坐标动作使用的标识；\
+                同名窗口只选第一个；没有标题的窗口显示为 -。先用 list_apps 取得 pid。
                 """
         case .getScreenshot:
             return """
@@ -135,7 +144,8 @@ enum ScuTool: String, CaseIterable {
         case .getAXState:
             return """
                 读取指定应用的无障碍树，返回文本化元素表。只读，不会操作应用。\
-                可用 window 指定要绑定/截图的窗口标题；元素表仍是整个应用，window 只影响截图与坐标动作。\
+                可用 window 指定窗口标题：此时元素表以该窗口为根读取，截图与坐标动作也绑定该窗口。\
+                窗口标题来自 list_windows；找不到会返回 window_not_found。\
                 每行一个元素，缩进表示层级，格式 [a] [角色#句柄] "标题" 属性… frame=(x,y,w,h)。\
                 可交互元素前的 [a] 是本次快照的标签；click / type_text / press_key / set_value 可以用 label 代替 handle。\
                 输出带一个令牌，句柄与令牌配对、只在该令牌有效期内可用（界面结构变化后令牌失效）；click / type_text / press_key / set_value（仅动作档提供）接受它们。\
@@ -155,6 +165,15 @@ enum ScuTool: String, CaseIterable {
         switch self {
         case .checkPermissions, .listApps:
             return ["type": "object", "properties": [:], "additionalProperties": false]
+        case .listWindows:
+            return [
+                "type": "object",
+                "properties": [
+                    "pid": ["type": "integer", "description": "目标应用的进程 id，来自 list_apps"],
+                ],
+                "required": ["pid"],
+                "additionalProperties": false,
+            ]
         case .getScreenshot:
             return [
                 "type": "object",
@@ -297,7 +316,7 @@ enum ScuTool: String, CaseIterable {
                     ],
                     "window": [
                         "type": "string",
-                        "description": "绑定截图的窗口标题；元素表仍为整个应用，只影响截图与坐标动作",
+                        "description": "窗口标题；元素表以该窗口为根读取，截图与坐标动作也绑定该窗口",
                     ],
                 ],
                 "required": ["pid"],
@@ -363,6 +382,23 @@ enum ScuTool: String, CaseIterable {
                 let apps = try session.reader.listApps()
                 let lines = apps.map { "\($0.pid)\t\($0.name)\t\($0.bundleId ?? "-")" }
                 return Outcome(text: lines.isEmpty ? "（没有可读取的应用）" : lines.joined(separator: "\n"), isError: false)
+
+            case .listWindows:
+                try Self.requireNoExtra(args, allowed: ["pid"])
+                guard let pid = try Self.int(args, "pid", range: 1...Int(Int32.max), required: true) else {
+                    throw ArgumentError(message: "缺少参数 pid")
+                }
+                let windows = try session.listWindows(pid: Int32(pid))
+                let lines = windows.map { window in
+                    let title = window.title.map { "\"\($0)\"" } ?? "-"
+                    let frame = window.frame.map {
+                        "(\(Int($0.x)),\(Int($0.y)),\(Int($0.width)),\(Int($0.height)))"
+                    } ?? "-"
+                    return "\(title)\t\(frame)"
+                }
+                return Outcome(
+                    text: lines.isEmpty ? "（没有可枚举的窗口）" : lines.joined(separator: "\n"),
+                    isError: false)
 
             case .getAXState:
                 try Self.requireNoExtra(

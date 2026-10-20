@@ -67,7 +67,8 @@ SCU **只做 UI 自动化**。不提供日历、消息、系统活动录制等
 已实现：两进程通信、版本协商、权限检测、无障碍树读取与导出、
 快照令牌与按路径定位句柄、`AXPress` 点击、输入与设值、最小效果摘要、拒绝类目、MCP 服务（默认只读，`--actions` 才暴露动作）。
 v1 功能点：读取、点击、输入、设值；元素表带快照内短标签与 `frame`，动作工具接受 `label`；
-窗口截图（`get_screenshot`）带标签叠加；`launch_app` 启动应用；动作档可用 `--allow-app` 配置连接级应用允许列表；`get_ax_state(window=...)` 可把截图/坐标动作绑定到指定窗口；
+窗口截图（`get_screenshot`）带标签叠加；`launch_app` 启动应用；动作档可用 `--allow-app` 配置连接级应用允许列表；
+`list_windows` 枚举窗口，`get_ax_state(window=...)` 以指定窗口为根读树，截图、坐标动作与元素动作都绑定该窗口；
 `click_at` / `scroll_at` / `drag` 按截图坐标操作（会激活窗口、移动光标）；
 未实现：句柄注册表、逐次审批与租约、完整指示层/虚拟光标。
 
@@ -81,7 +82,9 @@ v1 功能点：读取、点击、输入、设值；元素表带快照内短标�
 
 ```bash
 swift build && swift test
-.build/out/Products/Debug/scu dump --pid <pid>    # 先用 scu apps 查 pid
+.build/out/Products/Debug/scu apps               # 查 pid
+.build/out/Products/Debug/scu windows --pid <pid>  # 多窗口时先看标题
+.build/out/Products/Debug/scu dump --pid <pid> [--window <标题>]
 ```
 
 构建与命令说明见[本地环境](docs/operations/local_setup.md)。

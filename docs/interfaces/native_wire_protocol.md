@@ -46,11 +46,12 @@ agent 侧的会话 API 见[协议总览](protocol_overview.md)，两者是不同
 | `hello` | `protocolVersion: int` | 握手，必须是连接上的第一个请求 |
 | `checkPermissions` | — | 查询辅助功能权限 |
 | `listApps` | — | 列出可绑定的应用（常规激活策略） |
-| `dumpTree` | `pid: int`、`maxDepth: int`、`budgetMs: int` | 读取某进程的无障碍树。`maxDepth` 范围 `0...64`；`budgetMs` 是整棵树的总时间预算，范围 `100...120000`。越界一律拒绝而不是截断 |
-| `performAction` | `pid: int`、`locator: ElementLocator`、`action: "press" \| "verify"` | 沿定位器的路径定位目标并核对，通过后执行动作；`verify` 只定位核对、不执行。路径长度上限同 `maxDepth`，每步须满足 `siblings ≥ 1` 且 `0 ≤ index < siblings`，否则 `internal_error`（连接保持）。见 [ADR-0015](../decisions/adr_0015_handle_resolution_by_path.md) |
-| `typeText` | `pid: int`、`locator: ElementLocator`、`text: string` | 定位并核对目标，聚焦它，再把文本逐字投递到目标进程。`text` 上限 10000 字符，空串被拒绝。见 [ADR-0016](../decisions/adr_0016_input_and_keys.md) |
-| `pressKey` | `pid: int`、`locator: ElementLocator`、`key: string` | 定位并核对目标，聚焦它，再发送按键或组合键（`cmd+shift+t`）。不认识的键名被拒绝。见 [ADR-0016](../decisions/adr_0016_input_and_keys.md) |
-| `setValue` | `pid: int`、`locator: ElementLocator`、`value: string` | 定位并核对目标，通过无障碍接口直接写 `AXValue`。**元素必须声明该属性可写**，否则返回 `unsupported_operation`；空串是合法值。见 [ADR-0016](../decisions/adr_0016_input_and_keys.md) |
+| `listWindows` | `pid: int` | 列出该进程可枚举的窗口（`title?`、`frame?`）。只读；不激活应用、不截图。见 [ADR-0027](../decisions/adr_0027_window_root_locator.md) |
+| `dumpTree` | `pid: int`、`windowTitle?: string`、`maxDepth: int`、`budgetMs: int` | 读取某进程的无障碍树。`windowTitle` 存在时按标题精确匹配窗口并以该窗口为根；找不到返回 `window_not_found`，不退回其他窗口。`maxDepth` 范围 `0...64`；`budgetMs` 是整棵树的总时间预算，范围 `100...120000`。越界一律拒绝而不是截断。见 [ADR-0027](../decisions/adr_0027_window_root_locator.md) |
+| `performAction` | `pid: int`、`windowTitle?: string`、`locator: ElementLocator`、`action: "press" \| "verify"` | 沿定位器的路径定位目标并核对，通过后执行动作；`verify` 只定位核对、不执行。`windowTitle` 存在时定位根为该窗口。路径长度上限同 `maxDepth`，每步须满足 `siblings ≥ 1` 且 `0 ≤ index < siblings`，否则 `internal_error`（连接保持）。见 [ADR-0015](../decisions/adr_0015_handle_resolution_by_path.md)、[ADR-0027](../decisions/adr_0027_window_root_locator.md) |
+| `typeText` | `pid: int`、`windowTitle?: string`、`locator: ElementLocator`、`text: string` | 定位并核对目标，聚焦它，再把文本逐字投递到目标进程。`windowTitle` 存在时定位根为该窗口。`text` 上限 10000 字符，空串被拒绝。见 [ADR-0016](../decisions/adr_0016_input_and_keys.md)、[ADR-0027](../decisions/adr_0027_window_root_locator.md) |
+| `pressKey` | `pid: int`、`windowTitle?: string`、`locator: ElementLocator`、`key: string` | 定位并核对目标，聚焦它，再发送按键或组合键（`cmd+shift+t`）。`windowTitle` 存在时定位根为该窗口。不认识的键名被拒绝。见 [ADR-0016](../decisions/adr_0016_input_and_keys.md)、[ADR-0027](../decisions/adr_0027_window_root_locator.md) |
+| `setValue` | `pid: int`、`windowTitle?: string`、`locator: ElementLocator`、`value: string` | 定位并核对目标，通过无障碍接口直接写 `AXValue`。`windowTitle` 存在时定位根为该窗口。**元素必须声明该属性可写**，否则返回 `unsupported_operation`；空串是合法值。见 [ADR-0016](../decisions/adr_0016_input_and_keys.md)、[ADR-0027](../decisions/adr_0027_window_root_locator.md) |
 | `captureWindow` | `pid: int`、`windowTitle?: string` | 截取该进程的一个窗口。`windowTitle` 存在时按标题精确匹配；否则选 `windowLayer == 0`、on-screen、面积最大的窗口。需要屏幕录制权限，未授予时返回 `system_permission_missing`。见 [ADR-0019](../decisions/adr_0019_window_screenshot.md)、[ADR-0026](../decisions/adr_0026_window_selection.md) |
 | `clickAt` | `pid: int`、`windowTitle?: string`、`x: number`、`y: number` | 在全局屏幕坐标投递一次真实鼠标左键点击。坐标由协议层从截图换算；原生层会先激活并 raise 目标窗口（有 `windowTitle` 时按标题匹配），失败则不点击。见 [ADR-0020](../decisions/adr_0020_coordinate_click.md)、[ADR-0026](../decisions/adr_0026_window_selection.md) |
 | `scrollAt` | `pid: int`、`windowTitle?: string`、`x: number`、`y: number`、`dx: number`、`dy: number` | 在全局坐标投递滚轮事件；`dy > 0` 向下。见 [ADR-0021](../decisions/adr_0021_scroll_and_drag.md)、[ADR-0026](../decisions/adr_0026_window_selection.md) |
@@ -63,6 +64,7 @@ agent 侧的会话 API 见[协议总览](protocol_overview.md)，两者是不同
 | `hello` | `protocolVersion: int` | `hello` |
 | `permissions` | `accessibility: bool` | `checkPermissions` |
 | `apps` | `apps: [{pid, name, bundleId?}]` | `listApps` |
+| `windows` | `windows: [{title?, frame?}]` | `listWindows` |
 | `tree` | `tree: AXNode`、`truncated: bool` | `dumpTree`。`truncated` 为真表示时间预算耗尽、树不完整；深度上限造成的未展开不算截断（那是调用方的选择）。**遍历按层级（广度优先）进行**，预算耗尽时丢弃的是尚未读取的最深节点，已读部分是树的完整上层；`truncated` 只在确实丢弃了待读节点时为真 |
 | `acted` | — | `performAction(press)`、`typeText`、`pressKey`、`setValue`：动作已投递给平台且平台未报错。**不代表界面已经变化** |
 | `located` | — | `performAction(verify)`：定位器与界面现状一致 |
@@ -70,7 +72,8 @@ agent 侧的会话 API 见[协议总览](protocol_overview.md)，两者是不同
 | `windowCapture` | `capture: WindowCapture` | `captureWindow`：PNG 与坐标映射元数据。见下 |
 | `failure` | `error: WireError` | 任意请求 |
 
-`frame` 是 `{x, y, width, height}`（均为浮点数）。
+`frame` 是 `{x, y, width, height}`（均为浮点数）。`WindowInfo` 是 `{title?: string, frame?: Rect}`，
+字段缺失表示平台没有提供；窗口不可枚举时返回空数组，不是错误。
 
 `WindowCapture` 是 `{png: base64, width: int, height: int, scale: double, windowFrame: Rect, windowTitle?: string}`：
 - `width/height` 是图像像素；`scale` 是图像像素 / 窗口点；
@@ -105,7 +108,7 @@ agent 侧的会话 API 见[协议总览](protocol_overview.md)，两者是不同
    消息中同时给出双方版本，然后关闭连接。不降级运行。
 4. 版本号是编译期常量，来源见实现中的 `scuNativeProtocolVersion`。
 
-当前版本 **10**。版本 1 → 2：`dumpTree` 增加 `budgetMs`，`tree` 应答增加 `truncated`，
+当前版本 **11**。版本 1 → 2：`dumpTree` 增加 `budgetMs`，`tree` 应答增加 `truncated`，
 `AXNode` 增加 `description`。版本 2 → 3：`AXNode` 增加 `childCount`；新增请求 `performAction`，
 新增应答 `acted`、`located`、`stale`（[ADR-0015](../decisions/adr_0015_handle_resolution_by_path.md)）。
 版本 3 → 4：新增 `typeText` / `pressKey`；4 → 5：新增 `setValue`（[ADR-0016](../decisions/adr_0016_input_and_keys.md)）；
@@ -113,7 +116,8 @@ agent 侧的会话 API 见[协议总览](protocol_overview.md)，两者是不同
 6 → 7：`AXNode` 增加 `actions`，用于把支持 `AXPress` 的分组/行纳入标签（[ADR-0018](../decisions/adr_0018_label_addressing.md)）；
 7 → 8：新增 `clickAt` 请求（[ADR-0020](../decisions/adr_0020_coordinate_click.md)）；
 8 → 9：新增 `scrollAt` / `dragAt` 请求（[ADR-0021](../decisions/adr_0021_scroll_and_drag.md)）；
-9 → 10：`captureWindow` / `clickAt` / `scrollAt` / `dragAt` 增加可选 `windowTitle`，用于显式窗口选择（[ADR-0026](../decisions/adr_0026_window_selection.md)）。
+9 → 10：`captureWindow` / `clickAt` / `scrollAt` / `dragAt` 增加可选 `windowTitle`，用于显式窗口选择（[ADR-0026](../decisions/adr_0026_window_selection.md)）；
+10 → 11：新增 `listWindows` 请求与 `windows` 应答；`dumpTree` / `performAction` / `typeText` / `pressKey` / `setValue` 增加可选 `windowTitle`，元素表以窗口为根（[ADR-0027](../decisions/adr_0027_window_root_locator.md)）。
 
 线格式本身的任何不兼容变更（字段改名、`type` 增删、语义变化）都要提升版本号。
 
@@ -178,7 +182,7 @@ agent 侧的会话 API 见[协议总览](protocol_overview.md)，两者是不同
 
 读取应答超时的**映射**（关闭连接、终止子进程、`platform_unavailable`）在 `NativeClient.call` 中实现；测试只覆盖到等待可读时抛出超时，没有覆盖后面的清理路径。
 
-当前协议版本为 **10**（P0 时为 3；v1 依次加入 `typeText` / `pressKey` 与 `setValue`；
-v2 加入 `captureWindow`、`AXNode.actions`、`clickAt`、`scrollAt` 与 `dragAt`）。
-消息目录覆盖当前需要的十一种请求；变更通知等随能力增加，
+当前协议版本为 **11**（P0 时为 3；v1 依次加入 `typeText` / `pressKey` 与 `setValue`；
+v2 加入 `captureWindow`、`AXNode.actions`、`clickAt`、`scrollAt` 与 `dragAt`，v3 收口窗口读取）。
+消息目录覆盖当前需要的十三种请求；变更通知等随能力增加，
 每增加一种都要在此登记并视情况提升版本号。

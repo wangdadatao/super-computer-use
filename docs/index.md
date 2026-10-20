@@ -17,7 +17,7 @@
 **v1 已完成（0.1.0，2026-10-19）：读取、点击、输入、设值；P0 的出口门槛全部满足或判定不适用。**
 源码构建交付，**暂不提供分发包**；v1 用平铺 MCP 工具，code mode 后置到 v2。
 **新增（未发版）：快照内短标签寻址 + 窗口截图**——元素表输出 `[a]` 与 `frame`，四个元素动作工具（`click`/`type_text`/`press_key`/`set_value`）接受 `label`；`get_screenshot` 截取目标窗口并叠加标签，`launch_app` 启动应用，`click_at` / `scroll_at` / `drag` 按截图坐标操作并在动作前显示指示环；
-动作档可选连接级应用允许列表（`--allow-app`）；`get_ax_state(window=...)` 可把截图/坐标动作绑定到指定窗口。已在网易云（CEF）上验证（[ADR-0018](decisions/adr_0018_label_addressing.md)、[ADR-0019](decisions/adr_0019_window_screenshot.md)、[ADR-0020](decisions/adr_0020_coordinate_click.md)、[ADR-0021](decisions/adr_0021_scroll_and_drag.md)、[ADR-0022](decisions/adr_0022_app_launch.md)、[ADR-0023](decisions/adr_0023_indicator.md)、[ADR-0024](decisions/adr_0024_app_authorization.md)、[ADR-0025](decisions/adr_0025_window_target.md)、[ADR-0026](decisions/adr_0026_window_selection.md)）。
+动作档可选连接级应用允许列表（`--allow-app`）；`list_windows` 枚举窗口，`get_ax_state(window=...)` 以指定窗口为根读树，元素动作也绑定该窗口。已在网易云（CEF）与 TextEdit 多窗口上验证（[ADR-0018](decisions/adr_0018_label_addressing.md)、[ADR-0019](decisions/adr_0019_window_screenshot.md)、[ADR-0020](decisions/adr_0020_coordinate_click.md)、[ADR-0021](decisions/adr_0021_scroll_and_drag.md)、[ADR-0022](decisions/adr_0022_app_launch.md)、[ADR-0023](decisions/adr_0023_indicator.md)、[ADR-0024](decisions/adr_0024_app_authorization.md)、[ADR-0025](decisions/adr_0025_window_target.md)、[ADR-0026](decisions/adr_0026_window_selection.md)、[ADR-0027](decisions/adr_0027_window_root_locator.md)）。
 
 仓库有一个 Swift package，
 实现了两进程通信、版本协商、权限检测、无障碍树读取、快照令牌与按路径定位句柄、`AXPress` 点击与最小效果摘要、

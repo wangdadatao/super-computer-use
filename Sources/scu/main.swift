@@ -10,8 +10,9 @@ import SCUWire
 //                                      --allow-app 配置连接级应用允许列表，见 docs/interfaces/mcp_surface.md
 //   scu permissions
 //   scu apps
-//   scu dump --pid <pid> [--depth <n>] [--json]
-//   scu identity --pid <pid> [--depth <n>] [--show-k4] [--by-role]
+//   scu windows --pid <pid>
+//   scu dump --pid <pid> [--window <title>] [--depth <n>] [--json]
+//   scu identity --pid <pid> [--window <title>] [--depth <n>] [--show-k4] [--by-role]
 //
 // 退出码：0 成功；1 失败；2 缺系统权限；64 用法错误。
 // 所有失败路径都通过抛出 CLIExit 回到 main，**不在 run 内调用 exit()**：
@@ -166,11 +167,13 @@ func run(command: String, args: [String]) throws {
     var pid: Int32 = 0
     var depth = scuDefaultTreeDepth
     var budgetMs = scuDefaultTreeBudgetMs
-    if command == "dump" {
+    var windowTitle: String?
+    if command == "dump" || command == "identity" {
         guard let pidText = option("--pid", in: args), let p = Int32(pidText) else {
             throw usage("缺少或无效的 --pid")
         }
         pid = p
+        if command == "identity" { depth = 24 }
         if let d = option("--depth", in: args) {
             guard let n = Int(d), (0...scuMaxTreeDepth).contains(n) else {
                 throw usage("--depth 必须在 0...\(scuMaxTreeDepth)")
@@ -178,26 +181,22 @@ func run(command: String, args: [String]) throws {
             depth = n
         }
         budgetMs = try parseBudget(args)
-    } else if command == "identity" {
+        if let window = option("--window", in: args) {
+            guard !window.isEmpty else { throw usage("--window 不能为空") }
+            windowTitle = window
+        }
+    } else if command == "windows" {
         guard let pidText = option("--pid", in: args), let p = Int32(pidText) else {
             throw usage("缺少或无效的 --pid")
         }
         pid = p
-        depth = 24
-        if let d = option("--depth", in: args) {
-            guard let n = Int(d), (0...scuMaxTreeDepth).contains(n) else {
-                throw usage("--depth 必须在 0...\(scuMaxTreeDepth)")
-            }
-            depth = n
-        }
-        budgetMs = try parseBudget(args)
     } else if command == "mcp" {
         // 先校验参数再启动：用法错误不应拉起子进程。
         let options = try parseMCPOptions(args)
         let authorization = try loadAppAuthorization(options)
         runMCP(options: options, appAuthorization: authorization)
         return
-    } else if command != "permissions" && command != "apps" {
+    } else if command != "permissions" && command != "apps" && command != "windows" {
         throw usage("未知命令：\(command)")
     }
 
@@ -218,9 +217,21 @@ func run(command: String, args: [String]) throws {
         }
         for a in apps { print("\(a.pid)\t\(a.name)\t\(a.bundleId ?? "-")") }
 
+    case "windows":
+        guard case .windows(let windows) = try client.call(.listWindows(pid: pid)) else {
+            throw CLIExit(code: 1, message: "应答类型错误")
+        }
+        for w in windows {
+            let title = w.title.map { "\"\($0)\"" } ?? "-"
+            let frame = w.frame.map { "(\(Int($0.x)),\(Int($0.y)),\(Int($0.width)),\(Int($0.height)))" } ?? "-"
+            print("\(title)\t\(frame)")
+        }
+
     case "identity":
         guard case .tree(let root, let truncated) = try client.call(
-            .dumpTree(pid: pid, maxDepth: depth, budgetMs: budgetMs), timeoutMs: treeTimeoutMs(budgetMs))
+            .dumpTree(
+                pid: pid, windowTitle: windowTitle, maxDepth: depth, budgetMs: budgetMs),
+            timeoutMs: treeTimeoutMs(budgetMs))
         else {
             throw CLIExit(code: 1, message: "应答类型错误")
         }
@@ -248,7 +259,9 @@ func run(command: String, args: [String]) throws {
 
     default:  // dump
         guard case .tree(let root, let truncated) = try client.call(
-            .dumpTree(pid: pid, maxDepth: depth, budgetMs: budgetMs), timeoutMs: treeTimeoutMs(budgetMs))
+            .dumpTree(
+                pid: pid, windowTitle: windowTitle, maxDepth: depth, budgetMs: budgetMs),
+            timeoutMs: treeTimeoutMs(budgetMs))
         else {
             throw CLIExit(code: 1, message: "应答类型错误")
         }
@@ -270,7 +283,7 @@ func main() -> Int32 {
     let argv = Array(CommandLine.arguments.dropFirst())
     guard let command = argv.first else {
         FileHandle.standardError.write(
-            Data("用法：scu mcp [--actions] [--allow-app <id>]... [--allow-app-file <path>] | permissions | apps | dump|identity --pid <pid> [--depth <n>] [--budget-ms <n>] [--json|--show-k4|--by-role]\n".utf8))
+            Data("用法：scu mcp [--actions] [--allow-app <id>]... [--allow-app-file <path>] | permissions | apps | windows --pid <pid> | dump|identity --pid <pid> [--window <title>] [--depth <n>] [--budget-ms <n>] [--json|--show-k4|--by-role]\n".utf8))
         return 64
     }
     do {

@@ -52,14 +52,15 @@ scu mcp --actions --allow-app-file ~/.config/scu/pi-apps.json
 ## 工具目录
 
 每个工具都带 `title` 与 `annotations`（含 `title`、`readOnlyHint`、`destructiveHint`、`idempotentHint`、`openWorldHint`）。
-只读工具四个：`check_permissions`、`list_apps`、`get_ax_state`、`get_screenshot`，均为 `readOnlyHint: true`、`destructiveHint: false`、`idempotentHint: true`、`openWorldHint: false`；
+只读工具五个：`check_permissions`、`list_apps`、`list_windows`、`get_ax_state`、`get_screenshot`，均为 `readOnlyHint: true`、`destructiveHint: false`、`idempotentHint: true`、`openWorldHint: false`；
 动作工具（仅 `--actions`）如实声明 `readOnlyHint: false`、`destructiveHint: true`、`idempotentHint: false`、`openWorldHint: true`。
 
 | 工具 | 参数 | 作用 |
 | --- | --- | --- |
 | `check_permissions` | 无 | 报告启动本服务的宿主是否有辅助功能权限。权限未授予不算工具错误，是对状态的如实报告 |
 | `list_apps` | 无 | 每行 `pid<TAB>名称<TAB>bundle id`（无 bundle id 时为 `-`） |
-| `get_ax_state` | `pid`（必填）、`max_depth`、`budget_ms`、`max_elements`、`focus`、`focus_role`、`window` | 读取应用的无障碍树，返回带标签与 `frame` 的文本化元素表；`window` 绑定截图/坐标动作的窗口，元素表仍为整个应用 |
+| `list_windows` | `pid`（必填） | 每行 `"标题"<TAB>(x,y,w,h)`；标题缺失为 `-`。只枚举窗口，不激活、不截图 |
+| `get_ax_state` | `pid`（必填）、`max_depth`、`budget_ms`、`max_elements`、`focus`、`focus_role`、`window` | 读取无障碍树，返回带标签与 `frame` 的文本化元素表；`window` 存在时以该窗口为根，截图与坐标动作也绑定它 |
 | `get_screenshot` | `token` | 截取令牌对应的目标窗口，叠加标签，返回 PNG、`screenshot_id`、窗口 frame 与 title；需要屏幕录制权限 |
 | `launch_app`（仅 `--actions`） | `app` | 启动/激活应用（bundle id、名称或 `.app` 路径）；见下 |
 | `click`（仅 `--actions`） | `token`、`handle` 或 `label`（二选一） | 对目标执行 `AXPress`；见下 |
@@ -78,10 +79,14 @@ scu mcp --actions --allow-app-file ~/.config/scu/pi-apps.json
 截图再按该窗口的 frame 匹配 ScreenCaptureKit 候选；匹配不上就拒绝截图，不会退回可能不匹配的窗口。
 `get_screenshot` 的元数据带 `title`，便于确认截的是哪个窗口。
 
-`get_ax_state` 可以传 `window`（精确标题）把令牌绑定到指定窗口；之后 `get_screenshot` /
-`click_at` / `scroll_at` / `drag` 都使用该窗口。**元素表仍是整个应用**，`click` 等元素动作不受
-`window` 限制。截图/坐标动作时窗口标题不存在返回 `window_not_found`。见 [ADR-0025](../decisions/adr_0025_window_target.md)、
-[ADR-0026](../decisions/adr_0026_window_selection.md)。
+先用只读的 `list_windows` 取得窗口标题。`get_ax_state` 可以传 `window`（精确标题）：
+此时**元素表从该窗口子树开始读取**，句柄路径、标签都以窗口为根；之后 `get_screenshot` /
+`click_at` / `scroll_at` / `drag` 也使用该窗口，`click` / `type_text` / `press_key` / `set_value`
+同样用令牌上的窗口标题定位。窗口改名或消失后，旧令牌的动作在开始前返回 `window_not_found`，
+不会退回应用根去点别的窗口。
+
+同名窗口只取第一个精确匹配；没有稳定窗口 ID。见 [ADR-0025](../decisions/adr_0025_window_target.md)、
+[ADR-0026](../decisions/adr_0026_window_selection.md)、[ADR-0027](../decisions/adr_0027_window_root_locator.md)。
 
 ### `launch_app`
 
@@ -371,7 +376,8 @@ socket 目录建在 `TMPDIR`（若设置且存在）或系统临时目录下。
   左侧栏坐标点击从「推荐」切到「精选」并成功返回（2026-10-20）。
   滚动已在网易云验证（推荐页上下滚动，diff 约 0.387）；拖拽只有单元/MCP 测试，真实应用未验证。
   其他应用、多窗口真实回归、窗口移动后的过期判断、区域级 diff 未验证；
-  多窗口目标一致性与窗口标题绑定有单元/MCP 测试，TextEdit 单窗口实测。
+  多窗口目标一致性与窗口标题绑定有单元/MCP 测试；窗口列表与窗口根已在 TextEdit 两个文档窗口上实测
+  （`list_windows` 返回两个标题，`get_ax_state`/`dump --window` 的根是目标 `AXWindow`）。
 - **应用允许列表**：已做单元与 MCP 测试；已在网易云/访达上验证“列表外应用读取前被拒”。
   动作门禁与 `--allow-app-file` 的文本格式还有单元测试覆盖；允许列表不是逐动作审批，也不包含交互式授权 UI。
 - **`launch_app` 已验证冷启动（计算器）与已运行（网易云）**：返回 pid、终端拒绝、未知应用错误均成立。

@@ -2,7 +2,7 @@ import Foundation
 
 /// 协议层 ↔ 原生层的协议版本。单调递增整数，两侧必须完全相等（ADR-0012）。
 /// 编译期常量：不是运行时可变状态。
-public let scuNativeProtocolVersion = 10
+public let scuNativeProtocolVersion = 11
 
 /// `dumpTree` 允许的最大深度。超出时原生层拒绝，不做静默截断。
 public let scuMaxTreeDepth = 64
@@ -134,6 +134,31 @@ public struct AppInfo: Codable, Sendable, Equatable {
         self.pid = pid
         self.name = name
         self.bundleId = bundleId
+    }
+}
+
+public struct WindowInfo: Codable, Sendable, Equatable {
+    /// 窗口标题；没有标题时为 nil。
+    public var title: String?
+    public var frame: Rect?
+
+    public init(title: String?, frame: Rect?) {
+        self.title = title
+        self.frame = frame
+    }
+
+    private enum Key: String, CodingKey { case title, frame }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: Key.self)
+        title = try c.decodeIfPresent(String.self, forKey: .title)
+        frame = try c.decodeIfPresent(Rect.self, forKey: .frame)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: Key.self)
+        try c.encodeIfPresent(title, forKey: .title)
+        try c.encodeIfPresent(frame, forKey: .frame)
     }
 }
 
@@ -318,14 +343,18 @@ public enum Request: Sendable, Equatable {
     case hello(protocolVersion: Int)
     case checkPermissions
     case listApps
-    case dumpTree(pid: Int32, maxDepth: Int, budgetMs: Int)
-    case performAction(pid: Int32, locator: ElementLocator, action: ActionKind)
+    /// 列出某个应用的可枚举窗口（标题与 frame）。只读。
+    case listWindows(pid: Int32)
+    /// 读取树；`windowTitle` 存在时以匹配的窗口为根。
+    case dumpTree(pid: Int32, windowTitle: String?, maxDepth: Int, budgetMs: Int)
+    case performAction(
+        pid: Int32, windowTitle: String?, locator: ElementLocator, action: ActionKind)
     /// 把文本逐字输入到目标元素（先聚焦）。
-    case typeText(pid: Int32, locator: ElementLocator, text: String)
+    case typeText(pid: Int32, windowTitle: String?, locator: ElementLocator, text: String)
     /// 向目标元素发送一个按键或组合键（先聚焦）。
-    case pressKey(pid: Int32, locator: ElementLocator, key: String)
+    case pressKey(pid: Int32, windowTitle: String?, locator: ElementLocator, key: String)
     /// 通过无障碍接口直接写元素的值（要求元素声明 AXValue 可写）。
-    case setValue(pid: Int32, locator: ElementLocator, value: String)
+    case setValue(pid: Int32, windowTitle: String?, locator: ElementLocator, value: String)
     /// 截取目标应用的一个窗口，返回 PNG 与坐标映射元数据。
     /// `windowTitle` 为 nil 时使用默认窗口；非 nil 时必须精确匹配该标题的窗口。
     case captureWindow(pid: Int32, windowTitle: String?)
@@ -343,6 +372,7 @@ public enum Response: Sendable, Equatable {
     case hello(protocolVersion: Int)
     case permissions(accessibility: Bool)
     case apps([AppInfo])
+    case windows([WindowInfo])
     case tree(AXNode, truncated: Bool)
     /// 动作已投递给平台（平台未报错）。不代表界面已经变化。
     case acted
@@ -361,7 +391,7 @@ extension Request: Codable {
             dx, dy, fromX, fromY, toX, toY, durationMs, windowTitle
     }
     private enum Kind: String, Codable {
-        case hello, checkPermissions, listApps, dumpTree, performAction, typeText, pressKey, setValue
+        case hello, checkPermissions, listApps, listWindows, dumpTree, performAction, typeText, pressKey, setValue
         case captureWindow, clickAt, scrollAt, dragAt
     }
 
@@ -371,28 +401,36 @@ extension Request: Codable {
         case .hello: self = .hello(protocolVersion: try c.decode(Int.self, forKey: .protocolVersion))
         case .checkPermissions: self = .checkPermissions
         case .listApps: self = .listApps
+        case .listWindows:
+            self = .listWindows(pid: try c.decode(Int32.self, forKey: .pid))
         case .dumpTree:
             self = .dumpTree(
-                pid: try c.decode(Int32.self, forKey: .pid), maxDepth: try c.decode(Int.self, forKey: .maxDepth),
+                pid: try c.decode(Int32.self, forKey: .pid),
+                windowTitle: try c.decodeIfPresent(String.self, forKey: .windowTitle),
+                maxDepth: try c.decode(Int.self, forKey: .maxDepth),
                 budgetMs: try c.decode(Int.self, forKey: .budgetMs))
         case .performAction:
             self = .performAction(
                 pid: try c.decode(Int32.self, forKey: .pid),
+                windowTitle: try c.decodeIfPresent(String.self, forKey: .windowTitle),
                 locator: try c.decode(ElementLocator.self, forKey: .locator),
                 action: try c.decode(ActionKind.self, forKey: .action))
         case .typeText:
             self = .typeText(
                 pid: try c.decode(Int32.self, forKey: .pid),
+                windowTitle: try c.decodeIfPresent(String.self, forKey: .windowTitle),
                 locator: try c.decode(ElementLocator.self, forKey: .locator),
                 text: try c.decode(String.self, forKey: .text))
         case .pressKey:
             self = .pressKey(
                 pid: try c.decode(Int32.self, forKey: .pid),
+                windowTitle: try c.decodeIfPresent(String.self, forKey: .windowTitle),
                 locator: try c.decode(ElementLocator.self, forKey: .locator),
                 key: try c.decode(String.self, forKey: .key))
         case .setValue:
             self = .setValue(
                 pid: try c.decode(Int32.self, forKey: .pid),
+                windowTitle: try c.decodeIfPresent(String.self, forKey: .windowTitle),
                 locator: try c.decode(ElementLocator.self, forKey: .locator),
                 value: try c.decode(String.self, forKey: .value))
         case .captureWindow:
@@ -433,29 +471,37 @@ extension Request: Codable {
             try c.encode(v, forKey: .protocolVersion)
         case .checkPermissions: try c.encode(Kind.checkPermissions, forKey: .type)
         case .listApps: try c.encode(Kind.listApps, forKey: .type)
-        case .dumpTree(let pid, let depth, let budget):
+        case .listWindows(let pid):
+            try c.encode(Kind.listWindows, forKey: .type)
+            try c.encode(pid, forKey: .pid)
+        case .dumpTree(let pid, let windowTitle, let depth, let budget):
             try c.encode(Kind.dumpTree, forKey: .type)
             try c.encode(pid, forKey: .pid)
+            try c.encodeIfPresent(windowTitle, forKey: .windowTitle)
             try c.encode(depth, forKey: .maxDepth)
             try c.encode(budget, forKey: .budgetMs)
-        case .performAction(let pid, let locator, let action):
+        case .performAction(let pid, let windowTitle, let locator, let action):
             try c.encode(Kind.performAction, forKey: .type)
             try c.encode(pid, forKey: .pid)
+            try c.encodeIfPresent(windowTitle, forKey: .windowTitle)
             try c.encode(locator, forKey: .locator)
             try c.encode(action, forKey: .action)
-        case .typeText(let pid, let locator, let text):
+        case .typeText(let pid, let windowTitle, let locator, let text):
             try c.encode(Kind.typeText, forKey: .type)
             try c.encode(pid, forKey: .pid)
+            try c.encodeIfPresent(windowTitle, forKey: .windowTitle)
             try c.encode(locator, forKey: .locator)
             try c.encode(text, forKey: .text)
-        case .pressKey(let pid, let locator, let key):
+        case .pressKey(let pid, let windowTitle, let locator, let key):
             try c.encode(Kind.pressKey, forKey: .type)
             try c.encode(pid, forKey: .pid)
+            try c.encodeIfPresent(windowTitle, forKey: .windowTitle)
             try c.encode(locator, forKey: .locator)
             try c.encode(key, forKey: .key)
-        case .setValue(let pid, let locator, let value):
+        case .setValue(let pid, let windowTitle, let locator, let value):
             try c.encode(Kind.setValue, forKey: .type)
             try c.encode(pid, forKey: .pid)
+            try c.encodeIfPresent(windowTitle, forKey: .windowTitle)
             try c.encode(locator, forKey: .locator)
             try c.encode(value, forKey: .value)
         case .captureWindow(let pid, let windowTitle):
@@ -491,10 +537,10 @@ extension Request: Codable {
 
 extension Response: Codable {
     private enum Key: String, CodingKey {
-        case type, protocolVersion, accessibility, apps, tree, truncated, error, stale, capture
+        case type, protocolVersion, accessibility, apps, windows, tree, truncated, error, stale, capture
     }
     private enum Kind: String, Codable {
-        case hello, permissions, apps, tree, acted, located, stale, windowCapture, failure
+        case hello, permissions, apps, windows, tree, acted, located, stale, windowCapture, failure
     }
 
     public init(from decoder: any Decoder) throws {
@@ -503,6 +549,7 @@ extension Response: Codable {
         case .hello: self = .hello(protocolVersion: try c.decode(Int.self, forKey: .protocolVersion))
         case .permissions: self = .permissions(accessibility: try c.decode(Bool.self, forKey: .accessibility))
         case .apps: self = .apps(try c.decode([AppInfo].self, forKey: .apps))
+        case .windows: self = .windows(try c.decode([WindowInfo].self, forKey: .windows))
         case .tree:
             self = .tree(
                 try c.decode(AXNode.self, forKey: .tree), truncated: try c.decode(Bool.self, forKey: .truncated))
@@ -526,6 +573,9 @@ extension Response: Codable {
         case .apps(let a):
             try c.encode(Kind.apps, forKey: .type)
             try c.encode(a, forKey: .apps)
+        case .windows(let w):
+            try c.encode(Kind.windows, forKey: .type)
+            try c.encode(w, forKey: .windows)
         case .tree(let t, let truncated):
             try c.encode(Kind.tree, forKey: .type)
             try c.encode(t, forKey: .tree)

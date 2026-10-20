@@ -20,7 +20,7 @@ SCU 是一个 MCP 服务：读取 macOS 应用的无障碍树，并用 `AXPress`
 | 直接写元素的值（`set_value`，要求元素可写） | |
 | 知道动作是否改变了界面、是否疑似空操作 | |
 
-只读档只有 `check_permissions` / `list_apps` / `get_ax_state` / `get_screenshot`；
+只读档只有 `check_permissions` / `list_apps` / `list_windows` / `get_ax_state` / `get_screenshot`；
 `launch_app` / `click` / `click_at` / `scroll_at` / `drag` / `type_text` / `press_key` / `set_value` 需要服务以 `--actions` 启动。
 如果调用这些工具返回"未知工具"（JSON-RPC `-32602`），说明动作档没开，请用户改启动参数。
 
@@ -33,12 +33,12 @@ SCU 是一个 MCP 服务：读取 macOS 应用的无障碍树，并用 `AXPress`
    未授予时让用户给宿主（Cursor、终端等）授权，然后重启该宿主。
 2. `list_apps` 取 `pid`。它只列出已在运行、激活策略为 regular 的应用。
    用户说的应用不在列表里，就先请用户打开它（SCU 不能启动应用）。
-3. `get_ax_state(pid)` 读界面。
+3. `get_ax_state(pid)` 读界面。多窗口应用先用 `list_windows(pid)` 看标题，再决定是否 `window=`。
 
 ## 核心循环
 
 ```
-list_apps → get_ax_state(pid) → 需要时 get_screenshot(token) → 用令牌与标签/句柄执行一个动作 → 重新 get_ax_state
+list_apps → get_ax_state(pid) → 多窗口时 list_windows(pid) → get_ax_state(pid, window=标题) → 需要时 get_screenshot(token) → 用令牌与标签/句柄执行一个动作 → 重新 get_ax_state
 ```
 
 **每次会改变界面的动作之后都要重读。** 令牌、标签与句柄只对一次读取有效；
@@ -75,10 +75,14 @@ list_apps → get_ax_state(pid) → 需要时 get_screenshot(token) → 用令�
 
 ## 多窗口
 
-`get_ax_state(pid, window="窗口标题")` 会把令牌绑定到该窗口；之后 `get_screenshot`、`click_at`、
-`scroll_at`、`drag` 都使用这个窗口。**元素表仍是整个应用**，`click` / `type_text` 等元素动作不受
-`window` 限制。窗口标题不存在或已变化时返回 `window_not_found`：重新读取并选仍存在的窗口。
-标题要精确匹配；多个同名窗口当前只选第一个，这是已知限制。默认不传 `window` 时使用面积最大的窗口。
+先调用 `list_windows(pid)`，每行是 `"标题"<TAB>(x,y,w,h)`；没有标题显示 `-`。
+把标题传给 `get_ax_state(pid, window="…")` 后，**元素表从该窗口开始读取**（根是 `AXWindow`），
+句柄与标签都只在这个窗口的树里；`get_screenshot`、`click_at`、`scroll_at`、`drag` 也用这个窗口，
+`click` / `type_text` / `press_key` / `set_value` 同样用令牌上的窗口标题定位。
+
+窗口标题不存在、已改名或已关闭时返回 `window_not_found`：重新 `list_windows` 并选仍存在的窗口，
+不要退回不带 `window` 的读取去猜。标题要精确匹配；多个同名窗口当前只选第一个，这是已知限制。
+默认不传 `window` 时读取应用根，截图/坐标动作使用面积最大的非最小化窗口。
 
 ## 应用允许列表
 

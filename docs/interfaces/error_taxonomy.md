@@ -78,7 +78,7 @@ interface ScuError {
 | `element_gone` | protocol | `after_refresh` | 引用在新快照中无法匹配 |
 | `app_not_found` | protocol | `no` | 启动/解析时找不到应用；v2 新增 |
 | `app_not_authorized` | policy | `no` | 应用不在本次连接的允许列表里；v2 新增，见 [ADR-0024](../decisions/adr_0024_app_authorization.md) |
-| `window_not_found` | protocol | `after_refresh` | 绑定的窗口标题不存在或已变化；v2 新增，见 [ADR-0026](../decisions/adr_0026_window_selection.md) |
+| `window_not_found` | protocol | `after_refresh` | 指定的窗口标题不存在或已变化（读取、截图、坐标动作与元素动作都可能返回）；v2 新增，见 [ADR-0026](../decisions/adr_0026_window_selection.md)、[ADR-0027](../decisions/adr_0027_window_root_locator.md) |
 | `ambiguous_reference` | protocol | `after_disambiguation` | **目标**引用歧义（同名应用 / 同 URL 标签页），携带 `candidates` |
 | `unsupported_operation` | protocol | `no` | 元素或参数不支持该操作（如不可写元素设值、元素不接受焦点、不认识的键名） |
 | `policy_denied` | policy | `no` | 命中拒绝类目，不可协商 |

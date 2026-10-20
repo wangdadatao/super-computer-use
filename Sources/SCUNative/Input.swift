@@ -21,12 +21,14 @@ extension AXBackend {
     // MARK: - 入口
 
     /// 逐字输入文本。换行与制表符分别映射为 Return 与 Tab，其余字符按 Unicode 字符串投递。
-    public static func typeText(pid: Int32, locator: ElementLocator, text: String) throws -> ActionResult {
+    public static func typeText(
+        pid: Int32, windowTitle: String? = nil, locator: ElementLocator, text: String
+    ) throws -> ActionResult {
         guard !text.isEmpty else { throw WireError.unsupportedOperation("文本为空") }
         guard text.count <= inputTextLimit else {
             throw WireError.internalError("文本过长：\(text.count) 个字符，上限 \(inputTextLimit)")
         }
-        switch try locateTarget(pid: pid, locator: locator) {
+        switch try locateTarget(pid: pid, windowTitle: windowTitle, locator: locator) {
         case .stale(let detail):
             return .stale(detail)
         case .found(let element):
@@ -48,9 +50,11 @@ extension AXBackend {
     }
 
     /// 发送一个按键或组合键。键名与修饰键的解析见 `parseKey`。
-    public static func pressKey(pid: Int32, locator: ElementLocator, key: String) throws -> ActionResult {
+    public static func pressKey(
+        pid: Int32, windowTitle: String? = nil, locator: ElementLocator, key: String
+    ) throws -> ActionResult {
         let combo = try parseKey(key)
-        switch try locateTarget(pid: pid, locator: locator) {
+        switch try locateTarget(pid: pid, windowTitle: windowTitle, locator: locator) {
         case .stale(let detail):
             return .stale(detail)
         case .found(let element):
@@ -62,11 +66,13 @@ extension AXBackend {
 
     /// 通过无障碍接口直接写元素的值。**要求元素声明 AXValue 可写**，否则拒绝——
     /// 不自动回退到逐字输入：两者的副作用不同（edit_semantics.md）。
-    public static func setValue(pid: Int32, locator: ElementLocator, value: String) throws -> ActionResult {
+    public static func setValue(
+        pid: Int32, windowTitle: String? = nil, locator: ElementLocator, value: String
+    ) throws -> ActionResult {
         guard value.count <= inputTextLimit else {
             throw WireError.internalError("值过长：\(value.count) 个字符，上限 \(inputTextLimit)")
         }
-        switch try locateTarget(pid: pid, locator: locator) {
+        switch try locateTarget(pid: pid, windowTitle: windowTitle, locator: locator) {
         case .stale(let detail):
             return .stale(detail)
         case .found(let element):
@@ -90,14 +96,12 @@ extension AXBackend {
     // MARK: - 定位与聚焦
 
     /// 定位目标并检查可访问性。返回 `.stale` 时不执行任何动作。
-    static func locateTarget(pid: Int32, locator: ElementLocator) throws -> LocateResult<AXUIElement> {
-        guard isAccessibilityTrusted() else { throw WireError.permissionMissing("辅助功能") }
-        guard NSRunningApplication(processIdentifier: pid) != nil else { throw WireError.targetMissing(pid: pid) }
-        let app = AXUIElementCreateApplication(pid)
-        AXUIElementSetMessagingTimeout(app, messagingTimeout)
-        guard string(app, kAXRoleAttribute) != nil else { throw WireError.targetMissing(pid: pid) }
+    static func locateTarget(
+        pid: Int32, windowTitle: String? = nil, locator: ElementLocator
+    ) throws -> LocateResult<AXUIElement> {
+        let root = try rootElement(pid: pid, windowTitle: windowTitle)
         return locate(
-            root: app, locator: locator,
+            root: root, locator: locator,
             children: { element in
                 let kids = elements(element, kAXChildrenAttribute)
                 for kid in kids ?? [] { AXUIElementSetMessagingTimeout(kid, messagingTimeout) }

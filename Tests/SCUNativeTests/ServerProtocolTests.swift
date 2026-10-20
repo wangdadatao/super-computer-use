@@ -121,7 +121,7 @@ import Testing
         defer { r.finish() }
         try Self.handshake(r)
         try Frame.write(
-            RequestFrame(id: 2, request: .dumpTree(pid: 1, maxDepth: scuMaxTreeDepth + 1, budgetMs: 1000)), to: r.fd)
+            RequestFrame(id: 2, request: .dumpTree(pid: 1, windowTitle: nil, maxDepth: scuMaxTreeDepth + 1, budgetMs: 1000)), to: r.fd)
         try Self.expectFailure(r, code: "internal_error")
         // 越界参数是单次请求的错误，连接仍可用。
         try Frame.write(RequestFrame(id: 3, request: .checkPermissions), to: r.fd)
@@ -134,7 +134,7 @@ import Testing
         defer { r.finish() }
         try Self.handshake(r)
         for bad in [0, scuTreeBudgetMsRange.upperBound + 1] {
-            try Frame.write(RequestFrame(id: 2, request: .dumpTree(pid: 1, maxDepth: 1, budgetMs: bad)), to: r.fd)
+            try Frame.write(RequestFrame(id: 2, request: .dumpTree(pid: 1, windowTitle: nil, maxDepth: 1, budgetMs: bad)), to: r.fd)
             try Self.expectFailure(r, code: "internal_error")
         }
     }
@@ -155,7 +155,7 @@ import Testing
     func tinyBudgetTruncatesRealTree() throws {
         guard let finder = AXBackend.listApps().first(where: { $0.bundleId == "com.apple.finder" }) else { return }
         let started = Date()
-        let r = try AXBackend.dumpTree(pid: finder.pid, maxDepth: 24, budgetMs: 1)
+        let r = try AXBackend.dumpTree(pid: finder.pid, windowTitle: nil, maxDepth: 24, budgetMs: 1)
         #expect(r.truncated)
         #expect(r.root.role == "AXApplication")  // 根总是存在
         #expect(Date().timeIntervalSince(started) < 10)
@@ -405,7 +405,7 @@ import Testing
         try ServerProtocolTests.handshake(r)
         let bad = ElementLocator(
             path: [PathStep(index: 9, siblings: 2, role: "AXWindow")], target: TargetKey(role: "AXButton"))
-        try Frame.write(RequestFrame(id: 2, request: .performAction(pid: 1, locator: bad, action: .verify)), to: r.fd)
+        try Frame.write(RequestFrame(id: 2, request: .performAction(pid: 1, windowTitle: nil, locator: bad, action: .verify)), to: r.fd)
         try ServerProtocolTests.expectFailure(r, code: "internal_error")
         try Frame.write(RequestFrame(id: 3, request: .checkPermissions), to: r.fd)
         guard case .permissions = try Frame.read(ResponseFrame.self, from: r.fd).response else {
@@ -417,7 +417,7 @@ import Testing
     @Test(.enabled(if: AXBackend.isAccessibilityTrusted()))
     func verifyAgainstRealFinderAndDetectsTampering() throws {
         guard let finder = AXBackend.listApps().first(where: { $0.bundleId == "com.apple.finder" }) else { return }
-        let tree = try AXBackend.dumpTree(pid: finder.pid, maxDepth: 3, budgetMs: 10_000).root
+        let tree = try AXBackend.dumpTree(pid: finder.pid, windowTitle: nil, maxDepth: 3, budgetMs: 10_000).root
         // 取第一个有子节点的一级子节点（菜单栏），定位到它的第一个子节点。
         guard let top = tree.children.firstIndex(where: { !$0.children.isEmpty }),
             let count = tree.childCount, let topCount = tree.children[top].childCount
@@ -429,17 +429,17 @@ import Testing
                 PathStep(index: 0, siblings: topCount, role: target.role),
             ],
             target: TargetKey(target))
-        #expect(try AXBackend.performAction(pid: finder.pid, locator: loc, action: .verify) == .located)
+        #expect(try AXBackend.performAction(pid: finder.pid, windowTitle: nil, locator: loc, action: .verify) == .located)
 
         var tampered = loc
         tampered.path[0].siblings += 1
-        guard case .stale(let d) = try AXBackend.performAction(pid: finder.pid, locator: tampered, action: .verify)
+        guard case .stale(let d) = try AXBackend.performAction(pid: finder.pid, windowTitle: nil, locator: tampered, action: .verify)
         else { Issue.record("子节点数被改动，应判失效"); return }
         #expect(d.reason == .childCount && d.step == 0)
 
         tampered = loc
         tampered.target.title = "不存在的标题"
-        guard case .stale(let d2) = try AXBackend.performAction(pid: finder.pid, locator: tampered, action: .verify)
+        guard case .stale(let d2) = try AXBackend.performAction(pid: finder.pid, windowTitle: nil, locator: tampered, action: .verify)
         else { Issue.record("核对键被改动，应判失效"); return }
         #expect(d2.reason == .target)
     }

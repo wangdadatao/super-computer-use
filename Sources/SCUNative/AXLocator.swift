@@ -45,15 +45,13 @@ extension AXBackend {
         case stale(StaleDetail)
     }
 
-    public static func performAction(pid: Int32, locator: ElementLocator, action: ActionKind) throws -> ActionResult {
-        guard isAccessibilityTrusted() else { throw WireError.permissionMissing("辅助功能") }
-        guard NSRunningApplication(processIdentifier: pid) != nil else { throw WireError.targetMissing(pid: pid) }
-        let app = AXUIElementCreateApplication(pid)
-        AXUIElementSetMessagingTimeout(app, messagingTimeout)
-        guard string(app, kAXRoleAttribute) != nil else { throw WireError.targetMissing(pid: pid) }
+    public static func performAction(
+        pid: Int32, windowTitle: String? = nil, locator: ElementLocator, action: ActionKind
+    ) throws -> ActionResult {
+        let root = try rootElement(pid: pid, windowTitle: windowTitle)
 
         let result = locate(
-            root: app, locator: locator,
+            root: root, locator: locator,
             children: { el in
                 let kids = elements(el, kAXChildrenAttribute)
                 for kid in kids ?? [] { AXUIElementSetMessagingTimeout(kid, messagingTimeout) }

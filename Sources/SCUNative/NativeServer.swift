@@ -75,7 +75,15 @@ public struct NativeServer: Sendable {
             return .permissions(accessibility: AXBackend.isAccessibilityTrusted())
         case .listApps:
             return .apps(AXBackend.listApps())
-        case .dumpTree(let pid, let maxDepth, let budgetMs):
+        case .listWindows(let pid):
+            do {
+                return .windows(try AXBackend.listWindows(pid: pid))
+            } catch let e as WireError {
+                return .failure(e)
+            } catch {
+                return .failure(.internalError("\(error)"))
+            }
+        case .dumpTree(let pid, let windowTitle, let maxDepth, let budgetMs):
             guard (0...scuMaxTreeDepth).contains(maxDepth) else {
                 return .failure(.internalError("maxDepth 必须在 0...\(scuMaxTreeDepth)，收到 \(maxDepth)"))
             }
@@ -83,32 +91,37 @@ public struct NativeServer: Sendable {
                 return .failure(.internalError("budgetMs 必须在 \(scuTreeBudgetMsRange)，收到 \(budgetMs)"))
             }
             do {
-                let r = try AXBackend.dumpTree(pid: pid, maxDepth: maxDepth, budgetMs: budgetMs)
+                let r = try AXBackend.dumpTree(
+                    pid: pid, windowTitle: windowTitle, maxDepth: maxDepth, budgetMs: budgetMs)
                 return .tree(r.root, truncated: r.truncated)
             } catch let e as WireError {
                 return .failure(e)
             } catch {
                 return .failure(.internalError("\(error)"))
             }
-        case .performAction(let pid, let locator, let action):
+        case .performAction(let pid, let windowTitle, let locator, let action):
             if let problem = validate(locator) { return .failure(.internalError(problem)) }
             return actionResponse {
-                try AXBackend.performAction(pid: pid, locator: locator, action: action)
+                try AXBackend.performAction(
+                    pid: pid, windowTitle: windowTitle, locator: locator, action: action)
             }
-        case .typeText(let pid, let locator, let text):
+        case .typeText(let pid, let windowTitle, let locator, let text):
             if let problem = validate(locator) { return .failure(.internalError(problem)) }
             return actionResponse {
-                try AXBackend.typeText(pid: pid, locator: locator, text: text)
+                try AXBackend.typeText(
+                    pid: pid, windowTitle: windowTitle, locator: locator, text: text)
             }
-        case .pressKey(let pid, let locator, let key):
+        case .pressKey(let pid, let windowTitle, let locator, let key):
             if let problem = validate(locator) { return .failure(.internalError(problem)) }
             return actionResponse {
-                try AXBackend.pressKey(pid: pid, locator: locator, key: key)
+                try AXBackend.pressKey(
+                    pid: pid, windowTitle: windowTitle, locator: locator, key: key)
             }
-        case .setValue(let pid, let locator, let value):
+        case .setValue(let pid, let windowTitle, let locator, let value):
             if let problem = validate(locator) { return .failure(.internalError(problem)) }
             return actionResponse {
-                try AXBackend.setValue(pid: pid, locator: locator, value: value)
+                try AXBackend.setValue(
+                    pid: pid, windowTitle: windowTitle, locator: locator, value: value)
             }
         case .captureWindow(let pid, let windowTitle):
             do {

@@ -187,6 +187,14 @@ public final class DesktopSession {
 
     // MARK: - 读取与签发
 
+    /// 列出窗口，走与应用读取相同的授权检查；`list_apps` 仍保持不过滤。
+    public func listWindows(pid: Int32) throws -> [WindowInfo] {
+        if appAuthorization.isRestricted {
+            try authorizeApp(try lookupIdentity(pid: pid), pid: pid)
+        }
+        return try reader.listWindows(pid: pid)
+    }
+
     public func readState(
         pid: Int32, maxDepth: Int, budgetMs: Int, windowTitle: String? = nil
     ) throws -> SessionState {
@@ -207,7 +215,8 @@ public final class DesktopSession {
             knownIdentity = nil
         }
 
-        let reading = try reader.readTree(pid: pid, maxDepth: maxDepth, budgetMs: budgetMs)
+        let reading = try reader.readTree(
+            pid: pid, windowTitle: windowTitle, maxDepth: maxDepth, budgetMs: budgetMs)
         let entries = ElementTable.flatten(reading.root)
         let digest = Self.structuralDigest(entries)
 
@@ -549,8 +558,10 @@ public final class DesktopSession {
 
     /// 对令牌里的句柄执行动作。会话已知失效的令牌不会联系原生层。
     public func act(token: String, handle: Int, action: ActionKind) throws -> ActionOutcome {
+        let windowTitle = records[token]?.windowTitle
         let (pid, locator) = try authorizedTarget(token: token, handle: handle)
-        let outcome = try reader.performAction(pid: pid, locator: locator, action: action)
+        let outcome = try reader.performAction(
+            pid: pid, windowTitle: windowTitle, locator: locator, action: action)
         if case .stale(let d) = outcome, let r = records[token] {
             invalidate(r, to: .stale)
             throw WireError.staleSnapshot("句柄 #\(handle) 已失效：\(Self.describe(d))。请重新读取界面。")
@@ -587,44 +598,47 @@ public final class DesktopSession {
     /// 点击：执行 `AXPress`，再观察效果。
     // @project-doc docs/interfaces/mcp_surface.md#click_tool
     public func click(token: String, handle: Int) throws -> ClickReport {
-        try perform(token: token, handle: handle) { pid, locator in
-            try reader.performAction(pid: pid, locator: locator, action: .press)
+        try perform(token: token, handle: handle) { pid, windowTitle, locator in
+            try reader.performAction(
+                pid: pid, windowTitle: windowTitle, locator: locator, action: .press)
         }
     }
 
     /// 逐字输入到目标元素（先聚焦），再观察效果。
     // @project-doc docs/interfaces/mcp_surface.md#input_tools
     public func typeText(token: String, handle: Int, text: String) throws -> ClickReport {
-        try perform(token: token, handle: handle) { pid, locator in
-            try reader.typeText(pid: pid, locator: locator, text: text)
+        try perform(token: token, handle: handle) { pid, windowTitle, locator in
+            try reader.typeText(pid: pid, windowTitle: windowTitle, locator: locator, text: text)
         }
     }
 
     /// 向目标元素发送按键（先聚焦），再观察效果。
     // @project-doc docs/interfaces/mcp_surface.md#input_tools
     public func pressKey(token: String, handle: Int, key: String) throws -> ClickReport {
-        try perform(token: token, handle: handle) { pid, locator in
-            try reader.pressKey(pid: pid, locator: locator, key: key)
+        try perform(token: token, handle: handle) { pid, windowTitle, locator in
+            try reader.pressKey(pid: pid, windowTitle: windowTitle, locator: locator, key: key)
         }
     }
 
     /// 通过无障碍接口直接写元素的值，再观察效果。
     // @project-doc docs/interfaces/mcp_surface.md#input_tools
     public func setValue(token: String, handle: Int, value: String) throws -> ClickReport {
-        try perform(token: token, handle: handle) { pid, locator in
-            try reader.setValue(pid: pid, locator: locator, value: value)
+        try perform(token: token, handle: handle) { pid, windowTitle, locator in
+            try reader.setValue(pid: pid, windowTitle: windowTitle, locator: locator, value: value)
         }
     }
 
     /// 动作的统一路径：策略 → 令牌 → 原生层核对 → 投递 → 事后观察。
     /// 点击、输入、按键共用同一套效果摘要与令牌作废规则。
     private func perform(
-        token: String, handle: Int, action: (Int32, ElementLocator) throws -> ActionOutcome
+        token: String, handle: Int,
+        action: (Int32, String?, ElementLocator) throws -> ActionOutcome
     ) throws -> ClickReport {
         // 先于动作取走动作前的快照信息：动作中途令牌可能被作废并释放快照。
         let pre = records[token]?.snapshot
+        let windowTitle = records[token]?.windowTitle
         let (pid, locator) = try authorizedTarget(token: token, handle: handle)
-        let outcome = try action(pid, locator)
+        let outcome = try action(pid, windowTitle, locator)
         if case .stale(let d) = outcome, let r = records[token] {
             invalidate(r, to: .stale)
             throw WireError.staleSnapshot("句柄 #\(handle) 已失效：\(Self.describe(d))。请重新读取界面。")
@@ -646,7 +660,9 @@ public final class DesktopSession {
         do {
             while true {
                 settle.sleep(settle.interval)
-                let reading = try reader.readTree(pid: record.pid, maxDepth: pre.maxDepth, budgetMs: pre.budgetMs)
+                let reading = try reader.readTree(
+                    pid: record.pid, windowTitle: record.windowTitle,
+                    maxDepth: pre.maxDepth, budgetMs: pre.budgetMs)
                 report.polls += 1
                 let digest = Self.structuralDigest(ElementTable.flatten(reading.root))
                 settled = reading

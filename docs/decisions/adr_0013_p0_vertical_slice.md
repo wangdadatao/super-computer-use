@@ -87,7 +87,7 @@ P0 是一条**最小竖切**：从读取真实应用的无障碍树，到身份�
 | 契约 | P0 实现 | 补齐时机 |
 | --- | --- | --- |
 | [`ScuError`](../interfaces/error_taxonomy.md#error_structure) | 只有 `code`、`layer`、`retry`、`message`；无 `details`、`candidates` | 出现需要它们的错误（如目标歧义）时 |
-| [原生层线协议](../interfaces/native_wire_protocol.md)消息目录 | P0 时为 5 种请求（握手、权限、应用列表、读树、`performAction`；协议版本 3）；v1 加了 `typeText` / `pressKey` / `setValue`，版本 5；v2 加了 `captureWindow`、`AXNode.actions`、`clickAt`，版本 8 | 随 P0 动作与令牌工作增加 |
+| [原生层线协议](../interfaces/native_wire_protocol.md)消息目录 | P0 时为 5 种请求（握手、权限、应用列表、读树、`performAction`；协议版本 3）；v1 加了 `typeText` / `pressKey` / `setValue`，版本 5；v2 继续加入 `captureWindow`、`AXNode.actions`、`clickAt`、`scrollAt`、`dragAt`、`listWindows` 与窗口根，协议至 v11 | 随 P0 动作与令牌工作增加 |
 | 未知字段 | 解码时被忽略，版本相等规则兜底 | 待定 |
 
 ## 出口门槛
@@ -343,6 +343,10 @@ agent 使用与安装指导、一次真实第三方应用端到端验证。真�
 
 v1 收口后按缺口排的候选范围。**这是草案**，开工前要把选中项写成正式范围并定度量方式
 （[ADR-0014](adr_0014_positioning_ai_usability.md)）。
+
+**2026-10-20 状态**：截图+坐标、滚动/拖拽、应用启动/窗口目标、连接级允许列表与指示层已实现；
+逐次审批经参考实现调研后决定不做（见 [审批触发](../../verification/2026-10-20-approval-triggers.md)）；
+OCR、CEF 产品化、IME、`batch`、code mode 与分发仍未做。
 
 | 候选 | 目的 | 主要代价 |
 | --- | --- | --- |

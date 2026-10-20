@@ -13,6 +13,51 @@ public enum AXBackend {
         AXIsProcessTrusted()
     }
 
+    /// 应用根元素；统一检查辅助功能权限、进程存在与基本可读性。
+    static func appElement(pid: Int32) throws -> AXUIElement {
+        guard isAccessibilityTrusted() else {
+            throw WireError.permissionMissing("辅助功能")
+        }
+        guard NSRunningApplication(processIdentifier: pid) != nil else {
+            throw WireError.targetMissing(pid: pid)
+        }
+        let app = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(app, messagingTimeout)
+        guard string(app, kAXRoleAttribute) != nil else {
+            throw WireError.targetMissing(pid: pid)
+        }
+        return app
+    }
+
+    /// 按标题精确查找窗口元素。找不到时返回 `window_not_found`，不退回其他窗口。
+    static func windowElement(pid: Int32, title: String) throws -> AXUIElement {
+        let app = try appElement(pid: pid)
+        guard let windows = elements(app, kAXWindowsAttribute),
+            let match = windows.first(where: { string($0, kAXTitleAttribute) == title })
+        else {
+            throw WireError.windowNotFound(pid: pid, title: title)
+        }
+        AXUIElementSetMessagingTimeout(match, messagingTimeout)
+        return match
+    }
+
+    /// 元素定位的根：默认应用根；有窗口标题时以该窗口为根。
+    // @project-doc docs/decisions/adr_0027_window_root_locator.md#window_root_locator
+    static func rootElement(pid: Int32, windowTitle: String?) throws -> AXUIElement {
+        if let windowTitle { return try windowElement(pid: pid, title: windowTitle) }
+        return try appElement(pid: pid)
+    }
+
+    /// 列出应用可枚举的窗口（只读）。标题可能为 nil。
+    public static func listWindows(pid: Int32) throws -> [WindowInfo] {
+        let app = try appElement(pid: pid)
+        let windows = elements(app, kAXWindowsAttribute) ?? []
+        return windows.map { element in
+            AXUIElementSetMessagingTimeout(element, messagingTimeout)
+            return WindowInfo(title: string(element, kAXTitleAttribute), frame: frame(element))
+        }
+    }
+
     public static func listApps() -> [AppInfo] {
         NSWorkspace.shared.runningApplications
             .filter { $0.activationPolicy == .regular }
@@ -40,22 +85,17 @@ public enum AXBackend {
     }
 
     /// 读取某个进程的无障碍树。`budgetMs` 是整棵树的总时限；单次 AX 调用另有 `messagingTimeout`。
-    public static func dumpTree(pid: Int32, maxDepth: Int, budgetMs: Int) throws -> TreeResult {
-        guard isAccessibilityTrusted() else {
-            throw WireError.permissionMissing("辅助功能")
-        }
-        guard NSRunningApplication(processIdentifier: pid) != nil else {
-            throw WireError.targetMissing(pid: pid)
-        }
-        let app = AXUIElementCreateApplication(pid)
-        AXUIElementSetMessagingTimeout(app, messagingTimeout)
-        // 探测：连 role 都读不到，说明应用不暴露无障碍树。
-        guard string(app, kAXRoleAttribute) != nil else {
+    public static func dumpTree(
+        pid: Int32, windowTitle: String? = nil, maxDepth: Int, budgetMs: Int
+    ) throws -> TreeResult {
+        let rootElement = try rootElement(pid: pid, windowTitle: windowTitle)
+        // 探测：连 role 都读不到，说明应用/窗口不暴露无障碍树。
+        guard string(rootElement, kAXRoleAttribute) != nil else {
             throw WireError.targetMissing(pid: pid)
         }
         let budget = TraversalBudget(milliseconds: budgetMs)
         let (root, truncated) = traverse(
-            root: app, maxDepth: maxDepth,
+            root: rootElement, maxDepth: maxDepth,
             isExpired: { budget.expired },
             read: { el, wantChildren in
                 let (node, kids) = readNode(el, wantChildren: wantChildren)

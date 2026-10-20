@@ -15,7 +15,13 @@ final class FakeReader: DesktopReader {
     var apps: Result<[AppInfo], WireError> = .success([AppInfo(pid: 42, name: "演示", bundleId: "com.example.demo")])
     var tree: Result<TreeReading, WireError> = .success(
         TreeReading(root: AXNode(role: "AXWindow", title: "主窗口"), truncated: false))
+    var windows: Result<[WindowInfo], WireError> = .success([
+        WindowInfo(title: "主窗口", frame: Rect(x: 0, y: 0, width: 800, height: 600))
+    ])
+    private(set) var windowsCalls: [Int32] = []
     private(set) var treeCalls: [(pid: Int32, depth: Int, budget: Int)] = []
+    private(set) var treeWindowTitles: [String?] = []
+    private(set) var actionWindowTitles: [String?] = []
     var action: Result<ActionOutcome, WireError> = .success(.acted)
     private(set) var actionCalls: [(pid: Int32, locator: ElementLocator, action: ActionKind)] = []
     private(set) var typed: [(pid: Int32, locator: ElementLocator, text: String)] = []
@@ -52,24 +58,43 @@ final class FakeReader: DesktopReader {
         return .acted
     }
     func listApps() throws -> [AppInfo] { try apps.get() }
-    func readTree(pid: Int32, maxDepth: Int, budgetMs: Int) throws -> TreeReading {
+    func listWindows(pid: Int32) throws -> [WindowInfo] {
+        windowsCalls.append(pid)
+        return try windows.get()
+    }
+    func readTree(
+        pid: Int32, windowTitle: String?, maxDepth: Int, budgetMs: Int
+    ) throws -> TreeReading {
         treeCalls.append((pid, maxDepth, budgetMs))
+        treeWindowTitles.append(windowTitle)
         return try tree.get()
     }
-    func performAction(pid: Int32, locator: ElementLocator, action kind: ActionKind) throws -> ActionOutcome {
+    func performAction(
+        pid: Int32, windowTitle: String?, locator: ElementLocator, action kind: ActionKind
+    ) throws -> ActionOutcome {
         actionCalls.append((pid, locator, kind))
+        actionWindowTitles.append(windowTitle)
         return try action.get()
     }
-    func typeText(pid: Int32, locator: ElementLocator, text: String) throws -> ActionOutcome {
+    func typeText(
+        pid: Int32, windowTitle: String?, locator: ElementLocator, text: String
+    ) throws -> ActionOutcome {
         typed.append((pid, locator, text))
+        actionWindowTitles.append(windowTitle)
         return try action.get()
     }
-    func pressKey(pid: Int32, locator: ElementLocator, key: String) throws -> ActionOutcome {
+    func pressKey(
+        pid: Int32, windowTitle: String?, locator: ElementLocator, key: String
+    ) throws -> ActionOutcome {
         pressed.append((pid, locator, key))
+        actionWindowTitles.append(windowTitle)
         return try action.get()
     }
-    func setValue(pid: Int32, locator: ElementLocator, value: String) throws -> ActionOutcome {
+    func setValue(
+        pid: Int32, windowTitle: String?, locator: ElementLocator, value: String
+    ) throws -> ActionOutcome {
         written.append((pid, locator, value))
+        actionWindowTitles.append(windowTitle)
         return try action.get()
     }
 }
@@ -126,7 +151,7 @@ struct ToolReply: Equatable {
         let r = request(server, "tools/list")
         guard case .array(let tools)? = r["result"]?["tools"] else { Issue.record("缺少 tools"); return }
         let names = tools.compactMap { $0["name"]?.stringValue }
-        #expect(names == ["check_permissions", "list_apps", "get_ax_state", "get_screenshot"])
+        #expect(names == ["check_permissions", "list_apps", "list_windows", "get_ax_state", "get_screenshot"])
         for t in tools {
             // 只读档的核心承诺：没有任何工具会改变桌面状态。
             #expect(t["annotations"]?["readOnlyHint"] == .bool(true))
@@ -452,7 +477,7 @@ final class FakeAppLauncher: AppLauncher, @unchecked Sendable {
 
     @Test func clickIsHiddenAndRejectedByDefault() {
         let (t, s, reader) = rig(actions: false)
-        #expect(toolNames(t, s) == ["check_permissions", "list_apps", "get_ax_state", "get_screenshot"])
+        #expect(toolNames(t, s) == ["check_permissions", "list_apps", "list_windows", "get_ax_state", "get_screenshot"])
         let r = t.request(s, "tools/call", params: ["name": "click", "arguments": ["token": "x", "handle": 1]])
         #expect(r["error"]?["code"] == .int(-32602))  // 与未知工具同样处理
         #expect(reader.actionCalls.isEmpty)
@@ -570,6 +595,14 @@ final class FakeAppLauncher: AppLauncher, @unchecked Sendable {
         #expect(imageData.count > 0)
     }
 
+
+    @Test func listWindowsIsReadOnlyAndFormatsTitleAndFrame() {
+        let (t, s, reader) = rig(actions: false)
+        let r = t.callTool(s, "list_windows", ["pid": 42])
+        #expect(!r.isError)
+        #expect(r.text == "\"主窗口\"\t(0,0,800,600)")
+        #expect(reader.windowsCalls == [42])
+    }
 
     @Test func getAXStateCanBindAScreenshotWindow() {
         let (t, s, reader) = rig(actions: false)

@@ -438,12 +438,19 @@ struct FixtureTests {
             init(_ n: NativeSession) { inner = n }
             func checkPermissions() throws -> Bool { try inner.checkPermissions() }
             func listApps() throws -> [AppInfo] { try inner.listApps() }
-            func readTree(pid: Int32, maxDepth: Int, budgetMs: Int) throws -> TreeReading {
-                try inner.readTree(pid: pid, maxDepth: maxDepth, budgetMs: budgetMs)
+            func listWindows(pid: Int32) throws -> [WindowInfo] { try inner.listWindows(pid: pid) }
+            func readTree(
+                pid: Int32, windowTitle: String?, maxDepth: Int, budgetMs: Int
+            ) throws -> TreeReading {
+                try inner.readTree(
+                    pid: pid, windowTitle: windowTitle, maxDepth: maxDepth, budgetMs: budgetMs)
             }
-            func performAction(pid: Int32, locator: ElementLocator, action: ActionKind) throws -> ActionOutcome {
+            func performAction(
+                pid: Int32, windowTitle: String?, locator: ElementLocator, action: ActionKind
+            ) throws -> ActionOutcome {
                 acted = true
-                return try inner.performAction(pid: pid, locator: locator, action: action)
+                return try inner.performAction(
+                    pid: pid, windowTitle: windowTitle, locator: locator, action: action)
             }
         }
         let g = Guard(native)

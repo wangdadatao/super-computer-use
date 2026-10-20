@@ -25,11 +25,12 @@ SCU 对 agent **只暴露少量工具**，核心是一个 JavaScript 执行入�
 能力全部通过 JavaScript API 提供，而不是每个能力一个工具。
 理由与代价见 [ADR-0002](../decisions/adr_0002_code_mode_surface.md)。
 
-首版只提供 MCP stdio 形态。是否需要面向 agent 会话的独立 CLI 待定；仓库里已有面向开发者的诊断命令（`scu permissions` / `apps` / `dump` / `identity`），它们不是这里讨论的接入形态。
+首版只提供 MCP stdio 形态。是否需要面向 agent 会话的独立 CLI 待定；仓库里已有面向开发者的诊断命令（`scu permissions` / `apps` / `windows` / `dump` / `identity`），它们不是这里讨论的接入形态。
 
 **已实现的只是其中的一小部分**，工具也不是 `js`：见 [MCP 接入面](mcp_surface.md)——
-三个只读工具，加 `--actions` 时多一个 `click`（`AXPress`，带最小效果摘要）。
-本文描述的 `js` 工具面、会话 API、输入与设值、坐标动作、完整的效果摘要仍是拟实施设计。
+五个只读工具（`check_permissions`、`list_apps`、`list_windows`、`get_ax_state`、`get_screenshot`），
+加 `--actions` 时提供 `launch_app`、`click`、`click_at`、`scroll_at`、`drag`、`type_text`、`press_key`、`set_value`。
+本文描述的 `js` 工具面与会话 API 仍是拟实施设计。
 
 ## 会话 API
 

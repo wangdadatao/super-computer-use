@@ -241,7 +241,7 @@ verification/
 标签寻址（[ADR-0018](../decisions/adr_0018_label_addressing.md)）已在单元测试、MCP 测试与网易云 3.1.12（CEF）上验证；
 窗口截图与标签叠加（[ADR-0019](../decisions/adr_0019_window_screenshot.md)）已在网易云上验证（1600×1138、负窗口原点）；
 网易云左侧栏能标出 `AXGroup`，但 `AXPress` 是空操作（`noOpSuspected=true`）；`click_at` 已能在该侧栏从推荐切到精选（截图 diff 约 43%）；
-`scroll_at` 已在推荐页上下滚动（diff 约 0.387）；`drag` 只有单元/MCP 测试，真实应用未验证；`launch_app` 已在计算器冷启动与网易云（已运行）上验证；连接级应用允许列表有单元/MCP 测试，读取门禁已在网易云/访达上验证；多窗口目标与 `get_ax_state(window)` 绑定有单元/MCP 测试，TextEdit 单窗口实测；多窗口真实回归未做；
+`scroll_at` 已在推荐页上下滚动（diff 约 0.387）；`drag` 只有单元/MCP 测试，真实应用未验证；`launch_app` 已在计算器冷启动与网易云（已运行）上验证；连接级应用允许列表有单元/MCP 测试，读取门禁已在网易云/访达上验证；多窗口目标与 `get_ax_state(window)` 绑定有单元/MCP 测试；`list_windows` 与窗口根已在 TextEdit 两个文档窗口上实测（标题/frame、根为 `AXWindow`、错误标题返回 `window_not_found`）；多窗口动作回归仍未做；
 坐标动作前的指示环靠人工观察，不能截图验证；
 其他真实应用、多窗口选择与窗口移动后的截图过期判断尚未验证。
 权限按宿主归属，不是机器级事实（见 [macOS 权限](permissions.md)）：

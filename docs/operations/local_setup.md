@@ -67,13 +67,13 @@ git config core.hooksPath scripts/hooks
 左侧栏这类 `AXGroup` 能标出，但 `AXPress` 是空操作，已由 `click_at` 补上 |
 | 窗口截图与标签叠加：`get_screenshot(token)` 截目标窗口，返回 PNG、`windowFrame`、`scale`、`screenshot_id`、`title`（[ADR-0019](../decisions/adr_0019_window_screenshot.md)） | `ScreenCapture.swift`、`ScreenshotOverlay.swift`、`Tools` | 已实现，有 MCP 测试；已在网易云上截图 1600×1138 |
 | 多窗口目标：激活与截图共用“最大非最小化窗口”，截图按 frame 匹配（[ADR-0025](../decisions/adr_0025_window_target.md)） | `WindowActivation.swift`、`ScreenCapture.swift` | 已实现，有窗口选择单元测试；TextEdit 单窗口实测截图标题/frame 一致；多窗口真实验证未做 |
-| 显式窗口选择：`get_ax_state(window)` 绑定截图/坐标动作，元素表仍为整个应用（[ADR-0026](../decisions/adr_0026_window_selection.md)） | `DesktopSession`、`Tools`、`Messages.swift` | 已实现，有单元/MCP 测试；TextEdit 单窗口实测；窗口标题变化返回 `window_not_found` |
+| 窗口列表与窗口根：`list_windows` 返回标题/frame；`get_ax_state(window)` 以窗口为根读树，元素动作也绑定该窗口（[ADR-0027](../decisions/adr_0027_window_root_locator.md)） | `DesktopSession`、`Tools`、`Messages.swift`、`AXBackend.swift` | 已实现，有单元/MCP 测试；TextEdit 两个窗口实测 `list_windows` 与窗口根；窗口标题变化返回 `window_not_found` |
 | 坐标点击：`click_at(token, screenshot_id, x, y)` 激活目标窗口后用真实鼠标事件点击（[ADR-0020](../decisions/adr_0020_coordinate_click.md)） | `Mouse.swift`、`WindowActivation.swift`、`DesktopSession` | 已实现，有 MCP 测试；已在网易云左侧栏从推荐切到精选，截图 diff 约 43% |
 | 滚动与拖拽：`scroll_at` / `drag` 按截图坐标投递滚轮/拖拽事件（[ADR-0021](../decisions/adr_0021_scroll_and_drag.md)） | `Mouse.swift`、`DesktopSession`、`Tools` | 已实现，有 MCP 测试；滚动已在网易云验证（diff 约 0.387）；拖拽真实应用未验证 |
 | 应用启动：`launch_app` 按 bundle id/名称/路径解析，策略检查后启动或激活（[ADR-0022](../decisions/adr_0022_app_launch.md)） | `AppLauncher.swift`、`DesktopSession`、`Tools` | 已实现，有单元与 MCP 测试；已在计算器冷启动与网易云（已运行）上验证 |
 | 连接级应用允许列表：`--allow-app` / `--allow-app-file`，列表外应用读取/动作前拒绝（[ADR-0024](../decisions/adr_0024_app_authorization.md)） | `AppAuthorization.swift`、`DesktopSession`、`scu` 参数解析 | 已实现，有单元与 MCP 测试；已在网易云/访达上验证读取门禁（动作门禁为单元测试） |
 | 坐标动作指示环：点击/滚动/拖拽前 120ms 显示不拦截、不进入截图的圆环（[ADR-0023](../decisions/adr_0023_indicator.md)） | `Indicator.swift`、`Mouse.swift` | 已实现；靠人工观察，不能截图验证 |
-| MCP stdio 服务：只读的 `check_permissions`、`list_apps`、`get_ax_state`、`get_screenshot`；加 `--actions` 额外提供 `launch_app`、`click`、`click_at`、`scroll_at`、`drag`、`type_text`、`press_key`、`set_value`；`--allow-app` / `--allow-app-file` 配置连接级应用允许列表（见 [MCP 接入面](../interfaces/mcp_surface.md)） | `SCUMCP`、`scu mcp`、`NativeSession` | 已实现，有单元测试与真实管道的端到端测试；只读工具已在 Cursor 一个宿主里跑通。**`click` 已在自制夹具应用 `scu-fixture` 与网易云 3.1.12（CEF）上用真实 `AXPress` 验证过**（见 [夹具验证](../../verification/2026-10-18-fixture-validation.md) 与 [网易云验证](../../verification/2026-10-19-real-app-netease.md)），其他 Electron 等第三方应用未验证（见 [MCP 接入面的未验证项](../interfaces/mcp_surface.md#未验证项)） |
+| MCP stdio 服务：只读的 `check_permissions`、`list_apps`、`list_windows`、`get_ax_state`、`get_screenshot`；加 `--actions` 额外提供 `launch_app`、`click`、`click_at`、`scroll_at`、`drag`、`type_text`、`press_key`、`set_value`；`--allow-app` / `--allow-app-file` 配置连接级应用允许列表（见 [MCP 接入面](../interfaces/mcp_surface.md)） | `SCUMCP`、`scu mcp`、`NativeSession` | 已实现，有单元测试与真实管道的端到端测试；只读工具已在 Cursor 一个宿主里跑通。**`click` 已在自制夹具应用 `scu-fixture` 与网易云 3.1.12（CEF）上用真实 `AXPress` 验证过**（见 [夹具验证](../../verification/2026-10-18-fixture-validation.md) 与 [网易云验证](../../verification/2026-10-19-real-app-netease.md)），其他 Electron 等第三方应用未验证（见 [MCP 接入面的未验证项](../interfaces/mcp_surface.md#未验证项)） |
 | 会话：快照令牌签发与复用、按路径加核对键定位句柄、`click`（`AXPress`）、轮询式收敛与效果摘要（[ADR-0015](../decisions/adr_0015_handle_resolution_by_path.md)） | `DesktopSession` | 已实现，有假读取器的单元测试、真实访达的 `verify` 测试与夹具上的真实点击测试 |
 | 定位器：沿路径逐层核对子节点数与角色，再核对目标核对键，通过后 `press` / `verify` | `AXLocator`、`NativeServer` | 已实现，有测试（线协议 v4 的 `performAction`） |
 | 输入与按键：先聚焦目标元素，再把 Unicode 键盘事件与组合键投递到目标进程（不激活应用）；设值走无障碍 `AXValue` | `Input.swift`、`DesktopSession` | 已实现，有按键解析单元测试、会话层测试与夹具上的真实输入/提交/设值测试 |
@@ -96,10 +96,11 @@ scu mcp [--actions] [--allow-app <id>]... [--allow-app-file <path>]
                                     # --allow-app / --allow-app-file 可选配置连接级应用允许列表；stdout 只有协议消息，诊断写 stderr
 scu permissions                     # 检查辅助功能权限
 scu apps                            # 列出可绑定的应用与 pid
-scu dump --pid <pid> [--depth N] [--budget-ms M]
+scu windows --pid <pid>              # 列出窗口标题与 frame
+scu dump --pid <pid> [--window <title>] [--depth N] [--budget-ms M]
                                     # 输出无障碍树，并在 stderr 给出字段覆盖率
                                     # N 范围 0...64，默认 12；M 范围 100...120000，默认 15000；预算耗尽时明确提示已截断
-scu dump --pid <pid> --json         # 输出 JSON，供后续比对
+scu dump --pid <pid> --window <title> --json  # 窗口根 JSON，供后续比对
 scu identity --pid <pid> [--depth N] [--budget-ms M] [--by-role] [--show-k4]
                                     # 匹配键档位分布（基线，不给成败结论）；默认深度 24
                                     # --by-role 按 role 拆分，--show-k4 列出落入 K4 的窗口内可交互元素
