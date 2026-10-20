@@ -22,10 +22,12 @@ SCU 的设计决策引用了一批对两套已发布实现的观察结论。本�
 | ID | 工件 | 版本 / 标识 | 采集日期 |
 | --- | --- | --- | --- |
 | `CU-APP` | 主程序 `SkyComputerUseService`<br><sub>`~/.codex/computer-use/Codex Computer Use.app/Contents/MacOS/`</sub> | `26.1013.1001501` (build 1001501)<br>sha256 `f21c31c0ee5df419dbd165bf76ebd65c64d864c6fec5b6c6c3a23c42ff3d2e13`<br>Mach-O arm64, 24934560 字节 | 2026-10-16 |
+| `CU-CLIENT` | 客户端 `SkyComputerUseClient`<br><sub>`~/.codex/computer-use/Codex Computer Use.app/Contents/SharedSupport/SkyComputerUseClient.app/Contents/MacOS/`</sub> | `26.1013.1001501` (build 1001501)<br>sha256 `4861d29eb73f6f71a5a82dc94fc7c696d34e8cd6493f1932f6ba7b51f6448cf5`<br>Mach-O arm64, 15502928 字节 | 2026-10-20 |
 | `CU-PLUGIN-OLD` | 插件 `computer-use`（7 月版本快照）<br><sub>`~/.codex-proxy/plugins/cache/openai-bundled/computer-use/1.0.1000366/`</sub> | `1.0.1000366` | 2026-10-16 |
-| `CU-PLUGIN` | 插件 `computer-use` | `1.0.1001501` | 2026-10-16 |
+| `CU-PLUGIN` | 插件 `computer-use`<br><sub>`~/.codex/.tmp/bundled-marketplaces/openai-bundled/plugins/computer-use/`</sub> | `1.0.1001501`<br>`SKILL.md` sha256 `e6a2b212bacad8d16a9a07e2fef5d428ea00c7b9a8f8529bec1bd2ba48a49c4f` | 2026-10-20 |
 | `CU-UNIFIED` | 插件 `unified-computer-use` | `26.1013.31256` | 2026-10-16 |
 | `CU-SKY` | JS 包 `@oai/sky`<br><sub>`/Applications/ChatGPT.app/Contents/Resources/cua_node/lib/node_modules/`</sub> | `0.7.8` | 2026-10-16 |
+| `CU-SKY-POLICY` | `@oai/sky` 的应用策略入口<br><sub>`dist/project/cua/sky_js/src/targets/mac/computer-use-policy.js`</sub> | `0.7.8`<br>sha256 `a00024117e11f2d1e4151e140bede2c0ed7931625aa0f79a427457cb1103524e` | 2026-10-20 |
 | `CU-CUA` | JS 包 `@oai/cua` | `0.2.6` | 2026-10-16 |
 | `CU-REPL` | JS 包 `@oai/cua-repl` | `0.1.0` | 2026-10-16 |
 
@@ -45,6 +47,7 @@ SCU 的设计决策引用了一批对两套已发布实现的观察结论。本�
 | 链接框架 | 判断依赖的框架 | `otool -L <binary>` |
 | 属性列表 | 版本、bundle id、权限声明 | `plutil -extract <key> raw <Info.plist>` |
 | 源码直读 | JS 包的类型定义、文档、配置 | 直接读取文件 |
+| ASAR 解包 | 读取 Electron 主程序内的压缩 JS、i18n 表 | `npx @electron/asar extract <app.asar> <dir>`（只读解包，不改原工件） |
 | REA 静态分析 | 对 ASAR 做结构化重建（应用图、Electron 边界、完整性核对），给出可引用的证据 ID | `rea analyze-javascript-application <asar> --integrity-policy record-and-continue --format json --full-output`（REA 6.5.0）。完整性不符时默认失败，见下文「2026-10-18 复核记录」 |
 
 **方法注意事项（会直接影响结论的正确性）**
@@ -141,6 +144,25 @@ SCU 的设计决策引用了一批对两套已发布实现的观察结论。本�
 | **只读状态读取同样被拒**，不止点击和输入 | `GB-ASAR` | 工具分类表 `Lee` 把 `computer_app_state` 归为 `"app"` 范围，`qAe` 对 `"app"` 范围先调用 `Mee`，`Mee` 首先 `$Ae(bundleId)` 判断 |
 | 拒绝文案告诉模型"让用户自己做这一步" | `GB-ASAR` | 函数 `Dee`："… is off limits to computer use. … Ask the user to do this step themselves." |
 | 拒绝发生在 asar（宿主）侧，在转发给原生服务**之前** | `GB-ASAR` | `qAe` 返回 `{kind:"relay"}` 才转发；`refused` 不转发（与纠正 C-3 一致） |
+
+### 审批触发（2026-10-20 复核）
+
+| 结论 | 来源 | 证据 |
+| --- | --- | --- |
+| Grok 在应用级做运行时审批，不逐动作审批 | `GB-ASAR` | `dist/local-exec-daemon/main.cjs` 的 `qAe`/`Mee`/`decideAppUse`：scope 为 `app` 时先解析目标，再调用 `decideAppUse(bundleId)`；`describes.action` 固定为 `use-app` |
+| Grok 的应用审批只有三个结果：allow / ask / refused | `GB-ASAR` | `Mee` 的 `switch`；`qAe` 的 `scope` 表 |
+| Grok 的审批卡片提供 Always allow / Allow once / Never | `GB-ASAR` | `dist/renderer/assets/chunk-view-BtE9RKtM.js` 的 `Ii` 与 i18n `NoKBgy`、`pFfO26`、`qqeAJM`；文案 `TsmRYW` / `mk09HK` / `NV+jvp` |
+| Grok 的 Allow once 覆盖当前 turn，Always allow 持久并可撤销 | `GB-ASAR` | 文案 `3w8V6a` / `mFJh/I`；`recordLocalToolApproval`、`recordLocalToolStandingGrant`、`listComputerUseAllowedApps`、`revokeComputerUseAllowedApp`；设置项 `Always-allowed apps` |
+| Grok 团队策略可禁止 Always allow，强制每 turn 审批 | `GB-ASAR` | `standingGrant.kind === "offered"` 分支；文案 `z6H5uV`；团队上限文案 `68SHzZ`（Always allow / Ask every time / Never allow） |
+| Grok 的硬黑名单在审批之前，命中即拒绝且读也拒绝 | `GB-ASAR` | `Mee` 先调用 `$Ae(bundleId)`；scope 表把 `computer_app_state` / `computer_screenshot` 归为 `app`；类目对象 `lAt` |
+| Grok 的 `computer_apps` / `computer_resolve_app` 不触发应用审批 | `GB-ASAR` | scope 表 `Oee`/`Lee`：`free` 与 `resolve` 分支直接返回 |
+| Codex 在运行时做应用级审批，不按动作语义审批 | `CU-SKY-POLICY`、`CU-CLIENT` | `withComputerUsePolicy` 只把 `app` 传给 `getAppPolicy` 和 `createElicitation`；`computer-use-policy.js` 无动作分类分支 |
+| Codex 的审批在 `getAppPolicy` 的 `allowed` 分支才发起 | `CU-SKY-POLICY` | `getAppPolicy` 返回 `allowed` / `denied` / `forbidden`；后两者直接抛错，不调用 `createElicitation` |
+| Codex 的 elicitation 支持 session 与 always 两档 | `CU-SKY-POLICY` | `persist: policy.allowPersistentApproval ? ["session","always"] : ["session"]`；`approval_persistence` 取 `_meta.persist` |
+| Codex 持久化应用审批文件为 `ComputerUseAppApprovals.json` | `CU-CLIENT` | 字符串 `ComputerUseAppApprovals.json`、`AppApprovalStore`、`persistentApprovals`、`sessionApprovedBundleIdentifiers` |
+| Codex 组织策略可以拒绝应用，且不给用户同意入口 | `CU-SKY-POLICY` | `denied` → `Computer Use is blocked ... by your organization's policy`；`forbidden` → `... for safety reasons` |
+| Codex 的动作级确认写在 SKILL，不是运行时闸门 | `CU-PLUGIN` | `SKILL.md` 的 “Computer Use Confirmations Policy”；`CU-SKY-POLICY` 只有应用级 `getAppPolicy`/elicitation |
+| Codex 的应用审批警告提到 prompt injection | `CU-CLIENT` | 字符串 `Allowing ChatGPT to use this app introduces new risks, including ... prompt injection ...` |
 
 ### 范围与平台
 

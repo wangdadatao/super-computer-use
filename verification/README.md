@@ -32,6 +32,7 @@ verification/
 | `2026-10-18-fixture-validation.md` | 夹具应用上的令牌、动作效果、收敛、策略验证：哪些成立、哪些是缺口 |
 | `2026-10-19-token-reject-rate.md` | 令牌误拒率与重读成本：A/B 误拒 0/8，C 保守拒绝 8/8，D 改值点击后令牌失效 8/8 |
 | `2026-10-19-real-app-netease.md` | 真实第三方应用端到端（网易云 CEF）：正常启动无 AX，带 `--force-renderer-accessibility` 后读/输入/点击/播放核实成立 |
+| `2026-10-20-approval-triggers.md` | Grok Bot 与 Codex Computer Use 的审批触发：应用级运行时审批与动作级提示词的区分 |
 
 ## 结论文件格式
 
@@ -40,12 +41,13 @@ verification/
 
 ## 当前状态
 
-**v1 已完成（0.1.0，2026-10-19）；P0 的出口门槛全部满足或判定不适用。** 六份记录：元素身份基线
+**v1 已完成（0.1.0，2026-10-19）；P0 的出口门槛全部满足或判定不适用。** 七份记录：元素身份基线
 （[2026-10-16](2026-10-16-baseline-identity.md)，不是结论）、读树耗时
 （[2026-10-17](2026-10-17-read-latency.md)）、夹具验证（[2026-10-18](2026-10-18-fixture-validation.md)）、
 K4 正式验证（[2026-10-18](2026-10-18-identity-k4.md)，不成立）、令牌误拒与重读成本
 （[2026-10-19](2026-10-19-token-reject-rate.md)，A/B 0/8、C 8/8、D 8/8）、
-真实应用端到端（[2026-10-19](2026-10-19-real-app-netease.md)，网易云 CEF）。
+真实应用端到端（[2026-10-19](2026-10-19-real-app-netease.md)，网易云 CEF）、审批触发
+（[2026-10-20](2026-10-20-approval-triggers.md)，Grok/Codex 静态分析）。
 指示层隔离（需要屏幕录制）等 P0 之外的假设仍未验证。
 门槛见 [ADR-0013](../docs/decisions/adr_0013_p0_vertical_slice.md)；
 权限状态见 [docs/operations/permissions.md](../docs/operations/permissions.md)。
