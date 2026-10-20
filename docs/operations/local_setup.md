@@ -65,7 +65,8 @@ git config core.hooksPath scripts/hooks
 | 文本化元素表（本次读取内的句柄、转义、层级优先的元素数上限、`focus` 展开） | `ElementTable` | 已实现，有测试 |
 | 快照内短标签与 `frame`：可交互元素带 `[a]`，四个动作工具接受 `label`（[ADR-0018](../decisions/adr_0018_label_addressing.md)） | `ElementTable`、`DesktopSession`、`Tools` | 已实现，有单元与 MCP 测试；已在网易云 3.1.12（CEF）上按标签点击、输入与设值；
 左侧栏这类 `AXGroup` 能标出，但 `AXPress` 是空操作，已由 `click_at` 补上 |
-| 窗口截图与标签叠加：`get_screenshot(token)` 截目标窗口，返回 PNG、`windowFrame`、`scale`、`screenshot_id`（[ADR-0019](../decisions/adr_0019_window_screenshot.md)） | `ScreenCapture.swift`、`ScreenshotOverlay.swift`、`Tools` | 已实现，有 MCP 测试；已在网易云上截图 1600×1138 |
+| 窗口截图与标签叠加：`get_screenshot(token)` 截目标窗口，返回 PNG、`windowFrame`、`scale`、`screenshot_id`、`title`（[ADR-0019](../decisions/adr_0019_window_screenshot.md)） | `ScreenCapture.swift`、`ScreenshotOverlay.swift`、`Tools` | 已实现，有 MCP 测试；已在网易云上截图 1600×1138 |
+| 多窗口目标：激活与截图共用“最大非最小化窗口”，截图按 frame 匹配（[ADR-0025](../decisions/adr_0025_window_target.md)） | `WindowActivation.swift`、`ScreenCapture.swift` | 已实现，有窗口选择单元测试；TextEdit 单窗口实测截图标题/frame 一致；多窗口真实验证未做 |
 | 坐标点击：`click_at(token, screenshot_id, x, y)` 激活目标窗口后用真实鼠标事件点击（[ADR-0020](../decisions/adr_0020_coordinate_click.md)） | `Mouse.swift`、`WindowActivation.swift`、`DesktopSession` | 已实现，有 MCP 测试；已在网易云左侧栏从推荐切到精选，截图 diff 约 43% |
 | 滚动与拖拽：`scroll_at` / `drag` 按截图坐标投递滚轮/拖拽事件（[ADR-0021](../decisions/adr_0021_scroll_and_drag.md)） | `Mouse.swift`、`DesktopSession`、`Tools` | 已实现，有 MCP 测试；滚动已在网易云验证（diff 约 0.387）；拖拽真实应用未验证 |
 | 应用启动：`launch_app` 按 bundle id/名称/路径解析，策略检查后启动或激活（[ADR-0022](../decisions/adr_0022_app_launch.md)） | `AppLauncher.swift`、`DesktopSession`、`Tools` | 已实现，有单元与 MCP 测试；已在计算器冷启动与网易云（已运行）上验证 |

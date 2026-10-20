@@ -26,13 +26,13 @@ enum ScreenCapture {
 
         // 截图前把窗口带到当前 Space/显示器：否则 SCWindow.frame 可能与
         // AX/CGWindowList 的屏幕坐标不一致，模型拿到的坐标会点空。
-        try WindowActivation.activate(pid: pid)
+        let target = try WindowActivation.activate(pid: pid)
 
         let box = CaptureBox()
         let done = DispatchSemaphore(value: 0)
         Task.detached {
             do {
-                box.value = try await capture(pid: pid)
+                box.value = try await capture(pid: pid, target: target)
             } catch {
                 box.error = error
             }
@@ -53,7 +53,22 @@ enum ScreenCapture {
         var error: Error?
     }
 
-    private static func capture(pid: Int32) async throws -> WindowCapture {
+    private static func matches(_ window: SCWindow, target: WindowActivation.Target) -> Bool {
+        if let targetFrame = target.frame {
+            let frame = window.frame
+            let tolerance = 2.0
+            return abs(frame.origin.x - targetFrame.x) <= tolerance
+                && abs(frame.origin.y - targetFrame.y) <= tolerance
+                && abs(frame.size.width - targetFrame.width) <= tolerance
+                && abs(frame.size.height - targetFrame.height) <= tolerance
+        }
+        if let title = target.title, !title.isEmpty {
+            return window.title == title
+        }
+        return false
+    }
+
+    private static func capture(pid: Int32, target: WindowActivation.Target) async throws -> WindowCapture {
         let content: SCShareableContent
         do {
             content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
@@ -66,10 +81,18 @@ enum ScreenCapture {
             guard window.windowLayer == 0, window.isOnScreen else { return false }
             return window.frame.width >= 80 && window.frame.height >= 60
         }
-        guard let window = candidates.max(by: {
-            $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height
-        }) else {
-            throw WireError.targetMissing(pid: pid)
+        let window: SCWindow
+        if let matched = candidates.first(where: { matches($0, target: target) }) {
+            window = matched
+        } else if target.title == nil && target.frame == nil,
+            let largest = candidates.max(by: {
+                $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height
+            })
+        {
+            window = largest
+        } else {
+            throw WireError.platformUnavailable(
+                "找不到与激活窗口匹配的截图窗口；拒绝使用可能不匹配的窗口。")
         }
 
         let frame = window.frame

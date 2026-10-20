@@ -60,7 +60,7 @@ scu mcp --actions --allow-app-file ~/.config/scu/pi-apps.json
 | `check_permissions` | 无 | 报告启动本服务的宿主是否有辅助功能权限。权限未授予不算工具错误，是对状态的如实报告 |
 | `list_apps` | 无 | 每行 `pid<TAB>名称<TAB>bundle id`（无 bundle id 时为 `-`） |
 | `get_ax_state` | `pid`（必填）、`max_depth`、`budget_ms`、`max_elements`、`focus`、`focus_role` | 读取应用的无障碍树，返回带标签与 `frame` 的文本化元素表；`focus` 系列只展开一部分 |
-| `get_screenshot` | `token` | 截取令牌对应的目标窗口，叠加标签，返回 PNG 与 `screenshot_id`；需要屏幕录制权限 |
+| `get_screenshot` | `token` | 截取令牌对应的目标窗口，叠加标签，返回 PNG、`screenshot_id`、窗口 frame 与 title；需要屏幕录制权限 |
 | `launch_app`（仅 `--actions`） | `app` | 启动/激活应用（bundle id、名称或 `.app` 路径）；见下 |
 | `click`（仅 `--actions`） | `token`、`handle` 或 `label`（二选一） | 对目标执行 `AXPress`；见下 |
 | `click_at`（仅 `--actions`） | `token`、`screenshot_id`、`x`、`y` | 在截图坐标投递真实鼠标点击；见下 |
@@ -71,6 +71,13 @@ scu mcp --actions --allow-app-file ~/.config/scu/pi-apps.json
 | `set_value`（仅 `--actions`） | `token`、`handle` 或 `label`（二选一）、`value` | 通过无障碍接口直接写值，要求元素可写；见下 |
 
 <a id="click_tool"></a>
+
+### 多窗口选择
+
+截图与坐标动作使用**同一个目标窗口**：原生层在激活应用时选择面积最大的非最小化 AX 窗口，
+截图再按该窗口的 frame 匹配 ScreenCaptureKit 候选；匹配不上就拒绝截图，不会退回可能不匹配的窗口。
+`get_screenshot` 的元数据带 `title`，便于确认截的是哪个窗口。
+当前没有显式窗口选择（按标题/ID 绑定），多窗口时仍可能选到非预期的最大窗口；见 [ADR-0025](../decisions/adr_0025_window_target.md)。
 
 ### `launch_app`
 
@@ -358,7 +365,8 @@ socket 目录建在 `TMPDIR`（若设置且存在）或系统临时目录下。
 - **`get_screenshot` / `click_at` 只在网易云 3.1.12 上验证过**：截图 1600×1138、`scale=1.514`；
   左侧栏坐标点击从「推荐」切到「精选」并成功返回（2026-10-20）。
   滚动已在网易云验证（推荐页上下滚动，diff 约 0.387）；拖拽只有单元/MCP 测试，真实应用未验证。
-  其他应用、多窗口选择、窗口移动后的过期判断、区域级 diff 未验证。
+  其他应用、显式多窗口选择、窗口移动后的过期判断、区域级 diff 未验证；
+  多窗口目标一致性有单元测试，TextEdit 单窗口实测。
 - **应用允许列表**：已做单元与 MCP 测试；已在网易云/访达上验证“列表外应用读取前被拒”。
   动作门禁与 `--allow-app-file` 的文本格式还有单元测试覆盖；允许列表不是逐动作审批，也不包含交互式授权 UI。
 - **`launch_app` 已验证冷启动（计算器）与已运行（网易云）**：返回 pid、终端拒绝、未知应用错误均成立。

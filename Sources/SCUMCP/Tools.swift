@@ -392,7 +392,7 @@ enum ScuTool: String, CaseIterable {
                 let shot = try session.captureScreenshot(token: token)
                 let overlaid = ScreenshotOverlay.render(capture: shot.capture, labels: shot.labels) ?? shot.capture.png
                 let text = """
-                    screenshot_id=\(shot.id) 图像 \(shot.capture.width)x\(shot.capture.height) scale=\(String(format: "%.3f", shot.capture.scale)) window=(\(Int(shot.capture.windowFrame.x)),\(Int(shot.capture.windowFrame.y)),\(Int(shot.capture.windowFrame.width)),\(Int(shot.capture.windowFrame.height)))
+                    screenshot_id=\(shot.id) 图像 \(shot.capture.width)x\(shot.capture.height) scale=\(String(format: "%.3f", shot.capture.scale)) window=(\(Int(shot.capture.windowFrame.x)),\(Int(shot.capture.windowFrame.y)),\(Int(shot.capture.windowFrame.width)),\(Int(shot.capture.windowFrame.height))) title="\(shot.capture.windowTitle ?? "-")"
                     图上 [a] 是快照标签；文本表可能因 max_elements/focus 只显示一部分，未在文本表出现的标签也仍可用。\n标签只对本次令牌有效；截图绑定窗口位置与缩放，窗口移动后需要重新截。
                     """
                 return Outcome(

@@ -82,4 +82,5 @@ WindowCapture {
 - [原生层线协议](../interfaces/native_wire_protocol.md)
 - [MCP 接入面](../interfaces/mcp_surface.md)
 - [ADR-0018](adr_0018_label_addressing.md)
+- [ADR-0025](adr_0025_window_target.md)
 - [真实应用验证](../../verification/2026-10-19-real-app-netease.md)

@@ -165,7 +165,15 @@ delivered=true observed=true converged=true treeChanged=false targetChanged=fals
   因此“圆环确实显示”只能靠人工观察，不能像 AX 变化那样自动断言。
 - 多显示器、不同缩放下的圆环位置未验证。
 
+## 追加：TextEdit 窗口目标（2026-10-20）
+
+- 打开一个临时文本窗口（`/tmp/scu-win.txt`），`get_ax_state` 读取 pid 65797 成功。
+- `get_screenshot` 返回 `window=(-2251,-220,656,422) title="scu-win.txt"`，
+  与 AX 顶层窗口的标题/frame 一致；验证后关闭 TextEdit 并删除临时文件。
+- 没有做点击；多窗口（同时两个窗口）未验证。窗口选择规则见 [ADR-0025](../docs/decisions/adr_0025_window_target.md)。
+
 ## 追加：连接级应用允许列表（2026-10-20）
+
 
 - `scu mcp --actions --allow-app com.netease.163music`：`get_ax_state` 读取网易云 pid 7554 成功。
 - 同一进程读取访达 pid 697：返回 `app_not_authorized`，消息含当前允许列表；
