@@ -76,6 +76,7 @@ interface ScuError {
 | `target_switched` | protocol | `after_rebind` | 令牌属于已解绑的目标 |
 | `target_missing` | protocol | `no` | 目标不存在或已退出 |
 | `element_gone` | protocol | `after_refresh` | 引用在新快照中无法匹配 |
+| `app_not_found` | protocol | `no` | 启动/解析时找不到应用；v2 新增 |
 | `ambiguous_reference` | protocol | `after_disambiguation` | **目标**引用歧义（同名应用 / 同 URL 标签页），携带 `candidates` |
 | `unsupported_operation` | protocol | `no` | 元素或参数不支持该操作（如不可写元素设值、元素不接受焦点、不认识的键名） |
 | `policy_denied` | policy | `no` | 命中拒绝类目，不可协商 |
@@ -89,7 +90,7 @@ interface ScuError {
 | `protocol_version_mismatch` | boundary | `no` | 两侧协议版本不一致 |
 | `internal_error` | boundary | `immediate` | 未归类的内部故障 |
 
-**当前实际发出的码**：`stale_snapshot`、`stale_geometry`、`invalid_coordinates`、`target_switched`、`element_gone`、
+**当前实际发出的码**：`stale_snapshot`、`stale_geometry`、`invalid_coordinates`、`app_not_found`、`target_switched`、`element_gone`、
 `unsupported_operation`、`policy_denied`、`system_permission_missing`、`target_missing`、`platform_unavailable`、
 `action_failed`、`protocol_version_mismatch`、`internal_error`。
 `ambiguous_reference`、`authorization_*`、`confirmation_*` 是设计目标，尚无构造它们的代码（目标歧义、审批未实现）。

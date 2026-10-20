@@ -1,7 +1,7 @@
 # MCP 接入面（只读档与动作档）
 
 `scu mcp` 以 MCP stdio 服务运行，是接入层的第一个实现。**默认只读**：
-能读取应用与无障碍树，不能改变任何东西。**`scu mcp --actions` 额外暴露 `click`、`click_at`、`scroll_at`、`drag`、`type_text`、`press_key`、`set_value`**（动作档）。
+能读取应用与无障碍树，不能改变任何东西。**`scu mcp --actions` 额外暴露 `launch_app`、`click`、`click_at`、`scroll_at`、`drag`、`type_text`、`press_key`、`set_value`**（动作档）。
 完整的会话 API 与 `js` 工具面是拟实施设计，见[协议总览](protocol_overview.md)。
 
 ## 导航
@@ -42,6 +42,7 @@
 | `list_apps` | 无 | 每行 `pid<TAB>名称<TAB>bundle id`（无 bundle id 时为 `-`） |
 | `get_ax_state` | `pid`（必填）、`max_depth`、`budget_ms`、`max_elements`、`focus`、`focus_role` | 读取应用的无障碍树，返回带标签与 `frame` 的文本化元素表；`focus` 系列只展开一部分 |
 | `get_screenshot` | `token` | 截取令牌对应的目标窗口，叠加标签，返回 PNG 与 `screenshot_id`；需要屏幕录制权限 |
+| `launch_app`（仅 `--actions`） | `app` | 启动/激活应用（bundle id、名称或 `.app` 路径）；见下 |
 | `click`（仅 `--actions`） | `token`、`handle` 或 `label`（二选一） | 对目标执行 `AXPress`；见下 |
 | `click_at`（仅 `--actions`） | `token`、`screenshot_id`、`x`、`y` | 在截图坐标投递真实鼠标点击；见下 |
 | `scroll_at`（仅 `--actions`） | `token`、`screenshot_id`、`x`、`y`、`dx`、`dy` | 在截图坐标投递滚轮事件；见下 |
@@ -51,6 +52,14 @@
 | `set_value`（仅 `--actions`） | `token`、`handle` 或 `label`（二选一）、`value` | 通过无障碍接口直接写值，要求元素可写；见下 |
 
 <a id="click_tool"></a>
+
+### `launch_app`
+
+启动或激活应用。`app` 可以是 bundle id、显示名或 `.app` 路径。顺序固定为
+**解析 → 策略检查 → 启动**：终端、脚本运行器、密码管理器、系统设置等会被拒绝。
+已在运行的应用只激活，不重复启动；启动后最多等 10 秒确认进程出现。
+启动成功只代表进程存在，不代表 AX 树/窗口已就绪；随后用 `get_ax_state`。
+解析不到返回 `app_not_found`。设计见 [ADR-0022](../decisions/adr_0022_app_launch.md)。
 
 ### `click`
 
@@ -252,6 +261,7 @@ screenshot_id=g1abc.1 图像 1600x1138 scale=1.514 window=(353,199,1057,752)
 | --- | --- |
 | `stale_snapshot`、`element_gone` | 重新 `get_ax_state` 取得新令牌与句柄；用 `focus` 按文本重新定位 |
 | `stale_geometry`、`invalid_coordinates` | 重新 `get_screenshot`，使用截图内的坐标 |
+| `app_not_found` | 用 bundle id、显示名或完整 `.app` 路径重试 |
 | `click_at` 的 `noOpSuspected` | 树与图都没变；不要重复点，必要时让用户核实 |
 | `target_switched` | 令牌属于之前读取的另一个应用，对要操作的应用重新读取 |
 | `unsupported_operation` | 该元素不支持这个动作（不能点击、不接受焦点、或不认识键名）；可尝试父元素、子元素或改换方式 |
@@ -328,6 +338,8 @@ socket 目录建在 `TMPDIR`（若设置且存在）或系统临时目录下。
   左侧栏坐标点击从「推荐」切到「精选」并成功返回（2026-10-20）。
   滚动已在网易云验证（推荐页上下滚动，diff 约 0.387）；拖拽只有单元/MCP 测试，真实应用未验证。
   其他应用、多窗口选择、窗口移动后的过期判断、区域级 diff 未验证。
+- **`launch_app` 已验证冷启动（计算器）与已运行（网易云）**：返回 pid、终端拒绝、未知应用错误均成立。
+  非标准路径与“启动后等待 AX 就绪”未验证。
   `isError` 的呈现、其他宿主（Claude Desktop 等）都未观察。
 - **宿主的权限归属只有一个数据点。** 在上述 Cursor 环境里，`check_permissions` 返回已授予。
   这只说明该环境下成立，不能推到其他宿主或其他机器；归属的是哪个进程（Cursor 本体还是辅助进程）没有核对。

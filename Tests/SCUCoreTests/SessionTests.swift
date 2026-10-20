@@ -56,6 +56,18 @@ final class ScriptedReader: DesktopReader {
     }
 }
 
+final class FakeLauncher: AppLauncher, @unchecked Sendable {
+    var resolved: AppInfo? = AppInfo(pid: 0, name: "演示", bundleId: "com.example.demo")
+    var launched = AppInfo(pid: 99, name: "演示", bundleId: "com.example.demo")
+    private(set) var launchCount = 0
+
+    func resolve(_ identifier: String) throws -> AppInfo? { resolved }
+    func launch(_ identifier: String, activate: Bool) throws -> AppInfo {
+        launchCount += 1
+        return launched
+    }
+}
+
 /// 令牌签发、复用与失效分类；句柄到定位器的翻译（ADR-0015）。
 @Suite struct SessionTests {
     /// app → 窗口(主) → [确定, 取消]；窗口(副)。先序句柄：app=1 主=2 确定=3 取消=4 副=5。
@@ -252,6 +264,34 @@ final class ScriptedReader: DesktopReader {
         // 边界值有效。
         _ = try s.resolve(token: t.token.value, handle: 1)
         _ = try s.resolve(token: t.token.value, handle: 5)
+    }
+
+    @Test func launchAppChecksPolicyBeforeLaunching() throws {
+        let launcher = FakeLauncher()
+        let s = DesktopSession(reader: ScriptedReader(), launcher: launcher)
+        let info = try s.launchApp(identifier: "演示")
+        #expect(info.pid == 99)
+        #expect(launcher.launchCount == 1)
+    }
+
+    @Test func launchAppRefusesDeniedBundleBeforeLaunching() throws {
+        let launcher = FakeLauncher()
+        launcher.resolved = AppInfo(pid: 0, name: "终端", bundleId: "com.apple.Terminal")
+        let s = DesktopSession(reader: ScriptedReader(), launcher: launcher)
+        expectError("policy_denied", retry: "no") {
+            _ = try s.launchApp(identifier: "com.apple.Terminal")
+        }
+        #expect(launcher.launchCount == 0)
+    }
+
+    @Test func launchAppReportsUnknownIdentifiers() throws {
+        let launcher = FakeLauncher()
+        launcher.resolved = nil
+        let s = DesktopSession(reader: ScriptedReader(), launcher: launcher)
+        expectError("app_not_found", retry: "no") {
+            _ = try s.launchApp(identifier: "不存在的应用")
+        }
+        #expect(launcher.launchCount == 0)
     }
 
     @Test func labelResolvesToHandleAndIsCaseInsensitive() throws {

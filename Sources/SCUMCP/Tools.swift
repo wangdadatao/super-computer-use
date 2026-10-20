@@ -10,6 +10,7 @@ enum ScuTool: String, CaseIterable {
     case listApps = "list_apps"
     case getAXState = "get_ax_state"
     case getScreenshot = "get_screenshot"
+    case launchApp = "launch_app"
     case click
     case clickAt = "click_at"
     case scrollAt = "scroll_at"
@@ -32,6 +33,7 @@ enum ScuTool: String, CaseIterable {
         case .listApps: return "列出应用"
         case .getAXState: return "读取无障碍树"
         case .getScreenshot: return "截取窗口并叠加标签"
+        case .launchApp: return "启动应用"
         case .click: return "点击元素"
         case .clickAt: return "按截图坐标点击"
         case .scrollAt: return "按截图坐标滚动"
@@ -76,6 +78,13 @@ enum ScuTool: String, CaseIterable {
                 坐标以截图左上角为原点；必须给出令牌与 screenshot_id；duration_ms 默认 400，范围 100...2000。\
                 点击前会激活并 raise 目标窗口；拖拽后重读 AX 树并比较全图像素比例。\
                 这是高风险动作：调用前应确认起点/终点，不要对不确定的界面拖拽。
+                """
+        case .launchApp:
+            return """
+                启动（或激活）一个应用。identifier 可以是 bundle id、显示名或 .app 路径。\
+                启动前会解析 bundle id 并检查拒绝类目；终端、脚本运行器、密码管理器、系统设置等会被拒绝。\
+                已在运行的应用会被激活而不是重复启动。启动后会等待 10 秒确认进程出现。\
+                这是会改变桌面状态的动作；启动成功后用 list_apps 或 get_ax_state 继续。
                 """
         case .clickAt:
             return """
@@ -152,6 +161,15 @@ enum ScuTool: String, CaseIterable {
                     "token": ["type": "string", "description": "get_ax_state 标题行里的令牌"],
                 ],
                 "required": ["token"],
+                "additionalProperties": false,
+            ]
+        case .launchApp:
+            return [
+                "type": "object",
+                "properties": [
+                    "app": ["type": "string", "description": "bundle id、显示名或 .app 路径"],
+                ],
+                "required": ["app"],
                 "additionalProperties": false,
             ]
         case .clickAt:
@@ -389,6 +407,17 @@ enum ScuTool: String, CaseIterable {
                 return Outcome(
                     text: Self.actionText(report, handle: handle, verb: "点击", labelRef: label), isError: false)
 
+            case .launchApp:
+                try Self.requireNoExtra(args, allowed: ["app"])
+                guard let app = try Self.string(args, "app"), !app.isEmpty else {
+                    throw ArgumentError(message: "缺少参数 app")
+                }
+                let launched = try session.launchApp(identifier: app)
+                let bundle = launched.bundleId ?? "-"
+                return Outcome(
+                    text: "应用已在运行或已启动：\(launched.name)（pid \(launched.pid)，bundle \(bundle)）。\n用 list_apps 或 get_ax_state 继续。",
+                    isError: false)
+
             case .clickAt:
                 try Self.requireNoExtra(args, allowed: ["token", "screenshot_id", "x", "y"])
                 guard let token = try Self.string(args, "token") else { throw ArgumentError(message: "缺少参数 token") }
@@ -544,6 +573,8 @@ enum ScuTool: String, CaseIterable {
             s += "\n请重新调用 get_ax_state 取得新令牌与标签/句柄；用 focus 按文本重新定位目标。"
         case "stale_geometry":
             s += "\n窗口位置/缩放或截图已变化：重新 get_screenshot，使用新的 screenshot_id。"
+        case "app_not_found":
+            s += "\n用 bundle id、显示名或完整 .app 路径重试；不要猜一个相近的名字。"
         case "target_switched":
             s += "\n令牌属于之前读取的另一个应用：请对要操作的应用重新 get_ax_state。"
         case "unsupported_operation":

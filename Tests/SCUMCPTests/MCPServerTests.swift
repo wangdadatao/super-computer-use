@@ -371,6 +371,18 @@ extension JSONValue {
     }
 }
 
+final class FakeAppLauncher: AppLauncher, @unchecked Sendable {
+    var resolved: AppInfo? = AppInfo(pid: 0, name: "演示", bundleId: "com.example.demo")
+    var launched = AppInfo(pid: 88, name: "演示", bundleId: "com.example.demo")
+    private(set) var launchCount = 0
+
+    func resolve(_ identifier: String) throws -> AppInfo? { resolved }
+    func launch(_ identifier: String, activate: Bool) throws -> AppInfo {
+        launchCount += 1
+        return launched
+    }
+}
+
 /// 动作档：`click` 默认不暴露，开启后经令牌与句柄执行，返回观察到的效果。
 @Suite struct ActionToolTests {
     final class Clock {
@@ -386,14 +398,16 @@ extension JSONValue {
             children: [AXNode(role: "AXButton", title: "确定"), AXNode(role: "AXTextField", value: "abc")]),
         truncated: false)
 
-    func rig(actions: Bool, apps: [AppInfo]? = nil) -> (MCPServerTests, MCPServer, FakeReader) {
+    func rig(
+        actions: Bool, apps: [AppInfo]? = nil, launcher: AppLauncher = WorkspaceAppLauncher()
+    ) -> (MCPServerTests, MCPServer, FakeReader) {
         let t = MCPServerTests()
         let reader = FakeReader()
         reader.tree = .success(Self.tree)
         if let apps { reader.apps = .success(apps) }
         let server = MCPServer(
-            reader: reader, serverVersion: "test", actionsEnabled: actions, policy: PolicyGate(),
-            settle: Clock().settle)
+            reader: reader, serverVersion: "test", actionsEnabled: actions,
+            launcher: launcher, policy: PolicyGate(), settle: Clock().settle)
         return (t, server, reader)
     }
 
@@ -421,7 +435,9 @@ extension JSONValue {
 
     @Test func clickIsExposedWithTruthfulAnnotationsWhenEnabled() {
         let (t, s, _) = rig(actions: true)
-        #expect(toolNames(t, s).contains("click"))
+        let names = toolNames(t, s)
+        #expect(names.contains("click"))
+        #expect(names.contains("launch_app"))
         let tools = t.request(s, "tools/list")["result"]?["tools"]?.arrayValues ?? []
         let click = tools.first { $0["name"]?.stringValue == "click" }
         #expect(click?["annotations"]?["readOnlyHint"] == .bool(false))
@@ -599,6 +615,15 @@ extension JSONValue {
         ])
         #expect(stale.isError && stale.text.hasPrefix("[stale_geometry]"))
         #expect(reader.coordinateClicks.isEmpty)
+    }
+
+    @Test func launchAppUsesTheInjectedLauncher() {
+        let launcher = FakeAppLauncher()
+        let (t, s, _) = rig(actions: true, launcher: launcher)
+        let r = t.callTool(s, "launch_app", ["app": "演示"])
+        #expect(!r.isError)
+        #expect(r.text.contains("pid 88"))
+        #expect(launcher.launchCount == 1)
     }
 
     @Test func scrollAndDragUseScreenshotCoordinates() {

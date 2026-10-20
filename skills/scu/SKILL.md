@@ -12,15 +12,16 @@ SCU 是一个 MCP 服务：读取 macOS 应用的无障碍树，并用 `AXPress`
 
 | 能做 | 不能做 |
 | --- | --- |
-| 读取**已在运行**的应用的无障碍树（文本元素表） | 启动应用、切换前台应用 |
-| 截图、看画面、按截图坐标点击/滚动/拖拽（`get_screenshot` / `click_at` / `scroll_at` / `drag`） | 右键、长按 |
+| 读取**已在运行**的应用的无障碍树（文本元素表） | 切换前台应用（启动/坐标动作会激活） |
+| 启动/激活应用（`launch_app`） | 右键、长按 |
+| 截图、看画面、按截图坐标点击/滚动/拖拽（`get_screenshot` / `click_at` / `scroll_at` / `drag`） | |
 | 点击元素（`AXPress`） | 输入法（中文等）未验证；粘贴、剪贴板 |
 | 逐字输入文本（`type_text`）、发送按键/组合键（`press_key`） | 审批/确认层：危险动作只能靠你与用户确认 |
 | 直接写元素的值（`set_value`，要求元素可写） | |
 | 知道动作是否改变了界面、是否疑似空操作 | |
 
 只读档只有 `check_permissions` / `list_apps` / `get_ax_state` / `get_screenshot`；
-`click` / `click_at` / `scroll_at` / `drag` / `type_text` / `press_key` / `set_value` 需要服务以 `--actions` 启动。
+`launch_app` / `click` / `click_at` / `scroll_at` / `drag` / `type_text` / `press_key` / `set_value` 需要服务以 `--actions` 启动。
 如果调用这些工具返回"未知工具"（JSON-RPC `-32602`），说明动作档没开，请用户改启动参数。
 
 ## 第一次使用
@@ -72,6 +73,14 @@ list_apps → get_ax_state(pid) → 需要时 get_screenshot(token) → 用令�
 - 标题行有 `⚠️ 已截断` / `⚠️ 已达深度上限` / `⚠️ 策略：…` 时，先读警告再决定下一步。
 - 推荐流程：先看概览 → 用 `focus` 展开目标区域 → 再有针对性地动作。
 
+## 启动应用：launch_app
+
+`launch_app(app)` 接受 bundle id、显示名或 `.app` 路径。它先解析、再检查拒绝类目、
+最后启动；已在运行的应用只激活，不重复启动。终端、脚本运行器、密码管理器、系统设置等会被拒绝。
+
+启动成功只代表进程出现，不代表窗口/AX 树已就绪；随后用 `get_ax_state` 读取，
+不要假设界面已经加载完。解析不到返回 `app_not_found`，不要猜相近的名字。
+
 ## 看界面：get_screenshot
 
 `get_screenshot(token)` 截取当前令牌对应的**目标窗口**，把元素表里的 `[a]` 标签画在图上。
@@ -118,6 +127,7 @@ drag(token, screenshot_id, from_x, from_y, to_x, to_y, duration_ms=400)
 | 填表单、设置已知的完整值 | `set_value`（**首选**） |
 | 需要在输入过程中触发搜索/校验/自动完成 | `type_text` |
 | 提交、Tab、Escape、快捷键 | `press_key` |
+| 启动或激活应用 | `launch_app`（bundle id / 名称 / `.app` 路径） |
 | AX 点不动、或没有 AX 元素的网页/画布控件 | `click_at`（先 `get_screenshot`，最后手段） |
 | 列表/画布滚动 | `scroll_at` |
 | 拖动列表项/画布对象 | `drag`（高风险，先确认起终点） |

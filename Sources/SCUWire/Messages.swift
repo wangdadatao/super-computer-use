@@ -91,6 +91,13 @@ public struct WireError: Error, Codable, Sendable, Equatable {
         WireError(code: "stale_geometry", layer: "protocol", retry: "after_refresh", message: message)
     }
 
+    /// 找不到要启动/解析的应用。
+    public static func appNotFound(_ identifier: String) -> WireError {
+        WireError(
+            code: "app_not_found", layer: "protocol", retry: "no",
+            message: "找不到应用 \(identifier)；请给 bundle id、显示名或 .app 路径。")
+    }
+
     /// 坐标不在截图范围内。
     public static func invalidCoordinates(_ message: String) -> WireError {
         WireError(code: "invalid_coordinates", layer: "protocol", retry: "no", message: message)

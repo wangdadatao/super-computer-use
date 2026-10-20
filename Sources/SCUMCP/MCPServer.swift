@@ -22,9 +22,11 @@ public final class MCPServer {
     /// - Parameter actionsEnabled: 是否暴露会改变桌面状态的工具。**默认关闭**，由启动参数显式开启。
     public init(
         reader: DesktopReader, serverVersion: String, actionsEnabled: Bool = false,
+        launcher: AppLauncher = WorkspaceAppLauncher(),
         policy: PolicyGate = PolicyGate(), settle: DesktopSession.Settle = DesktopSession.Settle()
     ) {
-        self.session = DesktopSession(reader: reader, policy: policy, settle: settle)
+        self.session = DesktopSession(
+            reader: reader, launcher: launcher, policy: policy, settle: settle)
         self.serverVersion = serverVersion
         self.actionsEnabled = actionsEnabled
     }
@@ -100,7 +102,8 @@ public final class MCPServer {
         """
 
     static let actionInstructions = """
-        SCU（SuperComputerUse）动作档：可以读取 macOS 应用的无障碍树，用 click 点击元素，\
+        SCU（SuperComputerUse）动作档：可以读取 macOS 应用的无障碍树，用 launch_app 启动应用，\
+        用 click 点击元素，\
         用 click_at / scroll_at / drag 按截图坐标点击、滚动或拖拽（会激活窗口、移动光标；\
         click_at 是最后手段，drag 有风险），用 type_text 逐字输入文本，\
         用 press_key 发送按键或组合键，用 set_value 直接写值。\

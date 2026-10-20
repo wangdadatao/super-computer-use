@@ -147,6 +147,16 @@ delivered=true observed=true converged=true treeChanged=false targetChanged=fals
 
 拖拽只有单元/MCP 测试，未在真实应用上执行（可能移动列表项/文件）。
 
+## 追加：应用启动（2026-10-20）
+
+- `launch_app("Calculator")`（冷启动）：返回“计算器（pid 63285，bundle com.apple.calculator）”，
+  进程确实出现；验证后退出计算器。
+- `launch_app("com.netease.163music")`（已运行）：返回已有 pid 7554，没有重复启动。
+- `launch_app("com.apple.Terminal")`：`policy_denied`（`runs_shell_commands`），没有启动。
+- `launch_app("不存在的应用")`：`app_not_found`。
+
+冷启动只验证了“进程出现”；没有自动等待窗口或 AX 树就绪。
+
 ## 限定
 
 - 只测了一个应用、一个版本（`3.1.12`）；其他 CEF/Electron 应用是否支持该参数未知。

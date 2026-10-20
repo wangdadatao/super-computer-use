@@ -62,6 +62,11 @@ public struct PolicyGate: Sendable {
     /// 宁可漏掉也不把无法识别的应用一律封死。宿主判定不依赖 bundle id，不受此影响。
     public func evaluate(pid: Int32, bundleId: String?) -> Decision {
         if hostPids.contains(pid) { return .deny(category: Self.hostCategoryId) }
+        return evaluate(bundleId: bundleId)
+    }
+
+    /// 启动应用前只知道 bundle id，没有 pid 可查宿主链；仍按同一份类目拒绝。
+    public func evaluate(bundleId: String?) -> Decision {
         guard let key = Self.normalize(bundleId) else { return .allow }
         for c in Self.categories where c.bundleIds.contains(key) { return .deny(category: c.id) }
         return .allow

@@ -30,6 +30,7 @@
 - [ADR-0019 窗口截图与标签叠加](adr_0019_window_screenshot.md)：只截目标窗口、坐标换算、权限与隐私、`screenshot_id` 绑定。读取时机：实现截图、坐标动作、指示层时。
 - [ADR-0020 坐标点击：真实鼠标事件 + 先激活窗口](adr_0020_coordinate_click.md)：`click_at` 的坐标语义、激活/raise、验证与副作用。读取时机：实现或修改坐标点击、处理网页自绘控件时。
 - [ADR-0021 滚动与拖拽：坐标手势](adr_0021_scroll_and_drag.md)：`scroll_at` / `drag` 的坐标、方向、时长与风险。读取时机：实现滚动/拖拽、处理列表与画布时。
+- [ADR-0022 应用启动走 LaunchServices](adr_0022_app_launch.md)：`launch_app` 的解析、策略前置、激活与等待。读取时机：实现应用启动/发现、处理未运行应用时。
 
 ### 范围与安全
 

@@ -131,6 +131,7 @@ public final class DesktopSession {
     }
 
     public let reader: DesktopReader
+    public let launcher: AppLauncher
 
     private var screenshotBindings: [String: ScreenshotBinding] = [:]
     private var screenshotOrder: [String] = []
@@ -148,14 +149,27 @@ public final class DesktopSession {
     public private(set) var invalidations = 0
 
     public init(
-        reader: DesktopReader, policy: PolicyGate = PolicyGate(), retainedTokens: Int = 16,
+        reader: DesktopReader, launcher: AppLauncher = WorkspaceAppLauncher(),
+        policy: PolicyGate = PolicyGate(), retainedTokens: Int = 16,
         settle: Settle = Settle()
     ) {
         self.reader = reader
+        self.launcher = launcher
         self.policy = policy
         self.settle = settle
         self.retained = max(2, retainedTokens)
         self.nonce = String(UInt32.random(in: 0..<0x1000_0000), radix: 36)
+    }
+
+    /// 启动（或激活）应用。先解析 bundle id 并做拒绝类目检查，再真正启动。
+    public func launchApp(identifier: String) throws -> AppInfo {
+        guard let resolved = try launcher.resolve(identifier) else {
+            throw WireError.appNotFound(identifier)
+        }
+        if case .deny(let category) = policy.evaluate(bundleId: resolved.bundleId) {
+            throw WireError.policyDenied(category: category, app: resolved.name)
+        }
+        return try launcher.launch(identifier, activate: true)
     }
 
     // MARK: - 读取与签发

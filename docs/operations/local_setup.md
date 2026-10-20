@@ -65,7 +65,8 @@ git config core.hooksPath scripts/hooks
 | 窗口截图与标签叠加：`get_screenshot(token)` 截目标窗口，返回 PNG、`windowFrame`、`scale`、`screenshot_id`（[ADR-0019](../decisions/adr_0019_window_screenshot.md)） | `ScreenCapture.swift`、`ScreenshotOverlay.swift`、`Tools` | 已实现，有 MCP 测试；已在网易云上截图 1600×1138 |
 | 坐标点击：`click_at(token, screenshot_id, x, y)` 激活目标窗口后用真实鼠标事件点击（[ADR-0020](../decisions/adr_0020_coordinate_click.md)） | `Mouse.swift`、`WindowActivation.swift`、`DesktopSession` | 已实现，有 MCP 测试；已在网易云左侧栏从推荐切到精选，截图 diff 约 43% |
 | 滚动与拖拽：`scroll_at` / `drag` 按截图坐标投递滚轮/拖拽事件（[ADR-0021](../decisions/adr_0021_scroll_and_drag.md)） | `Mouse.swift`、`DesktopSession`、`Tools` | 已实现，有 MCP 测试；滚动已在网易云验证（diff 约 0.387）；拖拽真实应用未验证 |
-| MCP stdio 服务：只读的 `check_permissions`、`list_apps`、`get_ax_state`、`get_screenshot`；加 `--actions` 额外提供 `click`、`click_at`、`scroll_at`、`drag`、`type_text`、`press_key`、`set_value`（见 [MCP 接入面](../interfaces/mcp_surface.md)） | `SCUMCP`、`scu mcp`、`NativeSession` | 已实现，有单元测试与真实管道的端到端测试；只读工具已在 Cursor 一个宿主里跑通。**`click` 已在自制夹具应用 `scu-fixture` 与网易云 3.1.12（CEF）上用真实 `AXPress` 验证过**（见 [夹具验证](../../verification/2026-10-18-fixture-validation.md) 与 [网易云验证](../../verification/2026-10-19-real-app-netease.md)），其他 Electron 等第三方应用未验证（见 [MCP 接入面的未验证项](../interfaces/mcp_surface.md#未验证项)） |
+| 应用启动：`launch_app` 按 bundle id/名称/路径解析，策略检查后启动或激活（[ADR-0022](../decisions/adr_0022_app_launch.md)） | `AppLauncher.swift`、`DesktopSession`、`Tools` | 已实现，有单元与 MCP 测试；已在计算器冷启动与网易云（已运行）上验证 |
+| MCP stdio 服务：只读的 `check_permissions`、`list_apps`、`get_ax_state`、`get_screenshot`；加 `--actions` 额外提供 `launch_app`、`click`、`click_at`、`scroll_at`、`drag`、`type_text`、`press_key`、`set_value`（见 [MCP 接入面](../interfaces/mcp_surface.md)） | `SCUMCP`、`scu mcp`、`NativeSession` | 已实现，有单元测试与真实管道的端到端测试；只读工具已在 Cursor 一个宿主里跑通。**`click` 已在自制夹具应用 `scu-fixture` 与网易云 3.1.12（CEF）上用真实 `AXPress` 验证过**（见 [夹具验证](../../verification/2026-10-18-fixture-validation.md) 与 [网易云验证](../../verification/2026-10-19-real-app-netease.md)），其他 Electron 等第三方应用未验证（见 [MCP 接入面的未验证项](../interfaces/mcp_surface.md#未验证项)） |
 | 会话：快照令牌签发与复用、按路径加核对键定位句柄、`click`（`AXPress`）、轮询式收敛与效果摘要（[ADR-0015](../decisions/adr_0015_handle_resolution_by_path.md)） | `DesktopSession` | 已实现，有假读取器的单元测试、真实访达的 `verify` 测试与夹具上的真实点击测试 |
 | 定位器：沿路径逐层核对子节点数与角色，再核对目标核对键，通过后 `press` / `verify` | `AXLocator`、`NativeServer` | 已实现，有测试（线协议 v4 的 `performAction`） |
 | 输入与按键：先聚焦目标元素，再把 Unicode 键盘事件与组合键投递到目标进程（不激活应用）；设值走无障碍 `AXValue` | `Input.swift`、`DesktopSession` | 已实现，有按键解析单元测试、会话层测试与夹具上的真实输入/提交/设值测试 |
@@ -75,7 +76,7 @@ git config core.hooksPath scripts/hooks
 | K1~K4 候选键与匹配键计算（纯函数，无状态） | `IdentityAnalyzer` | 已实现，有测试（含唯一性的伪随机性质测试） |
 | 各档位分布统计（整树 / 窗口内可交互 / 菜单栏 / 按 role），K1 与标签的多种口径 | `IdentityReport`、`scu identity` | 已实现。**只呈现分布，不给成败结论**（ADR-0013「基线先行」） |
 
-**尚未实现**：应用启动、审批与租约、指示层；
+**尚未实现**：审批与租约、指示层；
 句柄注册表（跨快照延续，K4 验证不成立，**不实现**，见 [ADR-0013](../decisions/adr_0013_p0_vertical_slice.md#暂缓句柄注册表)）。
 
 **`verify`（只定位核对、不执行）在原生层与会话层已实现，没有向 MCP 暴露。**
@@ -83,7 +84,7 @@ git config core.hooksPath scripts/hooks
 命令行：
 
 ```bash
-scu mcp [--actions]                 # MCP stdio 服务；默认只读，--actions 额外暴露 click / click_at / scroll_at / drag / type_text / press_key / set_value；stdout 只有协议消息，诊断写 stderr
+scu mcp [--actions]                 # MCP stdio 服务；默认只读，--actions 额外暴露 launch_app / click / click_at / scroll_at / drag / type_text / press_key / set_value；stdout 只有协议消息，诊断写 stderr
 scu permissions                     # 检查辅助功能权限
 scu apps                            # 列出可绑定的应用与 pid
 scu dump --pid <pid> [--depth N] [--budget-ms M]
