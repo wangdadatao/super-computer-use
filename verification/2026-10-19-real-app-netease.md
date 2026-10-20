@@ -113,6 +113,8 @@ delivered=true observed=true converged=true treeChanged=false targetChanged=fals
 2. 改为**截图前与点击前都激活并 raise 目标窗口**后，截图元数据变为 `window=(353,199,1057,752)`，
    同一图像坐标 (160,224) 点击成功：左侧栏切到「精选」，`treeChanged=true`。
 3. 再用同一窗口截图坐标 (160,163) 点击「推荐」，切回推荐，`treeChanged=true`。
+4. 两次点击的截图 diff 分别为 `diffRatio=0.4375` 与 `0.4354`，`screenshotChanged=true`，
+   `geometryChanged=false`；说明“树变了 + 图变了”能互相印证。
 
 同时确认：`CGEvent.postToPid` 的鼠标事件对网易云侧栏不生效；全局鼠标事件（会移动光标）生效。
 代价是抢前台与移动光标；点击前若目标不能成为 frontmost，会取消而不是盲点。

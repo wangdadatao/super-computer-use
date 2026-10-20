@@ -96,8 +96,10 @@ effect: delivered=true observed=true converged=true treeChanged=false targetChan
 2. `screenshot_id` 必须属于当前令牌且窗口几何未变；否则 `stale_geometry`。
 3. 点击前会激活并 raise 目标窗口，确认它成为 frontmost；失败则**不点击**，避免点到别的应用。
 4. 用真实鼠标事件（会移动光标），不是 `CGEvent.postToPid`。
-5. 点击后重读 AX 树：结构变化 → 令牌作废；不变 → `noOpSuspected=true`。
-   坐标点击可能只改像素，树不变不代表没生效；用 `get_screenshot` 核实，不要重复点。
+5. 点击后重读 AX 树，并再截一张图比较全图像素比例：
+   结构变化 → 令牌作废；树没变但图变了 → `screenshotChanged=true`；
+   树和图都没变 → `noOpSuspected=true`；窗口几何变了 → `geometryChanged=true`。
+   全图比例不定位变化区域，也不证明点中了目标；不要重复点。
 
 设计见 [ADR-0020](../decisions/adr_0020_coordinate_click.md)。
 
@@ -236,6 +238,7 @@ screenshot_id=g1abc.1 图像 1600x1138 scale=1.514 window=(353,199,1057,752)
 | --- | --- |
 | `stale_snapshot`、`element_gone` | 重新 `get_ax_state` 取得新令牌与句柄；用 `focus` 按文本重新定位 |
 | `stale_geometry`、`invalid_coordinates` | 重新 `get_screenshot`，使用截图内的坐标 |
+| `click_at` 的 `noOpSuspected` | 树与图都没变；不要重复点，必要时让用户核实 |
 | `target_switched` | 令牌属于之前读取的另一个应用，对要操作的应用重新读取 |
 | `unsupported_operation` | 该元素不支持这个动作（不能点击、不接受焦点、或不认识键名）；可尝试父元素、子元素或改换方式 |
 | `policy_denied` | 不可协商，不要重试或绕过，告知用户由他自己完成 |

@@ -475,15 +475,22 @@ enum ScuTool: String, CaseIterable {
         var lines = [
             "已对 pid \(r.pid) 的截图坐标 (\(x), \(y)) 投递点击。",
             "effect: observed=\(flag(r.observed)) treeChanged=\(flag(r.treeChanged)) "
+                + "screenshotChanged=\(flag(r.screenshotChanged)) "
+                + "diffRatio=\(r.diffRatio.map { String(format: "%.4f", $0) } ?? "unknown") "
+                + "geometryChanged=\(flag(r.geometryChanged)) "
                 + "noOpSuspected=\(flag(r.noOpSuspected)) elapsed=\(secs)s",
         ]
         if !r.observed {
             lines.append("⚠️ 点击已投递，但事后读不到界面，不知道效果；请用 get_screenshot 核实。")
         } else if r.treeChanged == true {
             lines.append("界面结构已变化，旧令牌已作废，请重新 get_ax_state。")
+        } else if r.treeChanged == false, r.screenshotChanged == true {
+            lines.append("AX 树没有变化，但截图检测到像素变化；可能是画布/悬停/局部刷新。")
+        } else if r.geometryChanged {
+            lines.append("⚠️ 点击后窗口位置或缩放变化，截图 diff 不可比；重新 get_screenshot 核实。")
         } else if r.noOpSuspected {
             lines.append(
-                "⚠️ AX 树没有变化。坐标点击可能只改了像素/画布；用 get_screenshot 核实，不要重复点。")
+                "⚠️ AX 树与截图都没有明显变化。坐标点击可能没点到或应用忽略了点击；不要重复点。")
         }
         if r.tokenInvalidated {
             lines.append("旧令牌已失效；重新 get_ax_state 后再继续。")

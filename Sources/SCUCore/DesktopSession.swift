@@ -15,17 +15,24 @@ public struct CoordinateReport: Sendable {
     public var pid: Int32
     public var observed: Bool
     public var treeChanged: Bool?
+    public var screenshotChanged: Bool?
+    public var diffRatio: Double?
+    public var geometryChanged: Bool
     public var tokenInvalidated: Bool
     public var noOpSuspected: Bool
     public var elapsed: TimeInterval
 
     public init(
-        pid: Int32, observed: Bool, treeChanged: Bool?, tokenInvalidated: Bool,
+        pid: Int32, observed: Bool, treeChanged: Bool?, screenshotChanged: Bool?,
+        diffRatio: Double?, geometryChanged: Bool, tokenInvalidated: Bool,
         noOpSuspected: Bool, elapsed: TimeInterval
     ) {
         self.pid = pid
         self.observed = observed
         self.treeChanged = treeChanged
+        self.screenshotChanged = screenshotChanged
+        self.diffRatio = diffRatio
+        self.geometryChanged = geometryChanged
         self.tokenInvalidated = tokenInvalidated
         self.noOpSuspected = noOpSuspected
         self.elapsed = elapsed
@@ -101,6 +108,7 @@ public final class DesktopSession {
         var scale: Double
         var width: Int
         var height: Int
+        var png: Data
     }
 
     /// 动作之后等待界面稳定的参数。启发式初值，见 ADR-0011 的追加记录。
@@ -274,7 +282,7 @@ public final class DesktopSession {
         let id = "g\(nonce).\(screenshotCounter)"
         screenshotBindings[id] = ScreenshotBinding(
             token: token, windowFrame: capture.windowFrame, scale: capture.scale,
-            width: capture.width, height: capture.height)
+            width: capture.width, height: capture.height, png: capture.png)
         screenshotOrder.append(id)
         while screenshotOrder.count > 16 {
             screenshotBindings[screenshotOrder.removeFirst()] = nil
@@ -336,10 +344,27 @@ public final class DesktopSession {
         } catch {
             observed = false
         }
+
+        var screenshotChanged: Bool?
+        var diffRatio: Double?
+        var geometryChanged = false
+        if let after = try? reader.captureWindow(pid: r.pid) {
+            if after.width != binding.width || after.height != binding.height
+                || after.windowFrame != binding.windowFrame || after.scale != binding.scale
+            {
+                geometryChanged = true
+            } else if let ratio = ScreenshotDiff.changedRatio(before: binding.png, after: after.png) {
+                diffRatio = ratio
+                screenshotChanged = ratio > 0.001
+            }
+        }
+
+        let noOp = observed && changed == false && (screenshotChanged == false || screenshotChanged == nil)
         return CoordinateReport(
             pid: r.pid, observed: observed, treeChanged: changed,
-            tokenInvalidated: invalidated, noOpSuspected: observed && changed == false,
-            elapsed: Date().timeIntervalSince(start))
+            screenshotChanged: screenshotChanged, diffRatio: diffRatio,
+            geometryChanged: geometryChanged, tokenInvalidated: invalidated,
+            noOpSuspected: noOp, elapsed: Date().timeIntervalSince(start))
     }
 
     /// 标签 → 句柄。标签与句柄同属一个快照，不跨令牌；大小写不敏感。

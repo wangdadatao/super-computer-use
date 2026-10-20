@@ -1,6 +1,6 @@
 ---
 name: scu
-description: 用 SCU（SuperComputerUse）读取和操作本机 macOS 应用的界面。当任务需要点击原生应用的按钮、填写表单、切换设置、按快捷键，且没有可用的 API/CLI 时使用；也用于读取某个应用当前界面结构。不适用于截图、坐标点击、启动应用或非 macOS 平台。
+description: 用 SCU（SuperComputerUse）读取和操作本机 macOS 应用的界面。当任务需要点击原生应用的按钮、填写表单、切换设置、按快捷键，且没有可用的 API/CLI 时使用；也用于读取某个应用当前界面结构、截图对照与坐标点击（最后手段）。不适用于启动应用或非 macOS 平台。
 ---
 
 # SCU 使用指导（v1）
@@ -12,14 +12,15 @@ SCU 是一个 MCP 服务：读取 macOS 应用的无障碍树，并用 `AXPress`
 
 | 能做 | 不能做 |
 | --- | --- |
-| 读取**已在运行**的应用的无障碍树（文本元素表） | 截图、看画面、坐标点击 |
-| 点击元素（`AXPress`） | 启动应用、切换前台应用 |
-| 逐字输入文本（`type_text`）、发送按键/组合键（`press_key`） | 滚动、拖拽、右键、长按 |
-| 直接写元素的值（`set_value`，要求元素可写） | 输入法（中文等）未验证；粘贴、剪贴板 |
-| 知道动作是否改变了界面、是否疑似空操作 | 审批/确认层：危险动作只能靠你与用户确认 |
+| 读取**已在运行**的应用的无障碍树（文本元素表） | 启动应用、切换前台应用 |
+| 截图、看画面、按截图坐标点击（`get_screenshot` / `click_at`） | 滚动、拖拽、右键、长按 |
+| 点击元素（`AXPress`） | 输入法（中文等）未验证；粘贴、剪贴板 |
+| 逐字输入文本（`type_text`）、发送按键/组合键（`press_key`） | 审批/确认层：危险动作只能靠你与用户确认 |
+| 直接写元素的值（`set_value`，要求元素可写） | |
+| 知道动作是否改变了界面、是否疑似空操作 | |
 
 只读档只有 `check_permissions` / `list_apps` / `get_ax_state` / `get_screenshot`；
-`click` / `type_text` / `press_key` / `set_value` 需要服务以 `--actions` 启动。
+`click` / `click_at` / `type_text` / `press_key` / `set_value` 需要服务以 `--actions` 启动。
 如果调用这些工具返回"未知工具"（JSON-RPC `-32602`），说明动作档没开，请用户改启动参数。
 
 ## 第一次使用
@@ -64,7 +65,7 @@ list_apps → get_ax_state(pid) → 需要时 get_screenshot(token) → 用令�
 - 属性：`subrole=`、`desc=`、`value=`、`id=`、`state=disabled`、`frame=`；空值省略。
 - 没有标签的元素（静态文本、没在角色白名单里的行）仍然可以用句柄。
 - **标签可点不等于应用会响应**：有的网页控件声明了 `AXPress` 但按下没有效果（网易云左侧栏）。
-  报告 `noOpSuspected=true` 时不要反复点；当前还没有坐标点击，先如实告诉用户。
+  报告 `noOpSuspected=true` 时不要反复点；用 `get_screenshot` + `click_at` 走坐标点击。
 - 元素太多时默认只显示 300 个（层级优先），用 `max_elements` 或 `focus` 展开：
   - `focus`：按标题/描述/值/标识符的子串匹配，只展开命中的子树；
   - `focus_role`：按角色过滤，如 `AXButton` 或 `Button`。
@@ -82,6 +83,21 @@ list_apps → get_ax_state(pid) → 需要时 get_screenshot(token) → 用令�
 - 返回的 `screenshot_id` 绑定窗口位置与缩放，窗口移动后要重新截；
 - 截图不落盘、不写日志；不要把它当长期证据或上传到外部。
 
+### 坐标点击 `click_at`
+
+只有 `click(label)` 不生效、或目标根本没有 AX 元素时才用：
+
+```text
+click_at(token, screenshot_id, x, y)
+```
+
+- `x/y` 是截图内的像素坐标，左上角原点；
+- 点击前会激活并 raise 目标窗口，确认它在前台；失败就不点，避免点到别的应用；
+- 会移动真实光标；
+- 点击后重读 AX 树并比较全图像素比例：`treeChanged=false` 但 `screenshotChanged=true`
+  说明画面有变化；两者都 false 才是 `noOpSuspected`，不要重复点；
+- 越界返回 `invalid_coordinates`；窗口移动/截图过期返回 `stale_geometry`。
+
 ## 选哪个动作
 
 | 意图 | 用 |
@@ -90,6 +106,7 @@ list_apps → get_ax_state(pid) → 需要时 get_screenshot(token) → 用令�
 | 填表单、设置已知的完整值 | `set_value`（**首选**） |
 | 需要在输入过程中触发搜索/校验/自动完成 | `type_text` |
 | 提交、Tab、Escape、快捷键 | `press_key` |
+| AX 点不动、或没有 AX 元素的网页/画布控件 | `click_at`（先 `get_screenshot`，最后手段） |
 
 **`set_value` 是默认写入路径**：快、不经过输入法、不触发按键处理。它要求元素声明 `AXValue` 可写；
 不可写时会返回 `unsupported_operation`，**不要**自己改成逐字输入再试一遍——那会改变副作用，
@@ -131,6 +148,8 @@ effect: delivered=true observed=true converged=true treeChanged=false targetChan
 | 错误码 | 含义 | 下一步 |
 | --- | --- | --- |
 | `stale_snapshot` | 令牌失效（界面变了或超时） | 重新 `get_ax_state`，用新令牌与新句柄 |
+| `stale_geometry` | 截图/窗口几何已变 | 重新 `get_screenshot`，用新 `screenshot_id` |
+| `invalid_coordinates` | 坐标不在截图内 | 重新截图，使用截图内的坐标 |
 | `element_gone` | 句柄不在该令牌的快照里 | 同上；先用 `focus` 按文本定位 |
 | `target_switched` | 令牌属于另一个已切换走的目标 | 对当前目标重新读取 |
 | `unsupported_operation` | 元素不支持该动作 / 键名不认识 | 换元素（父/子）或换动作，不要猜 |
