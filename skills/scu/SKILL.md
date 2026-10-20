@@ -14,7 +14,7 @@ SCU 是一个 MCP 服务：读取 macOS 应用的无障碍树，并用 `AXPress`
 | --- | --- |
 | 读取**已在运行**的应用的无障碍树（文本元素表） | 切换前台应用（启动/坐标动作会激活） |
 | 启动/激活应用（`launch_app`） | 右键、长按 |
-| 截图、看画面、按截图坐标点击/滚动/拖拽（`get_screenshot` / `click_at` / `scroll_at` / `drag`） | |
+| 截图、看画面、按截图坐标点击/滚动/拖拽（`get_screenshot` / `click_at` / `scroll_at` / `drag`）；动作前会在屏幕上显示约 120ms 的指示环 | |
 | 点击元素（`AXPress`） | 输入法（中文等）未验证；粘贴、剪贴板 |
 | 逐字输入文本（`type_text`）、发送按键/组合键（`press_key`） | 审批/确认层：危险动作只能靠你与用户确认 |
 | 直接写元素的值（`set_value`，要求元素可写） | |
@@ -102,7 +102,7 @@ click_at(token, screenshot_id, x, y)
 
 - `x/y` 是截图内的像素坐标，左上角原点；
 - 点击前会激活并 raise 目标窗口，确认它在前台；失败就不点，避免点到别的应用；
-- 会移动真实光标；
+- 会移动真实光标；动作前在目标位置显示约 120ms 的蓝色指示环，它只是提示，不拦截、不进入截图，也不等于用户确认；
 - 点击后重读 AX 树并比较全图像素比例：`treeChanged=false` 但 `screenshotChanged=true`
   说明画面有变化；两者都 false 才是 `noOpSuspected`，不要重复点；
 - 越界返回 `invalid_coordinates`；窗口移动/截图过期返回 `stale_geometry`。

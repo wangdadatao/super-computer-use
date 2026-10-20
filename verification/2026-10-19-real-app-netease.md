@@ -157,6 +157,14 @@ delivered=true observed=true converged=true treeChanged=false targetChanged=fals
 
 冷启动只验证了“进程出现”；没有自动等待窗口或 AX 树就绪。
 
+## 追加：坐标动作指示环（2026-10-20）
+
+- `click_at` 在网易云左侧栏 (160,224) 与 (160,163) 上仍成功：树与图均变化，
+  diff 0.4464 / 0.5300，耗时约 1.6s（含 120ms 指示与前后截图）。
+- 指示环窗口 `ignoresMouseEvents`、`sharingType = .none`，目标窗口截图里看不到它；
+  因此“圆环确实显示”只能靠人工观察，不能像 AX 变化那样自动断言。
+- 多显示器、不同缩放下的圆环位置未验证。
+
 ## 限定
 
 - 只测了一个应用、一个版本（`3.1.12`）；其他 CEF/Electron 应用是否支持该参数未知。

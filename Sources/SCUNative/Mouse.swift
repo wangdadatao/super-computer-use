@@ -12,6 +12,9 @@ enum Mouse {
     static func scrollAt(pid: Int32, x: Double, y: Double, dx: Double, dy: Double) throws {
         try WindowActivation.activate(pid: pid)
         let point = CGPoint(x: x, y: y)
+        Indicator.show(points: [point])
+        defer { Indicator.hide() }
+        usleep(120_000)
         guard let source = CGEventSource(stateID: .hidSystemState) else {
             throw WireError.actionFailed("无法创建滚轮事件源")
         }
@@ -32,6 +35,9 @@ enum Mouse {
         try WindowActivation.activate(pid: pid)
         let start = CGPoint(x: fromX, y: fromY)
         let end = CGPoint(x: toX, y: toY)
+        Indicator.show(points: [start, end])
+        defer { Indicator.hide() }
+        usleep(120_000)
         guard let source = CGEventSource(stateID: .hidSystemState) else {
             throw WireError.actionFailed("无法创建拖拽事件源")
         }
@@ -66,6 +72,9 @@ enum Mouse {
         try WindowActivation.activate(pid: pid)
 
         let point = CGPoint(x: x, y: y)
+        Indicator.show(points: [point])
+        defer { Indicator.hide() }
+        usleep(120_000)
         guard let source = CGEventSource(stateID: .hidSystemState),
             let move = CGEvent(
                 mouseEventSource: source, mouseType: .mouseMoved,

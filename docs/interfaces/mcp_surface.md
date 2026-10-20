@@ -106,6 +106,7 @@ effect: delivered=true observed=true converged=true treeChanged=false targetChan
 1. 坐标以 `get_screenshot` 的图像左上角为原点，单位是图像像素；越界返回 `invalid_coordinates`。
 2. `screenshot_id` 必须属于当前令牌且窗口几何未变；否则 `stale_geometry`。
 3. 点击前会激活并 raise 目标窗口，确认它成为 frontmost；失败则**不点击**，避免点到别的应用。
+   随后在目标位置显示约 120ms 的蓝色指示环（不在截图里），再投递事件。
 4. 用真实鼠标事件（会移动光标），不是 `CGEvent.postToPid`。
 5. 点击后重读 AX 树，并再截一张图比较全图像素比例：
    结构变化 → 令牌作废；树没变但图变了 → `screenshotChanged=true`；
@@ -117,13 +118,13 @@ effect: delivered=true observed=true converged=true treeChanged=false targetChan
 ### `scroll_at`
 
 在截图坐标 `(x,y)` 投递滚轮事件。`dy > 0` 向下，`dx > 0` 向右；增量为 0 返回
-`invalid_coordinates`。与 `click_at` 相同：截图绑定令牌、先激活目标窗口、真实事件；
+`invalid_coordinates`。与 `click_at` 相同：截图绑定令牌、先激活目标窗口、显示指示环、真实事件；
 滚动后重读 AX 树并比较全图像素比例。设计见 [ADR-0021](../decisions/adr_0021_scroll_and_drag.md)。
 
 ### `drag`
 
 在截图坐标内从 `(from_x, from_y)` 拖到 `(to_x, to_y)`，`duration_ms` 默认 400。起终点相同或越界
-返回 `invalid_coordinates`。拖拽可能移动文件/列表项，属于高风险动作；没有审批层之前只用于
+返回 `invalid_coordinates`；起点与终点会各显示一个指示环。拖拽可能移动文件/列表项，属于高风险动作；没有审批层之前只用于
 低风险、可逆的场景。验证同样是 AX 树 + 全图像素比例。
 
 ### `type_text`、`press_key` 与 `set_value`
