@@ -32,6 +32,7 @@ extension AXBackend {
         case .stale(let detail):
             return .stale(detail)
         case .found(let element):
+            prepareKeyboardTarget(element, pid: pid)
             try focus(element)
             let source = CGEventSource(stateID: .combinedSessionState)
             for character in text {
@@ -58,6 +59,7 @@ extension AXBackend {
         case .stale(let detail):
             return .stale(detail)
         case .found(let element):
+            prepareKeyboardTarget(element, pid: pid)
             try focus(element)
             postKey(combo, pid: pid, source: CGEventSource(stateID: .combinedSessionState))
             return .acted
@@ -108,6 +110,40 @@ extension AXBackend {
                 return kids
             },
             key: { element in TargetKey(readNode(element, wantChildren: false).node) })
+    }
+
+    /// 键盘事件按进程投递，但真正接收文字的是**该进程当前 key window 的 first responder**。
+    /// 多窗口时只设 AXFocused 不够：目标窗口不是 key 时，输入会落到另一个窗口。
+    /// 因此先把目标元素所在的窗口 raise 成 key，再激活应用；失败只记录为平台事实，
+    /// 仍继续投递（部分应用不要求前台）。
+    static func prepareKeyboardTarget(_ element: AXUIElement, pid: Int32) {
+        if let window = enclosingWindow(of: element) {
+            if let app = NSRunningApplication(processIdentifier: pid), !app.isActive {
+                _ = app.activate(options: [.activateAllWindows])
+                for _ in 0..<10 {
+                    if app.isActive { break }
+                    Thread.sleep(forTimeInterval: 0.02)
+                }
+            }
+            AXUIElementPerformAction(window, kAXRaiseAction as CFString)
+            AXUIElementSetAttributeValue(window, kAXMainAttribute as CFString, kCFBooleanTrue)
+        } else if let app = NSRunningApplication(processIdentifier: pid), !app.isActive {
+            _ = app.activate(options: [.activateAllWindows])
+        }
+    }
+
+    /// 从元素沿 AXParent 向上找窗口。找不到时返回 nil（菜单项等没有窗口祖先）。
+    static func enclosingWindow(of element: AXUIElement) -> AXUIElement? {
+        var current = element
+        for _ in 0..<32 {
+            if string(current, kAXRoleAttribute) == kAXWindowRole { return current }
+            guard let parent = copy(current, kAXParentAttribute),
+                CFGetTypeID(parent) == AXUIElementGetTypeID()
+            else { return nil }
+            current = parent as! AXUIElement
+            AXUIElementSetMessagingTimeout(current, messagingTimeout)
+        }
+        return nil
     }
 
     /// 把焦点设到目标元素。焦点是异步生效的，等它被读回为 true 最多约 300 毫秒；

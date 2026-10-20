@@ -76,7 +76,7 @@ git config core.hooksPath scripts/hooks
 | MCP stdio 服务：只读的 `check_permissions`、`list_apps`、`list_windows`、`get_ax_state`、`get_screenshot`；加 `--actions` 额外提供 `launch_app`、`click`、`click_at`、`scroll_at`、`drag`、`type_text`、`press_key`、`set_value`；`--allow-app` / `--allow-app-file` 配置连接级应用允许列表（见 [MCP 接入面](../interfaces/mcp_surface.md)） | `SCUMCP`、`scu mcp`、`NativeSession` | 已实现，有单元测试与真实管道的端到端测试；只读工具已在 Cursor 一个宿主里跑通。**`click` 已在自制夹具应用 `scu-fixture` 与网易云 3.1.12（CEF）上用真实 `AXPress` 验证过**（见 [夹具验证](../../verification/2026-10-18-fixture-validation.md) 与 [网易云验证](../../verification/2026-10-19-real-app-netease.md)），其他 Electron 等第三方应用未验证（见 [MCP 接入面的未验证项](../interfaces/mcp_surface.md#未验证项)） |
 | 会话：快照令牌签发与复用、按路径加核对键定位句柄、`click`（`AXPress`）、轮询式收敛与效果摘要（[ADR-0015](../decisions/adr_0015_handle_resolution_by_path.md)） | `DesktopSession` | 已实现，有假读取器的单元测试、真实访达的 `verify` 测试与夹具上的真实点击测试 |
 | 定位器：沿路径逐层核对子节点数与角色，再核对目标核对键，通过后 `press` / `verify` | `AXLocator`、`NativeServer` | 已实现，有测试（线协议 v4 的 `performAction`） |
-| 输入与按键：先聚焦目标元素，再把 Unicode 键盘事件与组合键投递到目标进程（不激活应用）；设值走无障碍 `AXValue` | `Input.swift`、`DesktopSession` | 已实现，有按键解析单元测试、会话层测试与夹具上的真实输入/提交/设值测试 |
+| 输入与按键：先 raise 目标窗口、激活应用并聚焦元素，再把 Unicode 键盘事件与组合键投递到目标进程；设值走无障碍 `AXValue`，不激活 | `Input.swift`、`DesktopSession` | 已实现，有按键解析单元测试、会话层测试与夹具上的真实输入/提交/设值测试 |
 | 拒绝类目与宿主祖先链（拒绝类目只拒绝动作；连接级允许列表可另外限制读取） | `PolicyGate`、`AppAuthorization` | 已实现，有测试；真实终端用例仅在终端运行时才执行 |
 | 夹具应用（按钮、延迟变化、动画、被遮挡等场景），验证用，不是产品的一部分 | `scu-fixture`、`FixtureTests` | 已实现；见 [夹具验证](../../verification/2026-10-18-fixture-validation.md) |
 | 进程被信号终止或 SIGKILL 时回收原生进程与 socket 目录 | `NativeClient.terminateAllForShutdown`、`scu-native` 退出清理 | 已实现，由 `scripts/check.sh` 冒烟覆盖 |

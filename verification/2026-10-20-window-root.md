@@ -63,6 +63,23 @@
 - 窗口标题不存在时失败关闭，不退回应用根；
 - 元素动作使用令牌上的窗口标题，同名局部句柄不会跨窗口误操作。
 
+## 追加：多窗口输入修正
+
+真实任务第一轮发现：只把目标元素设为 `AXFocused` 不够。`type_text` 在 A 的令牌上返回 delivered，
+但文字进入了 B 窗口；`postToPid` 只决定事件进入哪个进程，接收文字的是 key window 的 first responder。
+
+修复后，`typeText` / `pressKey` 先沿 `AXParent` 找到目标窗口，`AXRaise` 它并设置 `kAXMain`，
+必要时激活应用，再聚焦元素。用同一组 TextEdit 两窗口重跑：
+
+- A 从 `alpha` 改为 `Beta task
+`，保存到磁盘；
+- B 保持 `bravo
+`；
+- 反向编辑 B 时，A 保持 `Beta task
+`。
+
+完整任务记录见 [真实任务第一轮](2026-10-20-real-tasks.md)。
+
 ## 限定
 
 - 只测了 TextEdit 一种应用；CEF/Electron 的窗口枚举与根行为未测。
