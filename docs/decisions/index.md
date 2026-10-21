@@ -37,6 +37,7 @@
 - [ADR-0026 窗口选择：绑定截图与坐标动作](adr_0026_window_selection.md)：`get_ax_state(window)`、令牌绑定；元素表仍是整个应用的限制已由 ADR-0027 补齐。读取时机：多窗口、截图目标、窗口标题变化时。
 - [ADR-0027 窗口列表与窗口根定位](adr_0027_window_root_locator.md)：`list_windows`、`get_ax_state(window)` 以窗口为根、元素动作携带窗口标题。读取时机：多窗口任务、窗口改名、显式选择窗口时。
 - [ADR-0028 元素表默认输出增量差异](adr_0028_incremental_tree_rendering.md)：上一版快照、`~`/`+`/删除范围、200 行预算与 `full=true` 回退。读取时机：改元素表输出、处理大应用树、令牌重读成本时。
+- [ADR-0029 分发：可验证的 zip 优先](adr_0029_distribution.md)：通用二进制、ad-hoc 默认、Developer ID/公证路径、安装器边界。读取时机：改打包、签名、公证、安装流程时。
 
 ### 范围与安全
 

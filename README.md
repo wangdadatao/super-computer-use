@@ -63,15 +63,17 @@ SCU **只做 UI 自动化**。不提供日历、消息、系统活动录制等
 
 ## 当前状态
 
-**v2 已收口（0.2.0，2026-10-20）；当前 0.3.0（默认差异）。** 源码构建交付，暂不提供分发包；code mode 仍未做。
+**v2 已收口（0.2.0，2026-10-20）；0.3.0（默认差异）；当前 0.4.0（分发）。** 源码构建与 macOS 通用二进制 zip 均可交付；code mode 仍未做。
 已实现：两进程通信、版本协商（线协议 v11）、权限检测、无障碍树读取与导出、
 快照令牌与按路径定位句柄、`AXPress` 点击、输入与设值、最小效果摘要、拒绝类目、MCP 服务（默认只读，`--actions` 才暴露动作）。
 v1 功能点：读取、点击、输入、设值；元素表带快照内短标签与 `frame`，动作工具接受 `label`。
 v2 功能点（0.2.0）：窗口截图与标签叠加；`launch_app`；连接级应用允许列表；`list_windows` 与窗口根读取，
 截图、坐标动作与元素动作都绑定显式窗口；`click_at` / `scroll_at` / `drag` 按截图坐标操作（会激活窗口、移动光标）；
 坐标动作前的可见指示环。0.3.0：`get_ax_state` 默认输出与上次读取的差异，`full=true` 取完整表。
+0.4.0：通用二进制 zip、签名/公证流水线、`install.sh` 与 `verify_dist.sh`。当前包是 **ad-hoc 签名、未公证**；
+公开分发前需要 Developer ID 证书与公证。
 真实任务集 6 个：5 个通过、1 个部分通过（访达内联重命名）；多窗口输入与选区委缩两个 bug 已修。
-未实现：句柄注册表、逐次审批与租约、完整指示层/虚拟光标、OCR、code mode、分发。
+未实现：句柄注册表、逐次审批与租约、完整指示层/虚拟光标、OCR、code mode、公开可下载的已公证包。
 
 **关键机制的验证**：令牌与效果摘要在受控夹具上满足（误拒 0/8；每次改值点击后都要重读）；
 输入、按键、设值在网易云音乐（CEF，带无障碍启动参数）上完成了一次真实端到端验证（搜索并播放）；
@@ -88,7 +90,7 @@ swift build && swift test
 .build/out/Products/Debug/scu dump --pid <pid> [--window <标题>]
 ```
 
-构建与命令说明见[本地环境](docs/operations/local_setup.md)。
+构建与命令说明见[本地环境](docs/operations/local_setup.md)；打包、签名、安装见[分发](docs/operations/distribution.md)。
 除其中「当前已实现」列出的内容外，请把文档读作设计意图，而不是已验证的系统行为。
 
 ## 给 agent 用
@@ -106,6 +108,6 @@ swift build && swift test
 
 其中值得先读的三处：
 
-- [决策记录](docs/decisions/index.md)：15 条取舍的背景与代价，包括对本项目有直接影响的两套外部实现分析。
+- [决策记录](docs/decisions/index.md)：29 条取舍的背景与代价，包括对本项目有直接影响的两套外部实现分析。
 - [元素身份](docs/architecture/element_identity.md)：SCU 相对现有方案的核心差异点。
 - [策略与审批](docs/architecture/policy_layer.md)：动作准入机制，SCU 的安全边界。

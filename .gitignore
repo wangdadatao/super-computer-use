@@ -11,6 +11,9 @@ Package.resolved
 .vscode/
 *.swp
 
+# 分发产物
+dist/
+
 # 覆盖率产物
 *.profraw
 

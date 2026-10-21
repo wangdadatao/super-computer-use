@@ -46,7 +46,8 @@ git config core.hooksPath scripts/hooks
 
 ## 当前已实现（v1）
 
-以下行为已实现并由测试或手动运行覆盖。**v2 已收口（0.2.0，2026-10-20）；当前 0.3.0（默认差异）；源码构建交付，暂不提供分发包。**
+以下行为已实现并由测试或手动运行覆盖。**v2 已收口（0.2.0，2026-10-20）；0.3.0（默认差异）；当前 0.4.0（分发）。**
+源码构建与 macOS 通用二进制 zip 均可交付；当前 zip 是 ad-hoc 签名、未公证。见[分发](distribution.md)。
 收敛有已知缺口（不列为门槛）；身份 K4 不成立（已按规则处置）；
 除网易云（CEF，带无障碍启动参数）外的真实第三方应用与经宿主调用动作仍未验证。见[测试策略](testing.md#当前状态)。
 
@@ -164,8 +165,9 @@ printf '%s\n' \
 第 3、4 步的产出是身份键设计的依据；K4 正式验证已执行（不成立），
 见 [verification/2026-10-18-identity-k4.md](../../verification/2026-10-18-identity-k4.md)。
 
-## 仍待定
+## 待定与已定
 
 - **服务进程与 JS 运行时的关系**：协议层是 Swift，code mode 运行时用哪种引擎待定，
   见[运行时契约](../interfaces/runtime_contract.md)。
-- **分发方式**：签名与公证的要求取决于是否对外发布二进制。
+- **已定（2026-10-21）**：分发用通用二进制 zip；ad-hoc 默认，Developer ID/公证走环境变量与钥匙串 profile。
+  见 [ADR-0029](../decisions/adr_0029_distribution.md) 与[分发](distribution.md)。

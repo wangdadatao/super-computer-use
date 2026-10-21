@@ -30,7 +30,23 @@ swift --version            # 期望 6.x
 
 ## 2. 取得二进制
 
-当前**没有分发包**，唯一方式是从源码构建：
+### 2.1 用分发包（优先）
+
+0.4.0 起提供 macOS 通用二进制 zip。当前包是 **ad-hoc 签名、未公证**；从网络下载后
+Gatekeeper 可能拦截。不要自行移除 quarantine，也不要把 ad-hoc 包说成已公证。
+
+```bash
+shasum -a 256 -c scu-0.4.0-macos-universal.zip.sha256
+unzip scu-0.4.0-macos-universal.zip
+cd scu-0.4.0-macos-universal
+./install.sh                    # 默认安装到 ~/bin/scu
+# 或：./install.sh --prefix "$HOME/Applications/scu"
+```
+
+`install.sh` 会校验两个二进制的签名、复制到稳定目录并运行一次 `scu permissions`，
+不会修改宿主配置。安装后 `scu` 与 `scu-native` 必须仍在同一目录。
+
+### 2.2 从源码构建（没有合适分发包时）
 
 ```bash
 cd <仓库根目录>
@@ -39,13 +55,15 @@ BIN="$(swift build -c release --show-bin-path)"
 ls "$BIN/scu" "$BIN/scu-native"
 ```
 
+通用二进制用 `swift build -c release --arch arm64 --arch x86_64`。
+
 - `scu` 会在**自己所在的目录**找 `scu-native`，两者必须放在一起。
 - `scu-fixture` 只有测试需要，安装时不用复制。
-- 如果用户给了你一个分发包，解压后同样需要 `scu` 与 `scu-native` 在同一目录。
+- 分发包解压后同样需要 `scu` 与 `scu-native` 在同一目录；单独复制一个会报 `platform_unavailable`。
 
 ## 3. 放置到稳定目录
 
-不要放在 `.build/` 里（会被 `swift build` 清理）。建议 `~/bin/scu/`：
+分发包用 `install.sh` 时已处理。源码构建时不要放在 `.build/` 里（会被 `swift build` 清理），建议 `~/bin/scu/`：
 
 ```bash
 mkdir -p ~/bin/scu

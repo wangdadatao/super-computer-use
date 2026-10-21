@@ -35,6 +35,7 @@ verification/
 | `2026-10-20-approval-triggers.md` | Grok Bot 与 Codex Computer Use 的审批触发：应用级运行时审批与动作级提示词的区分 |
 | `2026-10-20-window-root.md` | TextEdit 两窗口上的 `list_windows`、窗口根读取与跨窗口 `set_value` 实测 |
 | `2026-10-20-real-tasks.md` | 真实任务第一轮：TextEdit 编辑/保存/多窗口隔离、计算器、访达新建文件夹（部分通过）、Edge 链接、TextEdit 撤销（失败） |
+| `2026-10-21-distribution.md` | macOS 通用二进制 zip 的构建、ad-hoc 签名、校验和、解压后 MCP 冒烟与安装脚本验证；未公证 |
 
 ## 结论文件格式
 
@@ -43,7 +44,7 @@ verification/
 
 ## 当前状态
 
-**v2 已收口（0.2.0，2026-10-20）；当前 0.3.0（默认差异）；P0 的出口门槛全部满足或判定不适用。** 九份记录：元素身份基线
+**v2 已收口（0.2.0，2026-10-20）；0.3.0（默认差异）；当前 0.4.0（分发）；P0 的出口门槛全部满足或判定不适用。** 十份记录：元素身份基线
 （[2026-10-16](2026-10-16-baseline-identity.md)，不是结论）、读树耗时
 （[2026-10-17](2026-10-17-read-latency.md)）、夹具验证（[2026-10-18](2026-10-18-fixture-validation.md)）、
 K4 正式验证（[2026-10-18](2026-10-18-identity-k4.md)，不成立）、令牌误拒与重读成本
@@ -51,7 +52,8 @@ K4 正式验证（[2026-10-18](2026-10-18-identity-k4.md)，不成立）、令�
 真实应用端到端（[2026-10-19](2026-10-19-real-app-netease.md)，网易云 CEF）、审批触发
 （[2026-10-20](2026-10-20-approval-triggers.md)，Grok/Codex 静态分析）、窗口列表与窗口根
 （[2026-10-20](2026-10-20-window-root.md)，TextEdit 两窗口）、真实任务第一轮
-（[2026-10-20](2026-10-20-real-tasks.md)，6 个任务：5 个通过、1 个部分通过）。
+（[2026-10-20](2026-10-20-real-tasks.md)，6 个任务：5 个通过、1 个部分通过）、分发包
+（[2026-10-21](2026-10-21-distribution.md)，ad-hoc 通用 zip，未公证）。
 指示层隔离（需要屏幕录制）等 P0 之外的假设仍未验证。
 门槛见 [ADR-0013](../docs/decisions/adr_0013_p0_vertical_slice.md)；
 权限状态见 [docs/operations/permissions.md](../docs/operations/permissions.md)。
