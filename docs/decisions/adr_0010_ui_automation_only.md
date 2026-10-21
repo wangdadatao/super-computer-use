@@ -60,6 +60,15 @@ SCU 单独使用无法满足，需要配合其他工具。
 不排除将来的其他服务以 SCU 为底层 UI 能力。边界在于
 不同能力应当是不同服务，而不是同一个服务里的不同端点。
 
+### 追加记录（2026-10-21）：浏览器操作面的边界
+
+本条仍然排除 **SCU 核心内嵌浏览器扩展的安装与集成**。新的规划把浏览器能力作为
+外部适配器的操作面：Playwright MCP/CDP 或用户安装的扩展/native host 提供浏览器语义，
+SCU 核心负责编排、令牌、效果和策略。扩展不进入核心，也不由 SCU 自动安装。
+
+如果将来由 SCU 自己发布浏览器扩展，必须新写 ADR 复核本条，而不是把它当成普通工具增量。
+见[操作面模型](../architecture/surface_model.md)与 [ADR-0030](adr_0030_browser_surface.md)。
+
 ## 后果
 
 - [ADR-0009 策略层独立成层](adr_0009_policy_layer.md)的拒绝类目不需要覆盖领域数据访问，
@@ -72,3 +81,4 @@ SCU 单独使用无法满足，需要配合其他工具。
 - [系统总览](../architecture/system_overview.md)
 - [macOS 权限](../operations/permissions.md)
 - [ADR-0009 策略层独立成层](adr_0009_policy_layer.md)
+- [ADR-0030 浏览器操作面通过适配器接入](adr_0030_browser_surface.md)

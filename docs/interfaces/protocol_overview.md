@@ -30,7 +30,8 @@ SCU 对 agent **只暴露少量工具**，核心是一个 JavaScript 执行入�
 **已实现的只是其中的一小部分**，工具也不是 `js`：见 [MCP 接入面](mcp_surface.md)——
 五个只读工具（`check_permissions`、`list_apps`、`list_windows`、`get_ax_state`、`get_screenshot`），
 加 `--actions` 时提供 `launch_app`、`click`、`click_at`、`scroll_at`、`drag`、`type_text`、`press_key`、`set_value`。
-本文描述的 `js` 工具面与会话 API 仍是拟实施设计。
+本文描述的 `js` 工具面与会话 API 仍是拟实施设计；`getTab`/`listTabs` 和页面目标尚未实现，
+浏览器操作面的规划见[操作面模型](../architecture/surface_model.md)。
 
 ## 会话 API
 
@@ -55,9 +56,12 @@ interface Scu {
 }
 ```
 
-`App` 与 `Tab` 共享同一操作面（见[系统总览](../architecture/system_overview.md)的跨平台抽象）。
+`App` 与 `Tab` 的设计目标是共享同一操作面（见[系统总览](../architecture/system_overview.md)的跨平台抽象）。
 差异只在 `App` 额外提供 `pressKey` 与 `paste`：浏览器标签页的按键与粘贴
 由页面自身的接口承担，不走系统级输入。
+
+**当前只实现了 `App`。** `Tab` 的发现、claim、令牌和动作效果由未来的浏览器适配器负责，
+不能复用桌面 AX 句柄。
 
 ## 目标绑定
 
@@ -69,6 +73,9 @@ interface Scu {
 
 **歧义即失败。** URL 匹配到多个标签页、名称匹配到多个应用时返回错误，
 不选第一个。理由：隐式选择会让调用方在不知情的情况下操作错误的目标。
+
+浏览器标签页的 URL 只作为查找条件，绑定身份必须来自适配器的稳定 `tabId`；
+多个标签页匹配同一 URL 时返回候选，不按最近打开隐式选择。
 
 ## 状态读取
 

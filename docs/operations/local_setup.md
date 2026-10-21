@@ -44,12 +44,12 @@ git config core.hooksPath scripts/hooks
 该数值在文档中没有记录依据；当前用到 AX、NSWorkspace 与 ScreenCaptureKit
 （`SCScreenshotManager` 需要 macOS 14），平台下限不能再低于 14；是否保持 14.4 待定。
 
-## 当前已实现（v1）
+## 当前已实现（0.4.0）
 
 以下行为已实现并由测试或手动运行覆盖。**v2 已收口（0.2.0，2026-10-20）；0.3.0（默认差异）；当前 0.4.0（分发）。**
 源码构建与 macOS 通用二进制 zip 均可交付；当前 zip 是 ad-hoc 签名、未公证。见[分发](distribution.md)。
 收敛有已知缺口（不列为门槛）；身份 K4 不成立（已按规则处置）；
-除网易云（CEF，带无障碍启动参数）外的真实第三方应用与经宿主调用动作仍未验证。见[测试策略](testing.md#当前状态)。
+真实第三方应用覆盖仍有限：网易云（CEF，带无障碍启动参数）、TextEdit、计算器与 Edge 窗口读取；其他应用与经宿主调用动作仍未验证。见[测试策略](testing.md#当前状态)。
 
 | 内容 | 位置 | 状态 |
 | --- | --- | --- |
@@ -76,7 +76,7 @@ git config core.hooksPath scripts/hooks
 | 坐标动作指示环：点击/滚动/拖拽前 120ms 显示不拦截、不进入截图的圆环（[ADR-0023](../decisions/adr_0023_indicator.md)） | `Indicator.swift`、`Mouse.swift` | 已实现；靠人工观察，不能截图验证 |
 | MCP stdio 服务：只读的 `check_permissions`、`list_apps`、`list_windows`、`get_ax_state`（默认差异，`full=true` 完整表）、`get_screenshot`；加 `--actions` 额外提供 `launch_app`、`click`、`click_at`、`scroll_at`、`drag`、`type_text`、`press_key`、`set_value`；`--allow-app` / `--allow-app-file` 配置连接级应用允许列表（见 [MCP 接入面](../interfaces/mcp_surface.md)） | `SCUMCP`、`scu mcp`、`NativeSession` | 已实现，有单元测试与真实管道的端到端测试；只读工具已在 Cursor 一个宿主里跑通。**`click` 已在自制夹具应用 `scu-fixture` 与网易云 3.1.12（CEF）上用真实 `AXPress` 验证过**（见 [夹具验证](../../verification/2026-10-18-fixture-validation.md) 与 [网易云验证](../../verification/2026-10-19-real-app-netease.md)），其他 Electron 等第三方应用未验证（见 [MCP 接入面的未验证项](../interfaces/mcp_surface.md#未验证项)） |
 | 会话：快照令牌签发与复用、按路径加核对键定位句柄、`click`（`AXPress`）、轮询式收敛与效果摘要（[ADR-0015](../decisions/adr_0015_handle_resolution_by_path.md)） | `DesktopSession` | 已实现，有假读取器的单元测试、真实访达的 `verify` 测试与夹具上的真实点击测试 |
-| 定位器：沿路径逐层核对子节点数与角色，再核对目标核对键，通过后 `press` / `verify` | `AXLocator`、`NativeServer` | 已实现，有测试（线协议 v4 的 `performAction`） |
+| 定位器：沿路径逐层核对子节点数与角色，再核对目标核对键，通过后 `press` / `verify` | `AXLocator`、`NativeServer` | 已实现，有测试（`performAction`，v4 引入，当前 v11） |
 | 输入与按键：先 raise 目标窗口、激活应用并聚焦元素，再把 Unicode 键盘事件与组合键投递到目标进程；设值走无障碍 `AXValue`，不激活 | `Input.swift`、`DesktopSession` | 已实现，有按键解析单元测试、会话层测试与夹具上的真实输入/提交/设值测试 |
 | 拒绝类目与宿主祖先链（拒绝类目只拒绝动作；连接级允许列表可另外限制读取） | `PolicyGate`、`AppAuthorization` | 已实现，有测试；真实终端用例仅在终端运行时才执行 |
 | 夹具应用（按钮、延迟变化、动画、被遮挡等场景），验证用，不是产品的一部分 | `scu-fixture`、`FixtureTests` | 已实现；见 [夹具验证](../../verification/2026-10-18-fixture-validation.md) |
@@ -84,7 +84,8 @@ git config core.hooksPath scripts/hooks
 | K1~K4 候选键与匹配键计算（纯函数，无状态） | `IdentityAnalyzer` | 已实现，有测试（含唯一性的伪随机性质测试） |
 | 各档位分布统计（整树 / 窗口内可交互 / 菜单栏 / 按 role），K1 与标签的多种口径 | `IdentityReport`、`scu identity` | 已实现。**只呈现分布，不给成败结论**（ADR-0013「基线先行」） |
 
-**尚未实现**：逐次审批与租约、完整指示层/虚拟光标；
+**尚未实现**：浏览器操作面（adapter/扩展，见[操作面模型](../architecture/surface_model.md)）、
+逐次审批与租约、完整指示层/虚拟光标；
 句柄注册表（跨快照延续，K4 验证不成立，**不实现**，见 [ADR-0013](../decisions/adr_0013_p0_vertical_slice.md#暂缓句柄注册表)）。
 
 **`verify`（只定位核对、不执行）在原生层与会话层已实现，没有向 MCP 暴露。**

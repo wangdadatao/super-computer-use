@@ -30,6 +30,8 @@ SCU 的设计决策引用了一批对两套已发布实现的观察结论。本�
 | `CU-SKY-POLICY` | `@oai/sky` 的应用策略入口<br><sub>`dist/project/cua/sky_js/src/targets/mac/computer-use-policy.js`</sub> | `0.7.8`<br>sha256 `a00024117e11f2d1e4151e140bede2c0ed7931625aa0f79a427457cb1103524e` | 2026-10-20 |
 | `CU-CUA` | JS 包 `@oai/cua` | `0.2.6` | 2026-10-16 |
 | `CU-REPL` | JS 包 `@oai/cua-repl` | `0.1.0` | 2026-10-16 |
+| `CU-BROWSER` | Browser 插件<br><sub>`/Applications/ChatGPT.app/Contents/Resources/plugins/openai-bundled/plugins/browser/`</sub> | `26.1013.40934`<br>REA 根工件 sha256 `49f6b8a152ea3654df057f91d65939ba9728691be3cbac5e0a2f6e6689d1e556`<br>`browser-service.mjs` sha256 `c470cdc7f98be2724ef1c85f6b9d3757d80de022b065ca14d922d7a1a85ffc9a`<br>`browser-client.mjs` sha256 `78f5a38ab02f23b68e4650e3bfe9ec2f269c5e004f30a1f59eee927a221a2e2f` | 2026-10-21 |
+| `CU-BROWSER-EXT` | Edge 中的 ChatGPT 扩展 + native host<br><sub>`~/Library/Application Support/Microsoft Edge/Default/Extensions/hehgg.../1.26.1005.11759_0/`</sub> | 扩展 `1.26.1005.11759`；native host `com.openai.codexextension`，manifest 指向 `~/.codex/plugins/cache/openai-bundled/chrome/.../ChatGPT for Chrome` | 2026-10-21 |
 
 ### Grok Bot Computer Use（xAI / Anysphere）
 
@@ -101,6 +103,23 @@ REA Mach-O 证据 `ev_431ddb…`（父 `ev_5a22…`），工件 `CU-APP` SHA-256
 `docs/sky-window-api.md` sha256 `18d387e9…`、`docs/sky-window2-api.md` sha256 `85fa55b9…`；
 `CU-PLUGIN-OLD` 的 `skills/computer-use/SKILL.md` sha256 `8e6a753c…`。
 采集方法：直接读取 JS 包内 API 文档与技能文件（2026-10-19）。
+
+### 浏览器操作面（2026-10-21 静态/运行时复核）
+
+| 结论 | 来源 | 证据 |
+| --- | --- | --- |
+| Codex 的 Browser 插件走扩展 + native messaging，不是 Playwright MCP | `CU-BROWSER`、`CU-BROWSER-EXT` | 插件 `skills/control-in-app-browser/SKILL.md` 要求用 `browser-client.mjs`；扩展 manifest 含 `tabs`、`debugger`、`nativeMessaging`；native host manifest 名为 `com.openai.codexextension` |
+| Codex 能枚举并 claim 用户现有标签页 | `CU-BROWSER` | `browser-service.mjs` 的 `getForUrl` 读取 extension open tabs，按 exact / originPathname / hostname / hostnameHierarchy 匹配；`claimUserTab` 发送 claim 请求；官方 `tab-claiming-chrome.md` 描述 `openTabs()` → 选择 → `claimTab()` |
+| Codex 的页面操作是浏览器上下文 API，不是 macOS AX | `CU-BROWSER` | `docs/api.json` 的 `Tab.playwright`、`PlaywrightAPI`、`Tab.ax`、`Tab.cdp`；扩展 background 中有 `chrome.debugger.sendCommand` |
+| Codex 的 Browser 插件与 Computer Use 明确分流 | `CU-BROWSER` | SKILL 明确要求浏览器任务优先用 Browser，不要因为 Computer Use 工具可见就退回 CUA/独立 Playwright |
+| 本机 Edge 实际连接了 native host | `CU-BROWSER-EXT` | 扩展 `hehgg...` 已安装启用；native host 进程父进程是 Edge；host 持有 `/tmp/codex-browser-use/<uuid>.sock` |
+| Grok 0.71.2 没有找到同类扩展/tab claim 链路 | `GB-ASAR` | `app.asar` 中未找到 `chrome.debugger`、`nativeMessaging`、`openTabs`、`claimTab`、`connectOverCDP` 的实现字符串；原生 `CUGrokBotService` 的工具仍是通用 `computer_*`，含 `AXWebView`/`AXTab` 但无 tab claim |
+| Grok 的 `BrowserUse`/Playwright 痕迹不足以证明本地已启用 | `GB-ASAR` | `SubagentTypeBrowserUse` 只是 proto 枚举；`playwright_mcp_provider`、`playwright_autorun` 只是 feature flag/默认值；未找到本地 provider 实现 |
+
+**限定**：Codex 侧来自插件源码、扩展 manifest、运行时进程关系；没有抓到你那次 baidu 请求的实际消息，
+因此“具体 claim 了哪个 tab”是从代码和文档推断的。Grok 侧是静态负向搜索，不是运行时行为验证；
+`app.asar` 的签名 native 文件与 ASAR 完整性元数据有矛盾，REA 按 `record-and-continue` 处理，覆盖范围部分。
+REA 证据：Codex `ev_d034f816…`；Grok `ev_56738713…`。
 
 ### 状态与失效
 

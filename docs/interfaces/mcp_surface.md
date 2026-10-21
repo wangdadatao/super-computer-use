@@ -232,7 +232,8 @@ screenshot_id=g1abc.1 图像 1600x1138 scale=1.514 window=(353,199,1057,752)
 两者必须二选一。标签可能落在 `AXGroup`/`AXRow` 上（网页侧栏、表格行），不一定是按钮。
 `frame` 只用于阅读与后续截图叠加，不参与动作定位。
 **标签可点不等于应用会响应**：网易云左侧栏声明了 `AXPress`，但 `click(label)` 返回
-`noOpSuspected=true`；这类控件需要坐标点击（尚未实现）。设计见
+`noOpSuspected=true`；这类控件需要用 `click_at` 走坐标点击（已实现，见
+[ADR-0020](../decisions/adr_0020_coordinate_click.md)）。标签机制见
 [ADR-0018](../decisions/adr_0018_label_addressing.md)。
 
 ### 默认差异

@@ -1,6 +1,6 @@
 ---
 name: scu
-description: 用 SCU（SuperComputerUse）读取和操作本机 macOS 应用的界面。当任务需要点击原生应用的按钮、填写表单、切换设置、按快捷键，且没有可用的 API/CLI 时使用；也用于读取某个应用当前界面结构、截图对照与坐标点击（最后手段）。不适用于启动应用或非 macOS 平台。
+description: 用 SCU（SuperComputerUse）读取和操作本机 macOS 应用的界面。当任务需要点击原生应用的按钮、填写表单、切换设置、按快捷键，且没有可用的 API/CLI 时使用；也用于读取某个应用当前界面结构、截图对照与坐标点击（最后手段）。不适用于网页 DOM/标签页自动化（用 Playwright MCP 或 Codex Browser）或非 macOS 平台。
 ---
 
 # SCU 使用指导（v1）
@@ -14,15 +14,30 @@ SCU 是一个 MCP 服务：读取 macOS 应用的无障碍树，并用 `AXPress`
 | --- | --- |
 | 读取**已在运行**的应用的无障碍树（文本元素表） | 切换前台应用（启动、输入、按键与坐标动作会激活目标） |
 | 启动/激活应用（`launch_app`） | 右键、长按 |
-| 截图、看画面、按截图坐标点击/滚动/拖拽（`get_screenshot` / `click_at` / `scroll_at` / `drag`）；动作前会在屏幕上显示约 120ms 的指示环 | |
+| 截图、看画面、按截图坐标点击/滚动/拖拽（`get_screenshot` / `click_at` / `scroll_at` / `drag`）；动作前会在屏幕上显示约 120ms 的指示环 | 页面 DOM/标签页语义（改用浏览器操作面） |
 | 点击元素（`AXPress`） | 输入法（中文等）未验证；粘贴、剪贴板 |
 | 逐字输入文本（`type_text`）、发送按键/组合键（`press_key`） | 审批/确认层：危险动作只能靠你与用户确认 |
-| 直接写元素的值（`set_value`，要求元素可写） | |
-| 知道动作是否改变了界面、是否疑似空操作 | |
+| 直接写元素的值（`set_value`，要求元素可写） | 跨应用编排、自动重试 |
+| 知道动作是否改变了界面、是否疑似空操作 | 浏览器页面标签页、DOM、登录态继承（没有浏览器适配器） |
+
+**SCU 操作浏览器时，只把浏览器当普通 macOS 应用**：可以点地址栏、标签页、菜单和原生对话框，
+也可以截图后点坐标；但 `get_ax_state` 不是 DOM，`list_windows` 也不是标签页列表。
+网页内容优先用 Playwright MCP / Codex Browser，见下面的操作面选择。
 
 只读档只有 `check_permissions` / `list_apps` / `list_windows` / `get_ax_state` / `get_screenshot`；
 `launch_app` / `click` / `click_at` / `scroll_at` / `drag` / `type_text` / `press_key` / `set_value` 需要服务以 `--actions` 启动。
 如果调用这些工具返回"未知工具"（JSON-RPC `-32602`），说明动作档没开，请用户改启动参数。
+
+## 先选操作面
+
+| 任务 | 用哪个 |
+| --- | --- |
+| 打开 URL、网页表单、页面按钮、读网页内容、登录态标签页 | **Playwright MCP** 或宿主提供的 Browser 插件 |
+| 浏览器地址栏、菜单、扩展、原生对话框；原生应用；跨应用流程 | **SCU** |
+
+不要用 `get_ax_state` 猜网页结构，也不要把浏览器窗口的元素表当 DOM。
+SCU 当前**没有**浏览器 adapter/扩展，也没有 `list_tabs` / `get_tab`；
+不要声称 SCU 能找到“Edge 里那个 baidu 标签页”。需要时改用浏览器操作面。
 
 ## 第一次使用
 

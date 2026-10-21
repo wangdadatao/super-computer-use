@@ -16,27 +16,31 @@
 
 **v2 已收口（0.2.0，2026-10-20）；0.3.0（默认差异，2026-10-20）；0.4.0 已收口（分发，2026-10-21）。**
 源码构建与 macOS 通用二进制 zip 均可交付。分发包当前是 **ad-hoc 签名、未公证**；公开下载前需要 Developer ID 与公证。code mode 仍未做。
+**浏览器操作面**：规划为桌面之外的独立适配器（Playwright MCP/CDP 优先，扩展后置），当前未实现；见[操作面模型](architecture/surface_model.md)与 [ADR-0030](decisions/adr_0030_browser_surface.md)。
 v1 功能点：读取、点击、输入、设值；元素表输出 `[a]` 与 `frame`，四个元素动作工具（`click`/`type_text`/`press_key`/`set_value`）接受 `label`。
 v2 功能点：`get_screenshot` 截取目标窗口并叠加标签；`launch_app`；`click_at` / `scroll_at` / `drag` 按截图坐标操作并在动作前显示指示环；
 动作档可选连接级应用允许列表（`--allow-app`）；`list_windows` 枚举窗口，`get_ax_state(window=...)` 以指定窗口为根读树，元素动作也绑定该窗口。
 0.3.0：`get_ax_state` 默认输出与上次读取的差异，`full=true` 取完整表（[ADR-0028](decisions/adr_0028_incremental_tree_rendering.md)）。
 0.4.0：通用二进制 zip、ad-hoc/Developer ID 签名流水线、`install.sh` 与 `verify_dist.sh`（[ADR-0029](decisions/adr_0029_distribution.md)、[分发](operations/distribution.md)）。
+下一阶段规划：浏览器操作面通过适配器接入；不把浏览器当 AX 应用，也不先自研扩展（[ADR-0030](decisions/adr_0030_browser_surface.md)）。
 已在网易云（CEF）与 TextEdit 多窗口上验证；真实任务集 6 个，5 个通过、1 个部分通过（访达内联重命名）。
-见 [ADR-0018](decisions/adr_0018_label_addressing.md)、[ADR-0019](decisions/adr_0019_window_screenshot.md)、[ADR-0020](decisions/adr_0020_coordinate_click.md)、[ADR-0021](decisions/adr_0021_scroll_and_drag.md)、[ADR-0022](decisions/adr_0022_app_launch.md)、[ADR-0023](decisions/adr_0023_indicator.md)、[ADR-0024](decisions/adr_0024_app_authorization.md)、[ADR-0025](decisions/adr_0025_window_target.md)、[ADR-0026](decisions/adr_0026_window_selection.md)、[ADR-0027](decisions/adr_0027_window_root_locator.md)、[ADR-0028](decisions/adr_0028_incremental_tree_rendering.md)、[ADR-0029](decisions/adr_0029_distribution.md)。
+见 [ADR-0018](decisions/adr_0018_label_addressing.md)、[ADR-0019](decisions/adr_0019_window_screenshot.md)、[ADR-0020](decisions/adr_0020_coordinate_click.md)、[ADR-0021](decisions/adr_0021_scroll_and_drag.md)、[ADR-0022](decisions/adr_0022_app_launch.md)、[ADR-0023](decisions/adr_0023_indicator.md)、[ADR-0024](decisions/adr_0024_app_authorization.md)、[ADR-0025](decisions/adr_0025_window_target.md)、[ADR-0026](decisions/adr_0026_window_selection.md)、[ADR-0027](decisions/adr_0027_window_root_locator.md)、[ADR-0028](decisions/adr_0028_incremental_tree_rendering.md)、[ADR-0029](decisions/adr_0029_distribution.md)、[ADR-0030](decisions/adr_0030_browser_surface.md)。
 
 仓库有一个 Swift package，
 实现了两进程通信、版本协商、权限检测、无障碍树读取、快照令牌与按路径定位句柄、`AXPress` 点击与最小效果摘要、
 拒绝类目（`PolicyGate`），以及 MCP stdio 服务（`scu mcp`，见 [MCP 接入面](interfaces/mcp_surface.md)）。
 **默认只读，`scu mcp --actions` 才暴露 `click` / `type_text` / `press_key` / `set_value`。**
-**未实现**：句柄注册表（跨快照延续，按 K4 验证结果不实现）、逐次审批与租约、完整指示层/虚拟光标、code mode。
+**未实现**：句柄注册表（跨快照延续，按 K4 验证结果不实现）、逐次审批与租约、完整指示层/虚拟光标、code mode、浏览器操作面（adapter/扩展）。
 验证状态：令牌与效果摘要在受控夹具上满足（误拒 0/8；每次改值点击后都要重读）；输入、按键与设值在夹具与网易云（CEF，带无障碍启动参数）上成立（其他真实应用与输入法未验证）；收敛有已知缺口、不列为出口门槛；策略在夹具上满足；身份 K4 按冻结规则不成立；经宿主调用动作仍未验证。见[测试策略](operations/testing.md#当前状态)。
-v2 候选范围（截图+坐标、滚动/拖拽、应用启动、应用允许列表、逐次审批、`batch` 等）见 [ADR-0013 的 v2 候选](decisions/adr_0013_p0_vertical_slice.md#v2_candidates_2026_10_19)，
-接口演进顺序见 [ADR-0002 的追加记录](decisions/adr_0002_code_mode_surface.md)。
+v2 已收口；未进入 v2 的逐次审批、`batch`/受限 code mode 等见
+[ADR-0013 的 v2 候选](decisions/adr_0013_p0_vertical_slice.md#v2_candidates_2026_10_19)与
+[ADR-0002 的追加记录](decisions/adr_0002_code_mode_surface.md)。
+下一阶段的浏览器操作面规划见 [ADR-0030](decisions/adr_0030_browser_surface.md)。
 范围与出口门槛见 [ADR-0013](decisions/adr_0013_p0_vertical_slice.md)，
 已实现内容见[本地环境](operations/local_setup.md)。
 给 agent 的使用指导（何时用、核心循环、动作选择、错误处理）在 [skills/scu/SKILL.md](../skills/scu/SKILL.md)。
 
-除「已实现」一节列出的内容外，文档描述的都是已确定的设计意图，不是已验证的系统行为。
+除「当前阶段」列出的已实现内容外，文档描述的都是已确定的设计意图，不是已验证的系统行为。
 
 **未定项散落在各文档内就地标注**，不集中登记。检索方式：
 
@@ -50,8 +54,8 @@ v2 候选范围（截图+坐标、滚动/拖拽、应用启动、应用允许列
 
 ## 分类
 
-- [架构](architecture/index.md)：四层分层、策略与准入、会话与租约、元素身份、快照生命周期、动作收敛、应用知识、虚拟指示层。读取时机：改协议语义、寻址策略、进程边界或用户可见行为时。
+- [架构](architecture/index.md)：四层分层、操作面模型、策略与准入、会话与租约、元素身份、快照生命周期、动作收敛、应用知识、虚拟指示层。读取时机：改协议语义、寻址策略、进程边界或用户可见行为时。
 - [领域](domains/index.md)：核心术语与失效模型。读取时机：确认某个概念在 SCU 里的确切含义时。
 - [接口](interfaces/index.md)：协议面、目标发现与绑定、元素寻址格式、编辑类操作语义。读取时机：增删接口、写 agent 集成或客户端时。
 - [运维](operations/index.md)：本地开发环境、macOS 权限、测试策略。读取时机：搭建环境、排障、处理权限问题时。
-- [决策](decisions/index.md)：29 条 ADR，含对外部实现取舍的分析结论。读取时机：质疑「为什么这样设计」或要推翻某个既有选择时。
+- [决策](decisions/index.md)：30 条 ADR，含对外部实现取舍的分析结论。读取时机：质疑「为什么这样设计」或要推翻某个既有选择时。
