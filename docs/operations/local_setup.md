@@ -69,7 +69,7 @@ git config core.hooksPath scripts/hooks
 | 多窗口目标：激活与截图共用“最大非最小化窗口”，截图按 frame 匹配（[ADR-0025](../decisions/adr_0025_window_target.md)） | `WindowActivation.swift`、`ScreenCapture.swift` | 已实现，有窗口选择单元测试；TextEdit 两窗口复测 `set_value`/`type_text` 不串窗；截图标题/frame 一致 |
 | 窗口列表与窗口根：`list_windows` 返回标题/frame；`get_ax_state(window)` 以窗口为根读树，元素动作也绑定该窗口（[ADR-0027](../decisions/adr_0027_window_root_locator.md)） | `DesktopSession`、`Tools`、`Messages.swift`、`AXBackend.swift` | 已实现，有单元/MCP 测试；TextEdit 两个窗口实测 `list_windows` 与窗口根；窗口标题变化返回 `window_not_found` |
 | 坐标点击：`click_at(token, screenshot_id, x, y)` 激活目标窗口后用真实鼠标事件点击（[ADR-0020](../decisions/adr_0020_coordinate_click.md)） | `Mouse.swift`、`WindowActivation.swift`、`DesktopSession` | 已实现，有 MCP 测试；已在网易云左侧栏从推荐切到精选，截图 diff 约 43% |
-| 滚动与拖拽：`scroll_at` / `drag` 按截图坐标投递滚轮/拖拽事件（[ADR-0021](../decisions/adr_0021_scroll_and_drag.md)） | `Mouse.swift`、`DesktopSession`、`Tools` | 已实现，有 MCP 测试；滚动已在网易云验证（diff 约 0.387）；拖拽真实应用未验证 |
+| 滚动与拖拽：`scroll_at` / `drag` 按截图坐标投递滚轮/拖拽事件（[ADR-0021](../decisions/adr_0021_scroll_and_drag.md)） | `Mouse.swift`、`DesktopSession`、`Tools` | 已实现，有 MCP 测试；滚动已在网易云验证（diff 约 0.387）；TextEdit 拖拽选区实测像素变化 diff 0.0036（未读回选区语义） |
 | 应用启动：`launch_app` 按 bundle id/名称/路径解析，策略检查后启动或激活（[ADR-0022](../decisions/adr_0022_app_launch.md)） | `AppLauncher.swift`、`DesktopSession`、`Tools` | 已实现，有单元与 MCP 测试；已在计算器冷启动与网易云（已运行）上验证 |
 | 连接级应用允许列表：`--allow-app` / `--allow-app-file`，列表外应用读取/动作前拒绝（[ADR-0024](../decisions/adr_0024_app_authorization.md)） | `AppAuthorization.swift`、`DesktopSession`、`scu` 参数解析 | 已实现，有单元与 MCP 测试；已在网易云/访达上验证读取门禁（动作门禁为单元测试） |
 | 坐标动作指示环：点击/滚动/拖拽前 120ms 显示不拦截、不进入截图的圆环（[ADR-0023](../decisions/adr_0023_indicator.md)） | `Indicator.swift`、`Mouse.swift` | 已实现；靠人工观察，不能截图验证 |

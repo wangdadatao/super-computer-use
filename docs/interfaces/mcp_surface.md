@@ -397,7 +397,8 @@ socket 目录建在 `TMPDIR`（若设置且存在）或系统临时目录下。
   `check_permissions`、`list_apps`、`get_ax_state` 的调用都成功。Cursor 还在工具列表里额外注入了一个 `mcp_auth`，不是本服务提供的。
 - **`get_screenshot` / `click_at` 只在网易云 3.1.12 上验证过**：截图 1600×1138、`scale=1.514`；
   左侧栏坐标点击从「推荐」切到「精选」并成功返回（2026-10-20）。
-  滚动已在网易云验证（推荐页上下滚动，diff 约 0.387）；拖拽只有单元/MCP 测试，真实应用未验证。
+  滚动已在网易云验证（推荐页上下滚动，diff 约 0.387）；TextEdit 拖拽选区实测
+  `screenshotChanged=true`、`diffRatio=0.0036`，但未读回选区语义。
   其他应用、窗口移动后的过期判断、区域级 diff 未验证；TextEdit 两窗口已复测元素动作不串窗；
   多窗口目标一致性与窗口标题绑定有单元/MCP 测试；窗口列表与窗口根已在 TextEdit 两个文档窗口上实测
   （`list_windows` 返回两个标题，`get_ax_state`/`dump --window` 的根是目标 `AXWindow`）。

@@ -156,6 +156,21 @@ type_text B → B 变为 B-only + B-type；A 保持 A-only + A-type
 `type_text` 会 raise 目标窗口；这次复测覆盖了 ADR-0027 的窗口根与 ADR-0016 的键盘窗口语义。
 测试用临时文件随后已保存、关闭并删除；没有留下用户文档。
 
+## 追加：TextEdit 拖拽选区
+
+同一个 TextEdit 进程打开临时文稿 `scu-drag-check.txt`，内容为一行英文。截图
+1312×844、`scale=2.000`、窗口 `(-16,-1337,656,422)`；从截图坐标 `(20,76)` 拖到
+`(600,76)`，`duration_ms=400`：
+
+```text
+effect: observed=true treeChanged=false screenshotChanged=true
+        diffRatio=0.0036 geometryChanged=false noOpSuspected=false
+```
+
+AX 树没有变化，但截图检测到像素变化，符合“拖拽选中文本后出现选区高亮”的预期。
+这次验证只到像素级：没有读回选区内容，也没有修改文件；拖拽的语义结果仍要靠截图或后续动作确认。
+测试后窗口已关闭、临时文件已删除。
+
 ## 限定
 
 - 只跑了 6 个任务、4 个应用；达到 5–10 的下限，但样本仍小。
