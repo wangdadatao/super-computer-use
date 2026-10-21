@@ -140,6 +140,22 @@ get_ax_state(pid=52748, window="计算器")       → 2,397 字符，标题行 "
 
 结论：真实“动作 → 差异”链路可用，但“再动作”没有继续跑；大面积句柄位移场景仍需完整表。
 
+## 追加：TextEdit 多窗口动作隔离
+
+同一 TextEdit 进程（pid 54003）开两个临时文稿窗口 `scu-window-a.txt` / `scu-window-b.txt`，
+每次都先 `get_ax_state(full=true, window=标题)` 再动作，避免把窗口切换后的差异输出误当成完整表：
+
+```text
+set_value A → A 变为 A-only；B 保持原值
+set_value B → B 变为 B-only；A 保持 A-only
+type_text A → A 变为 A-only + A-type；B 保持 B-only
+type_text B → B 变为 B-only + B-type；A 保持 A-only + A-type
+```
+
+两个窗口的文本区局部句柄都是 `AXTextArea#3`，但没有发生跨窗口写入。`set_value` 走后台写入，
+`type_text` 会 raise 目标窗口；这次复测覆盖了 ADR-0027 的窗口根与 ADR-0016 的键盘窗口语义。
+测试用临时文件随后已保存、关闭并删除；没有留下用户文档。
+
 ## 限定
 
 - 只跑了 6 个任务、4 个应用；达到 5–10 的下限，但样本仍小。
