@@ -139,7 +139,9 @@ effect: delivered=true observed=true converged=true treeChanged=false targetChan
 坐标点击是**最后手段**：优先 `click`；只有 AX 动作无效或没有 AX 元素时再用。
 
 1. 坐标以 `get_screenshot` 的图像左上角为原点，单位是图像像素；越界返回 `invalid_coordinates`。
-2. `screenshot_id` 必须属于当前令牌且窗口几何未变；否则 `stale_geometry`。
+2. `screenshot_id` 必须属于当前令牌，否则 `stale_geometry`。**窗口几何不在动作前校验**：
+   窗口移动/缩放后，旧截图仍会按旧的 `windowFrame` 换算全局坐标，从而点到错位置；
+   几何变化只在动作后以 `geometryChanged=true` 报告。可能被移动过时，先重新 `get_screenshot`。
 3. 点击前会激活并 raise 目标窗口，确认它成为 frontmost；失败则**不点击**，避免点到别的应用。
    随后在目标位置显示约 120ms 的蓝色指示环（不在截图里），再投递事件。
 4. 用真实鼠标事件（会移动光标），不是 `CGEvent.postToPid`。
@@ -213,7 +215,8 @@ screenshot_id=g1abc.1 图像 1600x1138 scale=1.514 window=(353,199,1057,752)
 - **权限**：需要屏幕录制，与辅助功能是两项独立授权，按宿主进程归属；未授予时为
   `system_permission_missing`，文案指向“屏幕录制”。
 - **坐标**：图像像素 = `(element.frame - windowFrame) * scale`；`windowFrame` 可为负（副屏）。
-- **绑定**：`screenshot_id` 绑定 `token + windowFrame + scale`；窗口移动/缩放后旧截图不能用于坐标动作。
+- **绑定**：`screenshot_id` 绑定 `token + windowFrame + scale`；动作后如果几何变了会报 `geometryChanged=true`。
+  但**动作前不校验几何**：窗口移动/缩放后旧截图的坐标会算到新位置上，动作前必须重新截图。
 - **权威**：文本元素表仍为准。徽标太小、重叠或被裁掉时，按 `get_ax_state` 的标签选，不靠图猜。\n  图上可能标出文本表因 `max_elements`/`focus` 未显示的元素；这些标签仍然可用，但优先使用文本表里的。
 - **隐私**：截图只返回给调用方，不写日志、不落盘；可能包含敏感内容，不要把它当作可长期保存的证据。
 
@@ -400,7 +403,8 @@ socket 目录建在 `TMPDIR`（若设置且存在）或系统临时目录下。
   左侧栏坐标点击从「推荐」切到「精选」并成功返回（2026-10-20）。
   滚动已在网易云验证（推荐页上下滚动，diff 约 0.387）；TextEdit 拖拽选区实测
   `screenshotChanged=true`、`diffRatio=0.0036`，但未读回选区语义。
-  其他应用、窗口移动后的过期判断、区域级 diff 未验证；TextEdit 两窗口已复测元素动作不串窗；
+  其他应用、区域级 diff 未验证；**窗口移动后的过期判断未实现**（动作前不校验几何，只事后报
+  `geometryChanged`，见上文 `click_at` 第 2 点）；TextEdit 两窗口已复测元素动作不串窗；
   多窗口目标一致性与窗口标题绑定有单元/MCP 测试；窗口列表与窗口根已在 TextEdit 两个文档窗口上实测
   （`list_windows` 返回两个标题，`get_ax_state`/`dump --window` 的根是目标 `AXWindow`）。
 - **应用允许列表**：已做单元与 MCP 测试；已在网易云/访达上验证“列表外应用读取前被拒”。

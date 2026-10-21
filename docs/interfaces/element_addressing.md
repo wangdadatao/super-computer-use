@@ -86,7 +86,8 @@ MCP 输出在句柄前加一个**快照内**短标签，并在行尾给出 `fram
 | 标签 | 无 | 快照内的短标签（`a..z, aa..`），只给可交互元素；与句柄二选一，动作工具都接受；不跨令牌 |
 | 谁接受句柄/标签 | 全部动作 | `click`、`type_text`、`press_key`、`set_value`（仅 `scu mcp --actions`）；必须给出令牌，并用 `handle` 或 `label` 指定目标。默认档没有工具接受它们 |
 | 差异输出 | 默认只输出与上一次的差异 | 已实现：同一目标/参数下默认输出 `~`/`+` 与删除旧句柄范围；首次读取、切换目标、截断或参数变化返回完整表；差异超过 200 行回退完整表。`focus` 只展开一部分，子树前有 `@ 祖先链` 行（格式见 [MCP 接入面](mcp_surface.md#默认差异)）。见 [ADR-0028](../decisions/adr_0028_incremental_tree_rendering.md) |
-| `actions=[...]`、`state=focused,selected` | 有 | 没有（原生层不读取动作与焦点） |
+| `actions=[...]` | 有 | 有，但只对 `AXGroup`/`AXCell`/`AXRow` 读 `AXUIElementCopyActionNames`（线协议 v7 起）；用于识别支持 `AXPress` 的容器 |
+| `state=focused,selected` | 有 | 没有（原生层不读取焦点与选中状态） |
 | 属性顺序 | 值、动作、状态 | 标签前缀、标题、`subrole=`、`desc=`、`value=`、`id=`、`actions=[…]`、`state=disabled`、`frame=`；缺省或为空则省略 |
 
 只读档新增了设计里没有的 `subrole`、`desc`、`id`：它们是已读到的真实字段，

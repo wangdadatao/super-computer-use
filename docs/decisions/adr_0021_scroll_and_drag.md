@@ -66,6 +66,18 @@
 - 拖拽有单元/MCP 测试；TextEdit 拖拽选区实测到像素变化（`screenshotChanged=true`，
   `diffRatio=0.0036`），但未读回选区语义。
 
+## 追加记录（2026-10-21，几何预检尚未实现）
+
+上文第 3 节写的“窗口几何变化 → `stale_geometry`”只是契约，**当前实现只做到一半**：
+`screenshot_id` 不属于当前令牌时返回 `stale_geometry`；窗口移动/缩放**不在动作前拦截**，
+旧截图仍按旧 `windowFrame` 换算全局坐标，几何变化只会在动作后以 `geometryChanged=true` 上报
+（`DesktopSession.observeCoordinate`）。
+
+已知后果：窗口在截图与点击之间被移动或缩放时，事件会投到旧位置换算出的全局坐标上。
+文档已按现状写明（[MCP 接入面](../interfaces/mcp_surface.md#click_tool)、[SCU 技能](../../skills/scu/SKILL.md)）。
+补预检的两种做法待定：协议层在动作前重查窗口 frame（不需要改线协议，但要复制“选哪个窗口”的规则），
+或线协议升版，在原生层激活之后比对期望 frame（校验点正确，但要升协议）。
+
 ## 相关文档
 
 - [原生层线协议](../interfaces/native_wire_protocol.md)

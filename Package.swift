@@ -1,9 +1,9 @@
 // swift-tools-version: 6.0
 //
-// SCU P0 脚手架。边界对应 docs/architecture/system_overview.md 的四层：
+// SCU 的 Swift package。边界对应 docs/architecture/system_overview.md 的四层：
 //   SCUWire    两进程之间的线协议（帧、版本、消息类型）
 //   SCUNative  原生层（AX 树、权限检测），由 scu-native 进程承载
-//   SCUCore    协议层（句柄注册表、令牌、失效检测），由 scu 进程承载
+//   SCUCore    协议层（令牌签发与失效、按路径定位句柄、收敛与效果摘要），由 scu 进程承载
 //   SCUMCP     接入层：MCP stdio 服务（JSON-RPC、工具目录），只依赖协议层
 //   scu        命令行入口：诊断命令与 `scu mcp`
 //   scu-fixture 验证用的 AppKit 夹具应用（只被测试拉起）

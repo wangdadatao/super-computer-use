@@ -137,7 +137,8 @@ Removed element IDs: 12-15, 20（旧快照句柄，不可用于动作）
 - 徽标太小、重叠或被裁掉时，按 `get_ax_state` 的标签选，不靠图猜；
 - 需要屏幕录制权限（与辅助功能是两项独立授权，按宿主归属）；没有时返回
   `system_permission_missing`，让用户去“系统设置 > 隐私与安全性 > 屏幕录制”授权并重启宿主；
-- 返回的 `screenshot_id` 绑定窗口位置与缩放，窗口移动后要重新截；
+- 返回的 `screenshot_id` 绑定窗口位置与缩放。**窗口移动/缩放后必须重新截图**：
+  服务不在动作前校验几何，旧截图的坐标会按旧位置换算，从而点到别处（只会在事后报 `geometryChanged=true` 或 `screenshotChanged`）；
 - 截图不落盘、不写日志；不要把它当长期证据或上传到外部。
 
 ### 坐标点击 `click_at`
@@ -153,7 +154,8 @@ click_at(token, screenshot_id, x, y)
 - 会移动真实光标；动作前在目标位置显示约 120ms 的蓝色指示环，它只是提示，不拦截、不进入截图，也不等于用户确认；
 - 点击后重读 AX 树并比较全图像素比例：`treeChanged=false` 但 `screenshotChanged=true`
   说明画面有变化；两者都 false 才是 `noOpSuspected`，不要重复点；
-- 越界返回 `invalid_coordinates`；窗口移动/截图过期返回 `stale_geometry`。
+- 越界返回 `invalid_coordinates`；截图不属于令牌或已过期返回 `stale_geometry`。
+  注意 `stale_geometry` **不**覆盖窗口移动：几何变化不在动作前拦截，看到窗口可能被移动过就重新截图；
 
 ### 滚动与拖拽
 
@@ -224,7 +226,7 @@ effect: delivered=true observed=true converged=true treeChanged=false targetChan
 | 错误码 | 含义 | 下一步 |
 | --- | --- | --- |
 | `stale_snapshot` | 令牌失效（界面变了或超时） | 重新 `get_ax_state`，用新令牌与新句柄 |
-| `stale_geometry` | 截图/窗口几何已变 | 重新 `get_screenshot`，用新 `screenshot_id` |
+| `stale_geometry` | 截图不存在、已过期或不属于当前令牌 | 重新 `get_screenshot`，用新 `screenshot_id`；窗口移动不在动作前拦截 |
 | `invalid_coordinates` | 坐标不在截图内 | 重新截图，使用截图内的坐标 |
 | `element_gone` | 句柄不在该令牌的快照里 | 同上；先用 `focus` 按文本定位 |
 | `target_switched` | 令牌属于另一个已切换走的目标 | 对当前目标重新读取 |

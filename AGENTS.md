@@ -2,13 +2,15 @@
 
 ## 项目定位
 
-SuperComputerUse（SCU）是一个开源桌面自动化服务。当前处于 P0：
-已有 Swift 实现（`Package.swift`、`Sources/`、`Tests/`）：令牌、点击、拒绝类目与最小收敛轮询已实现，
-句柄注册表、输入与设值、坐标动作、审批、指示层未实现；出口门槛尚未全部通过。
-验证内嵌在 P0 里作为出口门槛，见 `docs/decisions/adr_0013_p0_vertical_slice.md`。
+SuperComputerUse（SCU）是一个开源桌面自动化服务，macOS 优先，只做 UI 自动化。
+范围与出口门槛见 `docs/decisions/adr_0013_p0_vertical_slice.md`。
 项目目标是做对 AI 更好用的桌面操作工具（以 Codex / Grok Computer Use 为参照），
 度量方式与"优于"的声称条件见 `docs/decisions/adr_0014_positioning_ai_usability.md`；
 在对照可行之前不要在文档里声称"优于"。
+
+**阶段、已实现内容与验证状态只在 `docs/index.md` 的「当前阶段」记录，本文件不复制清单**：
+清单会随收口过期，而这里的指令不会随每次提交被复查。动手前读 `docs/index.md`，以那里的说法为准。
+
 构建与测试：`swift build && swift test`。
 
 ## 文档协作规则

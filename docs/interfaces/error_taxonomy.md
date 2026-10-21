@@ -71,7 +71,7 @@ interface ScuError {
 | code | layer | retry | 含义 |
 | --- | --- | --- | --- |
 | `stale_snapshot` | protocol | `after_refresh` | 快照令牌失效，树已变化 |
-| `stale_geometry` | protocol | `after_refresh` | 坐标令牌/截图失效，窗口几何已变化 |
+| `stale_geometry` | protocol | `after_refresh` | 截图不存在、已过期或不属于当前令牌；窗口几何变化目前不在动作前拦截，只事后报 `geometryChanged`（见 [MCP 接入面](mcp_surface.md#click_tool)） |
 | `invalid_coordinates` | protocol | `no` | 坐标不在截图范围内；v2 新增 |
 | `target_switched` | protocol | `after_rebind` | 令牌属于已解绑的目标 |
 | `target_missing` | protocol | `no` | 目标不存在或已退出 |
