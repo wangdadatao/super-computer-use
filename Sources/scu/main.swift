@@ -119,7 +119,7 @@ func parseBudget(_ args: [String]) throws -> Int {
 /// 读树的客户端等待上限 = 时间预算 + 余量（单次 AX 调用最多再耗 2 秒，加上编码与传输）。
 func treeTimeoutMs(_ budgetMs: Int) -> Int32 { Int32(budgetMs + 10_000) }
 
-let scuVersion = "0.2.0"
+let scuVersion = "0.3.0"
 
 /// 以 MCP stdio 服务运行。**stdout 只允许出现协议消息**：任何诊断都写 stderr。
 func runMCP(options: MCPOptions, appAuthorization: AppAuthorization) {

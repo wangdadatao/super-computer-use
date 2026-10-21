@@ -341,7 +341,7 @@ Removed element IDs: 12-15, 20（旧快照句柄，不可用于动作）
 
 | 输入 | 行为 |
 | --- | --- |
-| `initialize` | 客户端请求的协议版本在支持列表内则原样回显，否则回复列表第一项。列表：`2025-06-18`、`2025-03-26`、`2024-11-05`。缺少 `protocolVersion` 参数时 -32602。应答还带 `capabilities.tools.listChanged=false` 与 `serverInfo`（`name: scu`，`version: 0.2.0`） |
+| `initialize` | 客户端请求的协议版本在支持列表内则原样回显，否则回复列表第一项。列表：`2025-06-18`、`2025-03-26`、`2024-11-05`。缺少 `protocolVersion` 参数时 -32602。应答还带 `capabilities.tools.listChanged=false` 与 `serverInfo`（`name: scu`，`version: 0.3.0`） |
 | `ping` | 回复空结果 |
 | `tools/list`、`tools/call` | 见上文 |
 | 不带 `id` 的消息（通知） | 不回复，包括未知通知 |
