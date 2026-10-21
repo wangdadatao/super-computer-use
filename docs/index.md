@@ -18,8 +18,9 @@
 v1 功能点：读取、点击、输入、设值；元素表输出 `[a]` 与 `frame`，四个元素动作工具（`click`/`type_text`/`press_key`/`set_value`）接受 `label`。
 v2 功能点：`get_screenshot` 截取目标窗口并叠加标签；`launch_app`；`click_at` / `scroll_at` / `drag` 按截图坐标操作并在动作前显示指示环；
 动作档可选连接级应用允许列表（`--allow-app`）；`list_windows` 枚举窗口，`get_ax_state(window=...)` 以指定窗口为根读树，元素动作也绑定该窗口。
+**未发版**：`get_ax_state` 默认输出与上次读取的差异，`full=true` 取完整表（[ADR-0028](decisions/adr_0028_incremental_tree_rendering.md)）。
 已在网易云（CEF）与 TextEdit 多窗口上验证；真实任务集 6 个，5 个通过、1 个部分通过（访达内联重命名）。
-见 [ADR-0018](decisions/adr_0018_label_addressing.md)、[ADR-0019](decisions/adr_0019_window_screenshot.md)、[ADR-0020](decisions/adr_0020_coordinate_click.md)、[ADR-0021](decisions/adr_0021_scroll_and_drag.md)、[ADR-0022](decisions/adr_0022_app_launch.md)、[ADR-0023](decisions/adr_0023_indicator.md)、[ADR-0024](decisions/adr_0024_app_authorization.md)、[ADR-0025](decisions/adr_0025_window_target.md)、[ADR-0026](decisions/adr_0026_window_selection.md)、[ADR-0027](decisions/adr_0027_window_root_locator.md)。
+见 [ADR-0018](decisions/adr_0018_label_addressing.md)、[ADR-0019](decisions/adr_0019_window_screenshot.md)、[ADR-0020](decisions/adr_0020_coordinate_click.md)、[ADR-0021](decisions/adr_0021_scroll_and_drag.md)、[ADR-0022](decisions/adr_0022_app_launch.md)、[ADR-0023](decisions/adr_0023_indicator.md)、[ADR-0024](decisions/adr_0024_app_authorization.md)、[ADR-0025](decisions/adr_0025_window_target.md)、[ADR-0026](decisions/adr_0026_window_selection.md)、[ADR-0027](decisions/adr_0027_window_root_locator.md)、[ADR-0028](decisions/adr_0028_incremental_tree_rendering.md)。
 
 仓库有一个 Swift package，
 实现了两进程通信、版本协商、权限检测、无障碍树读取、快照令牌与按路径定位句柄、`AXPress` 点击与最小效果摘要、
