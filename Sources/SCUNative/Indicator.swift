@@ -19,31 +19,40 @@ enum Indicator {
     static func show(points: [CGPoint]) {
         guard isEnabled, !points.isEmpty, let main = NSScreen.screens.first else { return }
         AppKitBootstrap.ensureApplication()
-        hide()
-        let size: CGFloat = 48
-        for point in points {
-            // 全局点击坐标以主屏左上角为原点；AppKit 窗口坐标以左下角为原点。
-            let y = main.frame.height - point.y
-            let rect = NSRect(
-                x: point.x - size / 2, y: y - size / 2, width: size, height: size)
-            let window = NSWindow(
-                contentRect: rect, styleMask: .borderless, backing: .buffered, defer: false)
-            window.isOpaque = false
-            window.backgroundColor = .clear
-            window.level = .floating
-            window.ignoresMouseEvents = true
-            window.hasShadow = false
-            window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-            window.sharingType = .none
-            let view = RingView(frame: NSRect(x: 0, y: 0, width: size, height: size))
-            window.contentView = view
-            window.orderFrontRegardless()
-            view.display()
-            store.windows.append(window)
+        // sidecar 的同步主循环就在主线程上；AppKit 的窗口属性是 MainActor 隔离的，
+        // 这里沿用 AppKitBootstrap 的显式断言，而不是让每个属性访问各自跨 actor。
+        MainActor.assumeIsolated {
+            hideWindows()
+            let size: CGFloat = 48
+            for point in points {
+                // 全局点击坐标以主屏左上角为原点；AppKit 窗口坐标以左下角为原点。
+                let y = main.frame.height - point.y
+                let rect = NSRect(
+                    x: point.x - size / 2, y: y - size / 2, width: size, height: size)
+                let window = NSWindow(
+                    contentRect: rect, styleMask: .borderless, backing: .buffered, defer: false)
+                window.isOpaque = false
+                window.backgroundColor = .clear
+                window.level = .floating
+                window.ignoresMouseEvents = true
+                window.hasShadow = false
+                window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+                window.sharingType = .none
+                let view = RingView(frame: NSRect(x: 0, y: 0, width: size, height: size))
+                window.contentView = view
+                window.orderFrontRegardless()
+                view.display()
+                store.windows.append(window)
+            }
         }
     }
 
     static func hide() {
+        MainActor.assumeIsolated { hideWindows() }
+    }
+
+    /// 必须在主线程调用；show/hide 已各自做了断言。
+    @MainActor private static func hideWindows() {
         for window in store.windows { window.close() }
         store.windows.removeAll()
     }
