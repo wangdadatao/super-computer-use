@@ -20,7 +20,7 @@ macOS       arm64, macOS 26.x
 ```bash
 swift build          # 构建 scu 与 scu-native
 swift test           # 线协议、原生否定路径与定位器、会话与策略、元素表与身份、MCP 管道，以及夹具上的真实点击验证（需要辅助功能权限）
-scripts/check.sh     # 提交前统一检查：文档 + 构建 + 测试 + 命令行与 MCP 冒烟
+scripts/check.sh     # 提交前统一检查：文档 + 格式 + 构建 + 测试 + 命令行与 MCP 冒烟（共 5 步）
 scripts/measure_token_reject.py  # 令牌误拒与重读成本的测量（需辅助功能权限；会短暂出现一个夹具窗口）
                                     # 结果与口径见 ADR-0013 的 2026-10-19 追加记录；参数：--rounds N
 ```
@@ -39,14 +39,14 @@ git config core.hooksPath scripts/hooks
 ```bash
 scripts/format.sh --check Sources/SCUCore/DesktopSession.swift  # 只检查
 scripts/format.sh Sources/SCUCore/DesktopSession.swift          # 写回
-scripts/format.sh                                               # 全树（改动很大，慎用）
+scripts/format.sh                                               # 全树
 ```
 
-`scripts/check.sh` 还没有强制格式化：现有代码树是逐步收敛的，全树重排会产生大量与逻辑无关的
-diff。提交前建议只对自己改过的文件运行 `--check`；新文件应当无告警。
+全树已按配置格式化，`scripts/check.sh` 的第 2 步会执行 `scripts/format.sh --check`，
+CI 走同一个入口。改代码后直接对自己改过的文件运行 `format.sh`，不要手工调缩进。
 
 构建产物目录用 `swift build --show-bin-path` 查询。`scu` 默认在自己的同目录下
-找 `scu-native`。
+找 `scu-native`。`scu --help` 列出全部命令与退出码，`scu --version` 打印版本。
 
 **`SCU_INDICATOR=0` 可关闭坐标动作前的指示环**，同时省掉 120ms 的等待；
 它由 `scu` 继承给 `scu-native`。

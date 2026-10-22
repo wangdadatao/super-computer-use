@@ -1,19 +1,12 @@
 # SuperComputerUse (SCU)
 
-让 AI agent 可靠地操作桌面应用与浏览器外壳。
+用 MCP 让 AI agent 操作 macOS 应用界面：读无障碍树、执行动作，并回报动作是否真的生效。
 
-SCU 是一个本地桌面自动化服务。它在 agent 与操作系统的无障碍（Accessibility）、
-图像捕获和输入事件系统之间，提供一层**可验证**的协议：agent 声明要操作哪个元素，
-SCU 负责寻址、执行，并回报这次动作是否真的产生了预期效果。
+[English](README.en.md) · [工程文档](docs/index.md) · [Agent 使用指导](skills/scu/SKILL.md)
 
-## 外部观察来源
+## 它解决什么
 
-本文涉及对两套已发布实现的观察结论。来源、具体证据与复核方法见
-[verification/external-sources.md](verification/external-sources.md)。
-
-## 它想解决什么
-
-现有的桌面自动化方案能"点到"东西，但普遍不能回答一个更基本的问题：**点对了吗？**
+现有桌面自动化能"点到"东西，但普遍不能回答一个更基本的问题：**点对了吗？**
 
 具体表现为三类静默失败：
 
@@ -21,105 +14,134 @@ SCU 负责寻址、执行，并回报这次动作是否真的产生了预期效�
 - **动作落空**：点击被投递了，但界面没有响应，或者焦点被别的窗口抢走。
 - **无人核对**：没有任何环节检查"我以为发生的事"和"实际发生的事"是否一致。
 
-SCU 把这三个问题从"调用方自律"提升为**协议保证**：每次读取状态都带版本令牌，
-每次动作都回报可机器核对的效果摘要。
+SCU 把这三件事从"调用方自律"提升为协议行为：每次读取状态都带快照令牌，令牌失效时服务端会明确拒绝；
+每次动作都回报可机器核对的效果摘要，要求调用方在动作后重读。
 
-## 定位
+## 现在能做什么
 
-SCU 的目标是做一个**对 AI 更好用**的桌面操作工具：以 Codex Computer Use 与 Grok Computer Use 为参照，
-结合两者的长处，并补上两者都缺的动作效果回报。好用的评判者是 AI，不是人。
+| 能做 | 不能做 |
+| --- | --- |
+| 读取正在运行的 macOS 应用的无障碍树（文本元素表） | 网页 DOM / 标签页语义（浏览器操作面尚未实现） |
+| 启动、激活应用；枚举窗口并按窗口读取 | 右键、长按、输入法输入（未验证） |
+| 点击元素（`AXPress`）、逐字输入、发送按键、直接设值 | 逐次审批、租约、审计日志 |
+| 截取目标窗口并叠加元素标签，按截图坐标点击 / 滚动 / 拖拽 | code mode（`js` 工具面） |
+| 动作后返回效果摘要，说明界面是否变化、是否疑似空操作 | Linux / Windows（规划中，未实现） |
 
-**目前没有任何"优于"两者的证据**：对两者的了解只来自程序工件的观察，
-也没有任务集和度量数据。度量方式与"优于"的声称条件见 [ADR-0014](docs/decisions/adr_0014_positioning_ai_usability.md)。
+**默认只读**：`scu mcp` 只暴露读取类工具；点击、输入、按键、设值需要 `scu mcp --actions`。
+还可以用连接级应用允许列表把服务限制在指定应用上（`--allow-app`）。
 
-## 设计出发点
+## 快速开始
 
-SCU 的设计建立在对两套已发布实现的观察之上：OpenAI 的 Codex Computer Use
-和 xAI / Anysphere 的 Grok Bot Computer Use。两者独立收敛到了同一套核心技术选择
-（无障碍树优先、坐标兜底、文本化元素表、IPC 分离的原生服务进程），
-也各自留下了不同的未解问题。
-
-SCU 采纳其中已被验证的模式，并尝试针对未解问题引入新的机制；未成立的假设会保留记录，
-不写成既成事实：
-
-- **元素身份的可验证路线**：尝试把元素引用从位置寻址改为内容寻址；K4 验证未成立，
-  当前仍是**位置句柄 + 快照令牌**，跨快照句柄注册表不实现
-- **收敛判定**：设计上区分“没有变化”与“还没稳定”，而不是用固定延时猜测；
-  当前是启发式初值，已知会错过两秒后的变化
-- **协议级失效契约**：令牌由服务端签发并主动上报失效，不依赖调用方自律
-- **策略层独立成层**：把动作准入从提示词约束提升为代码强制
-
-逐条理由记录在[决策记录](docs/decisions/index.md)。
-
-## 平台范围
-
-- **当前**：macOS 14.4+
-- **规划**：Linux（Ubuntu，通过 AT-SPI2）
-- **暂不考虑**：Windows
-
-## 范围边界
-
-SCU **只做 UI 自动化**。不提供日历、消息、系统活动录制等
-绕过界面的数据访问能力，即使它们看起来更快捷。
-理由：SCU 要保证的正是“用户能看见发生了什么”。
-详见 [ADR-0010](docs/decisions/adr_0010_ui_automation_only.md)。
-
-浏览器页面语义不在核心内：规划由外部适配器（Playwright MCP / CDP，必要时扩展）提供，
-SCU 核心仍只负责桌面操作面。见[操作面模型](docs/architecture/surface_model.md)。
-
-## 当前状态
-
-**v2 已收口（0.2.0，2026-10-20）；0.3.0（默认差异）；当前 0.4.0（分发）。** 源码构建与 macOS 通用二进制 zip 均可交付；code mode 仍未做。
-已实现：两进程通信、版本协商（线协议 v11）、权限检测、无障碍树读取与导出、
-快照令牌与按路径定位句柄、`AXPress` 点击、输入与设值、最小效果摘要、拒绝类目、MCP 服务（默认只读，`--actions` 才暴露动作）。
-v1 功能点：读取、点击、输入、设值；元素表带快照内短标签与 `frame`，动作工具接受 `label`。
-v2 功能点（0.2.0）：窗口截图与标签叠加；`launch_app`；连接级应用允许列表；`list_windows` 与窗口根读取，
-截图、坐标动作与元素动作都绑定显式窗口；`click_at` / `scroll_at` / `drag` 按截图坐标操作（会激活窗口、移动光标）；
-坐标动作前的可见指示环。0.3.0：`get_ax_state` 默认输出与上次读取的差异，`full=true` 取完整表。
-0.4.0：通用二进制 zip、签名/公证流水线、`install.sh` 与 `verify_dist.sh`。当前包是 **ad-hoc 签名、未公证**；
-公开分发前需要 Developer ID 证书与公证。
-下一阶段规划：浏览器操作面通过独立适配器接入（Playwright MCP/CDP 优先，扩展后置），不把网页当 macOS AX；
-当前未实现，见[操作面模型](docs/architecture/surface_model.md)。
-真实任务集 6 个：5 个通过、1 个部分通过（访达内联重命名）；多窗口输入与选区委缩两个 bug 已修。
-未实现：浏览器操作面（adapter/扩展）、句柄注册表、逐次审批与租约、完整指示层/虚拟光标、OCR、code mode、公开可下载的已公证包。
-
-**关键机制的验证**：令牌与效果摘要在受控夹具上满足（误拒 0/8；每次改值点击后都要重读）；
-输入、按键、设值在网易云音乐（CEF，带无障碍启动参数）上完成了一次真实端到端验证（搜索并播放）；
-收敛判定是启发式初值（0.2 秒轮询、连续两次一致、3 秒上限），已知会错过两秒后的变化，
-按 ADR-0013 的 2026-10-19 追加记录不列为 P0 门槛；
-元素身份的 K4 比例按冻结规则不成立，因此不做句柄注册表。
-验证内嵌在 P0 中，作为完成门槛，见
-[ADR-0013](docs/decisions/adr_0013_p0_vertical_slice.md)，结果见 [verification/](verification/README.md)。
+要求：macOS 14.4+、Swift 6.x（Xcode 命令行工具即可）。没有第三方依赖。
 
 ```bash
-swift build && swift test
-.build/out/Products/Debug/scu apps               # 查 pid
-.build/out/Products/Debug/scu windows --pid <pid>  # 多窗口时先看标题
-.build/out/Products/Debug/scu dump --pid <pid> [--window <标题>]
+git clone <你的仓库地址> SuperComputerUse
+cd SuperComputerUse
+swift build -c release
+BIN="$(swift build -c release --show-bin-path)"
+mkdir -p ~/bin/scu
+cp "$BIN/scu" "$BIN/scu-native" ~/bin/scu/
+~/bin/scu/scu permissions     # 退出码 2 表示还没有辅助功能权限
 ```
 
-构建与命令说明见[本地环境](docs/operations/local_setup.md)；打包、签名、安装见[分发](docs/operations/distribution.md)。
-除其中「当前已实现」列出的内容外，请把文档读作设计意图，而不是已验证的系统行为。
+`scu` 会在自己所在目录找 `scu-native`，两者必须放在一起。授权步骤（必须在系统设置里由人完成）
+见 [权限](docs/operations/permissions.md)。
 
-## 给 agent 用
+### 接到 MCP 宿主
 
-两份给 agent 的文档：
+Cursor（`~/.cursor/mcp.json`）或 Claude Desktop 等宿主用同样的结构：
 
-- [skills/scu/INSTALL.md](skills/scu/INSTALL.md)：安装、宿主配置、授权与自检（授权必须由人完成）
-- [skills/scu/SKILL.md](skills/scu/SKILL.md)：何时用、核心循环（读 → 一个动作 → 重读）、动作选择、效果摘要与错误处理
+```json
+{
+  "mcpServers": {
+    "scu": {
+      "command": "/Users/<用户名>/bin/scu/scu",
+      "args": ["mcp", "--actions", "--allow-app", "com.apple.TextEdit"]
+    }
+  }
+}
+```
 
-动作档（`--actions`）才有 `click` / `click_at` / `type_text` / `press_key` / `set_value`。
+只读试用去掉 `--actions`。完整安装与自检步骤（含宿主配置、授权、排错）见
+[skills/scu/INSTALL.md](skills/scu/INSTALL.md)。
+
+### 第一次读取
+
+读取结果是一张带快照内短标签的文本元素表，动作工具用这些标签寻址：
+
+```text
+token: s3f2a.7
+[a] [AXButton#3] "返回" id="go-back" frame=(10,50,24,24)
+[b] [AXTextField#4] "地址与搜索" value="example.com" frame=(50,50,300,28)
+```
+
+对 `[b]` 设值后再读一次，默认只返回与上次读取的差异（`full=true` 取完整表）。
+令牌在界面变化后失效，服务端返回 `stale_token`，调用方必须重读——这是刻意的设计，不是错误。
+
+命令行诊断（不经过 MCP）：
+
+```bash
+scu apps                          # 列出运行中的应用与 pid
+scu windows --pid <pid>           # 多窗口时先看标题
+scu dump --pid <pid> --window "窗口标题"
+scu --help
+```
+
+## 设计要点
+
+- **无障碍树优先，坐标兜底**：读不到语义时才截图按坐标操作；坐标动作会绑定截图时的窗口。
+- **位置句柄 + 快照令牌**：元素引用只在一次读取内有效，跨快照沿用句柄的注册表**没有实现**（验证未通过，见
+  [元素身份](docs/architecture/element_identity.md)）。
+- **默认拒绝危险类目**：终端、脚本运行器、密码管理器、系统设置等不进入动作目标
+  （[策略与审批](docs/architecture/policy_layer.md)）。
+- **协议层与原生层分离**：`scu`（MCP/协议）启动 `scu-native`（AX/截图/输入），两进程通过本地 socket 通信。
+
+设计取舍与代价记录在 [决策记录](docs/decisions/index.md)（30 条 ADR），
+每一条参考实现相关的观察都在 [verification/external-sources.md](verification/external-sources.md) 登记了来源。
+
+## 项目状态
+
+**0.4.0（2026-10-21），早期版本。** 源码构建可用；分发包是 **ad-hoc 签名、未公证**，
+公开下载前需要 Developer ID 证书与公证，因此本仓库暂不提供预编译二进制。
+
+已验证的范围：
+
+- 153 个自动化测试；文档结构、链接、锚点与 mermaid 渲染检查；
+- 令牌与效果摘要在受控夹具上成立（误拒 0/8；改值点击后必须重读）；
+- 网易云音乐（CEF）、TextEdit 多窗口、计算器、Edge 窗口上的真实操作；
+- 真实任务集 6 个：5 个通过、1 个部分通过（访达内联重命名）。
+
+已知缺口：
+
+- 浏览器操作面（Playwright MCP / CDP 适配器）仅规划，未实现；
+- 收敛判定是启发式初值，可能错过两秒后的变化；
+- 元素身份的 K4 路线验证不成立，不做跨快照句柄；
+- 逐次审批、租约、code mode、OCR 未实现；
+- 经宿主（Cursor/Claude）实际调用动作的链路未验证。
+
+完整清单与证据见 [docs/index.md 的「当前阶段」](docs/index.md) 与 [verification/](verification/README.md)。
+除标注为已实现的行为外，文档描述的是设计意图，不是已验证的系统行为。
 
 ## 文档
 
-工程文档入口：[docs/index.md](docs/index.md)。它按分类路由到架构、领域、接口、运维和决策。
+- [工程文档入口](docs/index.md)：架构、领域、接口、运维、决策。
+- [Agent 使用指导](skills/scu/SKILL.md)：何时用、读 → 一个动作 → 重读、错误处理。
+- [分发](docs/operations/distribution.md)：打包、签名、公证与安装。
+- [测试策略](docs/operations/testing.md)：哪些验证在 CI 跑、哪些需要人或权限。
 
-其中值得先读的三处：
+## 参与
 
-- [决策记录](docs/decisions/index.md)：30 条取舍的背景与代价，包括对本项目有直接影响的两套外部实现分析。
-- [元素身份](docs/architecture/element_identity.md)：跨快照句柄注册表为什么没做，当前句柄如何失效。
-- [策略与审批](docs/architecture/policy_layer.md)：动作准入机制，SCU 的安全边界。
+- 提交前运行 `scripts/check.sh`（文档 + 格式 + 构建 + 测试 + CLI/MCP 冒烟）；
+- 开发约定、文档规范与发布流程见 [CONTRIBUTING.md](CONTRIBUTING.md)；
+- 安全问题请按 [SECURITY.md](SECURITY.md) 私下报告，不要开公开 issue；
+- 版本变更见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 许可证
 
 [MIT](LICENSE)。
+
+## 独立性声明
+
+SCU 是独立项目，与 OpenAI、xAI、Anysphere 及其产品没有关联，也没有得到它们的背书。
+文档中提到的 Codex Computer Use、Grok Bot 等名称归各自所有者，仅用于标注设计参照来源；
+相关结论来自对公开分发工件的外部观察，没有复制其代码。

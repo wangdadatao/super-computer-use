@@ -24,6 +24,9 @@ v2 功能点：`get_screenshot` 截取目标窗口并叠加标签；`launch_app`
 0.4.0：通用二进制 zip、ad-hoc/Developer ID 签名流水线、`install.sh` 与 `verify_dist.sh`（[ADR-0029](decisions/adr_0029_distribution.md)、[分发](operations/distribution.md)）。
 2026-10-22：架构修复轮，无新功能；输入超时、截图只读语义、坐标窗口绑定、动作超时、策略授权集中化、
 工具/会话文件拆分、CI 与 MIT 许可证。结果见[验证记录](../verification/2026-10-22-architecture-fixes.md)。
+2026-10-22 开源准备：README 中英双语、`scu --help`、CONTRIBUTING/SECURITY/CODE_OF_CONDUCT/CHANGELOG、
+CI 与本地统一走 `scripts/check.sh`（含格式检查）、历史作者与证书身份脱敏。分发包仍是 ad-hoc 未公证，
+仓库暂不提供预编译二进制；见[验证记录](../verification/2026-10-22-open-source-prep.md)。
 下一阶段规划：浏览器操作面通过适配器接入；不把浏览器当 AX 应用，也不先自研扩展（[ADR-0030](decisions/adr_0030_browser_surface.md)）。
 已在网易云（CEF）与 TextEdit 多窗口上验证；真实任务集 6 个，5 个通过、1 个部分通过（访达内联重命名）。
 见 [ADR-0018](decisions/adr_0018_label_addressing.md)、[ADR-0019](decisions/adr_0019_window_screenshot.md)、[ADR-0020](decisions/adr_0020_coordinate_click.md)、[ADR-0021](decisions/adr_0021_scroll_and_drag.md)、[ADR-0022](decisions/adr_0022_app_launch.md)、[ADR-0023](decisions/adr_0023_indicator.md)、[ADR-0024](decisions/adr_0024_app_authorization.md)、[ADR-0025](decisions/adr_0025_window_target.md)、[ADR-0026](decisions/adr_0026_window_selection.md)、[ADR-0027](decisions/adr_0027_window_root_locator.md)、[ADR-0028](decisions/adr_0028_incremental_tree_rendering.md)、[ADR-0029](decisions/adr_0029_distribution.md)、[ADR-0030](decisions/adr_0030_browser_surface.md)。

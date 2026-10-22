@@ -30,10 +30,11 @@ swift --version            # 期望 6.x
 
 ## 2. 取得二进制
 
-### 2.1 用分发包（优先）
+### 2.1 用分发包（如果拿到了）
 
-0.4.0 起提供 macOS 通用二进制 zip。当前包是 **ad-hoc 签名、未公证**；从网络下载后
-Gatekeeper 可能拦截。不要自行移除 quarantine，也不要把 ad-hoc 包说成已公证。
+0.4.0 起可以构建 macOS 通用二进制 zip，但仓库**暂不提供公开下载**：当前包是
+**ad-hoc 签名、未公证**，从网络下载后会被 Gatekeeper 拦截。没有拿到可信分发包时走 2.2。
+不要自行移除 quarantine，也不要把 ad-hoc 包说成已公证。
 
 ```bash
 shasum -a 256 -c scu-0.4.0-macos-universal.zip.sha256
