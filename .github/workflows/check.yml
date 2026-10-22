@@ -23,7 +23,7 @@ jobs:
       # live 套件由维护者在已授权的机器上单独跑（见 docs/operations/testing.md）。
       SCU_SKIP_LIVE: "1"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Swift version
         run: swift --version
