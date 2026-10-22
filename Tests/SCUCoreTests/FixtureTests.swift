@@ -190,7 +190,8 @@ struct FixtureTests {
         let st = try rig.read()
         let entries = ElementTable.flatten(st.reading.root)
         guard let i = entries.firstIndex(where: { $0.node.value?.hasPrefix("count:") == true }) else {
-            Issue.record("没有找到标签"); return
+            Issue.record("没有找到标签")
+            return
         }
         rig.expectCode("unsupported_operation") { _ = try rig.session.click(token: st.token.value, handle: i + 1) }
         _ = try rig.session.resolve(token: st.token.value, handle: i + 1)  // 令牌没有因此作废
@@ -224,7 +225,9 @@ struct FixtureTests {
         let rig = try Rig()
         defer { rig.stop() }
         let (_, r) = try rig.click("Delayed")
-        print("FIXTURE-DELAYED: converged=\(r.converged) treeChanged=\(String(describing: r.treeChanged)) elapsed=\(r.elapsed)")
+        print(
+            "FIXTURE-DELAYED: converged=\(r.converged) treeChanged=\(String(describing: r.treeChanged)) elapsed=\(r.elapsed)"
+        )
         withKnownIssue("两秒加载被过早判为收敛，见 ADR-0011 追加记录") {
             #expect(r.converged && r.treeChanged == true)
         }
@@ -300,7 +303,9 @@ struct FixtureTests {
         let st = try rig.read()
         let again = try rig.read()
         #expect(again.reused && again.token == st.token, "界面没变，令牌应沿用")
-        #expect(try rig.session.act(token: st.token.value, handle: try rig.handle("NoOp", in: st), action: .verify) == .located)
+        #expect(
+            try rig.session.act(token: st.token.value, handle: try rig.handle("NoOp", in: st), action: .verify)
+                == .located)
     }
 
     @Test func valueChangeElsewhereDoesNotRejectTheTarget() throws {
@@ -311,8 +316,9 @@ struct FixtureTests {
         let other = DesktopSession(reader: rig.native)
         let st2 = try other.readState(pid: rig.fixture.pid, maxDepth: 12, budgetMs: 10_000)
         _ = try other.click(token: st2.token.value, handle: try rig.handle("Increment", in: st2))  // count 变了
-        #expect(try rig.session.act(
-            token: stale.token.value, handle: try rig.handle("NoOp", in: stale), action: .verify) == .located)
+        #expect(
+            try rig.session.act(
+                token: stale.token.value, handle: try rig.handle("NoOp", in: stale), action: .verify) == .located)
     }
 
     @Test func siblingAddedInTheSameContainerRejectsTheHandle_strictnessTradeoff() throws {
@@ -346,7 +352,9 @@ struct FixtureTests {
         let o2 = try other.readState(pid: rig.fixture.pid, maxDepth: 12, budgetMs: 10_000)
         _ = try other.click(token: o2.token.value, handle: try rig.handle("AddRow", in: o2))
         // rows 的子节点数变成 2，而令牌里记的是 1：原生层核对失败。
-        rig.expectCode("stale_snapshot") { _ = try rig.session.act(token: st.token.value, handle: row1, action: .verify) }
+        rig.expectCode("stale_snapshot") {
+            _ = try rig.session.act(token: st.token.value, handle: row1, action: .verify)
+        }
         #expect(rig.session.invalidations >= 1)
     }
 

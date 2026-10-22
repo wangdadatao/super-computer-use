@@ -25,13 +25,17 @@ import Testing
     }
 
     @Test func insertionShiftsFollowingHandlesAndEmitsNewHandles() {
-        let old = AXNode(role: "AXWindow", children: [
-            AXNode(role: "AXButton", title: "A"), AXNode(role: "AXButton", title: "B"),
-        ])
-        let new = AXNode(role: "AXWindow", children: [
-            AXNode(role: "AXButton", title: "X"), AXNode(role: "AXButton", title: "A"),
-            AXNode(role: "AXButton", title: "B"),
-        ])
+        let old = AXNode(
+            role: "AXWindow",
+            children: [
+                AXNode(role: "AXButton", title: "A"), AXNode(role: "AXButton", title: "B"),
+            ])
+        let new = AXNode(
+            role: "AXWindow",
+            children: [
+                AXNode(role: "AXButton", title: "X"), AXNode(role: "AXButton", title: "A"),
+                AXNode(role: "AXButton", title: "B"),
+            ])
         let diff = ElementTable.diff(previous: entries(old), current: entries(new))
         #expect(diff.added == 1)
         #expect(diff.changed == 2)  // A/B 的句柄从 2/3 变为 3/4
@@ -41,13 +45,17 @@ import Testing
     }
 
     @Test func removalSummarizesOldHandleAndKeepsShiftedHandlesFresh() {
-        let old = AXNode(role: "AXWindow", children: [
-            AXNode(role: "AXButton", title: "A"), AXNode(role: "AXButton", title: "B"),
-            AXNode(role: "AXButton", title: "C"),
-        ])
-        let new = AXNode(role: "AXWindow", children: [
-            AXNode(role: "AXButton", title: "A"), AXNode(role: "AXButton", title: "C"),
-        ])
+        let old = AXNode(
+            role: "AXWindow",
+            children: [
+                AXNode(role: "AXButton", title: "A"), AXNode(role: "AXButton", title: "B"),
+                AXNode(role: "AXButton", title: "C"),
+            ])
+        let new = AXNode(
+            role: "AXWindow",
+            children: [
+                AXNode(role: "AXButton", title: "A"), AXNode(role: "AXButton", title: "C"),
+            ])
         let diff = ElementTable.diff(previous: entries(old), current: entries(new))
         #expect(diff.removed == 1)
         #expect(diff.removedIDs == "3")

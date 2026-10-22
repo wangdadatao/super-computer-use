@@ -149,7 +149,10 @@ struct ToolReply: Equatable {
 
     @Test func toolsListIsReadOnlyAndComplete() {
         let r = request(server, "tools/list")
-        guard case .array(let tools)? = r["result"]?["tools"] else { Issue.record("缺少 tools"); return }
+        guard case .array(let tools)? = r["result"]?["tools"] else {
+            Issue.record("缺少 tools")
+            return
+        }
         let names = tools.compactMap { $0["name"]?.stringValue }
         #expect(names == ["check_permissions", "list_apps", "list_windows", "get_ax_state", "get_screenshot"])
         for t in tools where t["name"]?.stringValue != "get_screenshot" {
@@ -169,7 +172,6 @@ struct ToolReply: Equatable {
         let ax = tools.first { $0["name"]?.stringValue == "get_ax_state" }
         #expect(ax?["inputSchema"]?["required"] == ["pid"])
     }
-
 
     @Test func appAllowlistDeniesAXStateBeforeReading() {
         let reader = FakeReader()
@@ -239,12 +241,14 @@ struct ToolReply: Equatable {
 
     @Test func repliesAreSingleLine() {
         // 元素文本里的换行必须被转义，否则会破坏 stdio 的"一行一条消息"。
-        reader.tree = .success(TreeReading(
-            root: AXNode(role: "AXWindow", title: "第一行\n第二行\r\n第三行\t\"引号\"\\反斜杠"), truncated: false))
-        let line = server.handle(line: JSONValue.object([
-            "jsonrpc": "2.0", "id": 1, "method": "tools/call",
-            "params": ["name": "get_ax_state", "arguments": ["pid": 42]],
-        ]).encodedLine())
+        reader.tree = .success(
+            TreeReading(
+                root: AXNode(role: "AXWindow", title: "第一行\n第二行\r\n第三行\t\"引号\"\\反斜杠"), truncated: false))
+        let line = server.handle(
+            line: JSONValue.object([
+                "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                "params": ["name": "get_ax_state", "arguments": ["pid": 42]],
+            ]).encodedLine())
         #expect(line?.contains("\n") == false)
         #expect(line?.contains("\r") == false)
         #expect(JSONValue.parse(line ?? "") != nil)
@@ -258,7 +262,12 @@ struct ToolReply: Equatable {
             #"{"jsonrpc":"2.0","id":2,"method":"ping"}"#,
         ][...]
         var out: [String] = []
-        s.run(readLine: { input.popFirst() }, write: { out.append($0); return true })
+        s.run(
+            readLine: { input.popFirst() },
+            write: {
+                out.append($0)
+                return true
+            })
         #expect(out.count == 2)  // 通知不产生输出
 
         var input2 = [
@@ -266,7 +275,12 @@ struct ToolReply: Equatable {
             #"{"jsonrpc":"2.0","id":2,"method":"ping"}"#,
         ][...]
         var out2: [String] = []
-        s.run(readLine: { input2.popFirst() }, write: { out2.append($0); return false })
+        s.run(
+            readLine: { input2.popFirst() },
+            write: {
+                out2.append($0)
+                return false
+            })
         #expect(out2.count == 1)  // 输出端断开后立即结束，不再处理后续输入
     }
 
@@ -300,11 +314,14 @@ struct ToolReply: Equatable {
     }
 
     @Test func getAXStateRendersTableWithHeader() {
-        reader.tree = .success(TreeReading(
-            root: AXNode(role: "AXWindow", title: "主窗口", children: [
-                AXNode(role: "AXButton", title: "确定"),
-                AXNode(role: "AXTextField", value: "abc"),
-            ]), truncated: false))
+        reader.tree = .success(
+            TreeReading(
+                root: AXNode(
+                    role: "AXWindow", title: "主窗口",
+                    children: [
+                        AXNode(role: "AXButton", title: "确定"),
+                        AXNode(role: "AXTextField", value: "abc"),
+                    ]), truncated: false))
         let r = callTool(server, "get_ax_state", ["pid": 42])
         #expect(!r.isError)
         let lines = r.text.split(separator: "\n").map(String.init)
@@ -318,19 +335,25 @@ struct ToolReply: Equatable {
 
     @Test func getAXStateReturnsDiffByDefaultAndFullOverrides() {
         let s = server
-        reader.tree = .success(TreeReading(
-            root: AXNode(role: "AXWindow", title: "主窗口", children: [
-                AXNode(role: "AXButton", title: "确定"),
-                AXNode(role: "AXTextField", value: "before"),
-            ]), truncated: false))
+        reader.tree = .success(
+            TreeReading(
+                root: AXNode(
+                    role: "AXWindow", title: "主窗口",
+                    children: [
+                        AXNode(role: "AXButton", title: "确定"),
+                        AXNode(role: "AXTextField", value: "before"),
+                    ]), truncated: false))
         let first = callTool(s, "get_ax_state", ["pid": 42])
         #expect(first.text.contains(#"[AXTextField#3] value="before""#))
 
-        reader.tree = .success(TreeReading(
-            root: AXNode(role: "AXWindow", title: "主窗口", children: [
-                AXNode(role: "AXButton", title: "确定"),
-                AXNode(role: "AXTextField", value: "after"),
-            ]), truncated: false))
+        reader.tree = .success(
+            TreeReading(
+                root: AXNode(
+                    role: "AXWindow", title: "主窗口",
+                    children: [
+                        AXNode(role: "AXButton", title: "确定"),
+                        AXNode(role: "AXTextField", value: "after"),
+                    ]), truncated: false))
         let second = callTool(s, "get_ax_state", ["pid": 42])
         #expect(!second.isError)
         #expect(second.text.contains("差异 +0 ~1 -0"))
@@ -361,7 +384,8 @@ struct ToolReply: Equatable {
         _ = callTool(s, "get_ax_state", ["pid": 43, "max_depth": 3, "budget_ms": 500])
         _ = callTool(s, "get_ax_state", ["pid": 44.0])  // 部分客户端把整数序列化成 44.0
         #expect(reader.treeCalls.count == 3)
-        #expect(reader.treeCalls[0].pid == 42 && reader.treeCalls[0].depth == 12 && reader.treeCalls[0].budget == 15_000)
+        #expect(
+            reader.treeCalls[0].pid == 42 && reader.treeCalls[0].depth == 12 && reader.treeCalls[0].budget == 15_000)
         #expect(reader.treeCalls[1].pid == 43 && reader.treeCalls[1].depth == 3 && reader.treeCalls[1].budget == 500)
         #expect(reader.treeCalls[2].pid == 44)
     }
@@ -424,10 +448,13 @@ struct ToolReply: Equatable {
     }
 
     @Test func focusParametersSelectSubtreesAndEmptyStringMeansUnset() {
-        reader.tree = .success(TreeReading(
-            root: AXNode(role: "AXWindow", children: [
-                AXNode(role: "AXButton", title: "确定"), AXNode(role: "AXButton", title: "取消"),
-            ]), truncated: false))
+        reader.tree = .success(
+            TreeReading(
+                root: AXNode(
+                    role: "AXWindow",
+                    children: [
+                        AXNode(role: "AXButton", title: "确定"), AXNode(role: "AXButton", title: "取消"),
+                    ]), truncated: false))
         let s = server
         let one = callTool(s, "get_ax_state", ["pid": 1, "focus": "确定"])
         #expect(!one.isError)
@@ -524,7 +551,8 @@ final class FakeAppLauncher: AppLauncher, @unchecked Sendable {
 
     @Test func clickIsHiddenAndRejectedByDefault() {
         let (t, s, reader) = rig(actions: false)
-        #expect(toolNames(t, s) == ["check_permissions", "list_apps", "list_windows", "get_ax_state", "get_screenshot"])
+        #expect(
+            toolNames(t, s) == ["check_permissions", "list_apps", "list_windows", "get_ax_state", "get_screenshot"])
         let r = t.request(s, "tools/call", params: ["name": "click", "arguments": ["token": "x", "handle": 1]])
         #expect(r["error"]?["code"] == .int(-32602))  // 与未知工具同样处理
         #expect(reader.actionCalls.isEmpty)
@@ -625,13 +653,17 @@ final class FakeAppLauncher: AppLauncher, @unchecked Sendable {
 
     @Test func screenshotReturnsAnImageAndAScreenshotID() {
         let (t, s, reader) = rig(actions: false)
-        reader.tree = .success(TreeReading(
-            root: AXNode(role: "AXWindow", children: [
-                AXNode(role: "AXButton", title: "确定", frame: Rect(x: 10, y: 20, width: 80, height: 24)),
-            ]), truncated: false))
-        reader.capture = .success(WindowCapture(
-            png: Self.makePNG(), width: 200, height: 120, scale: 1,
-            windowFrame: Rect(x: 0, y: 0, width: 200, height: 120)))
+        reader.tree = .success(
+            TreeReading(
+                root: AXNode(
+                    role: "AXWindow",
+                    children: [
+                        AXNode(role: "AXButton", title: "确定", frame: Rect(x: 10, y: 20, width: 80, height: 24))
+                    ]), truncated: false))
+        reader.capture = .success(
+            WindowCapture(
+                png: Self.makePNG(), width: 200, height: 120, scale: 1,
+                windowFrame: Rect(x: 0, y: 0, width: 200, height: 120)))
         let read = t.callTool(s, "get_ax_state", ["pid": 42])
         let r = t.callTool(s, "get_screenshot", ["token": .string(token(from: read))])
         #expect(!r.isError)
@@ -641,7 +673,6 @@ final class FakeAppLauncher: AppLauncher, @unchecked Sendable {
         let imageData = r.images.first?["data"]?.stringValue ?? ""
         #expect(imageData.count > 0)
     }
-
 
     @Test func listWindowsIsReadOnlyAndFormatsTitleAndFrame() {
         let (t, s, reader) = rig(actions: false)
@@ -653,9 +684,10 @@ final class FakeAppLauncher: AppLauncher, @unchecked Sendable {
 
     @Test func getAXStateCanBindAScreenshotWindow() {
         let (t, s, reader) = rig(actions: false)
-        reader.capture = .success(WindowCapture(
-            png: Self.makePNG(), width: 200, height: 120, scale: 1,
-            windowFrame: Rect(x: 0, y: 0, width: 200, height: 120), windowTitle: "主窗口"))
+        reader.capture = .success(
+            WindowCapture(
+                png: Self.makePNG(), width: 200, height: 120, scale: 1,
+                windowFrame: Rect(x: 0, y: 0, width: 200, height: 120), windowTitle: "主窗口"))
         let read = t.callTool(s, "get_ax_state", ["pid": 42, "window": "主窗口"])
         #expect(!read.isError)
         #expect(read.text.contains("窗口=\"主窗口\""))
@@ -687,24 +719,31 @@ final class FakeAppLauncher: AppLauncher, @unchecked Sendable {
 
     @Test func clickAtUsesScreenshotCoordinatesAndRequiresBinding() {
         let (t, s, reader) = rig(actions: true)
-        reader.tree = .success(TreeReading(
-            root: AXNode(role: "AXWindow", children: [
-                AXNode(role: "AXButton", title: "确定", frame: Rect(x: 20, y: 30, width: 40, height: 20)),
-            ]), truncated: false))
-        reader.capture = .success(WindowCapture(
-            png: Self.makePNG(width: 400, height: 300), width: 400, height: 300, scale: 2,
-            windowFrame: Rect(x: 100, y: 200, width: 200, height: 150)))
+        reader.tree = .success(
+            TreeReading(
+                root: AXNode(
+                    role: "AXWindow",
+                    children: [
+                        AXNode(role: "AXButton", title: "确定", frame: Rect(x: 20, y: 30, width: 40, height: 20))
+                    ]), truncated: false))
+        reader.capture = .success(
+            WindowCapture(
+                png: Self.makePNG(width: 400, height: 300), width: 400, height: 300, scale: 2,
+                windowFrame: Rect(x: 100, y: 200, width: 200, height: 150)))
         let read = t.callTool(s, "get_ax_state", ["pid": 42])
         let tok = token(from: read)
         let shot = t.callTool(s, "get_screenshot", ["token": .string(tok)])
-        let sid = shot.text.split(separator: "\n").first
+        let sid =
+            shot.text.split(separator: "\n").first
             .flatMap { $0.split(separator: " ").first { $0.hasPrefix("screenshot_id=") } }
             .map { String($0.dropFirst("screenshot_id=".count)) } ?? ""
         #expect(!sid.isEmpty)
 
-        let r = t.callTool(s, "click_at", [
-            "token": .string(tok), "screenshot_id": .string(sid), "x": 40, "y": 60,
-        ])
+        let r = t.callTool(
+            s, "click_at",
+            [
+                "token": .string(tok), "screenshot_id": .string(sid), "x": 40, "y": 60,
+            ])
         #expect(!r.isError)
         #expect(r.text.contains("截图坐标 (40, 60)"))
         #expect(reader.coordinateClicks.count == 1)
@@ -714,46 +753,55 @@ final class FakeAppLauncher: AppLauncher, @unchecked Sendable {
         #expect(reader.coordinateClicks[0].y == 230)
     }
 
-
     @Test func clickAtCarriesTheBoundWindowTitle() {
         let (t, s, reader) = rig(actions: true)
-        reader.capture = .success(WindowCapture(
-            png: Self.makePNG(width: 200, height: 120), width: 200, height: 120, scale: 1,
-            windowFrame: Rect(x: 0, y: 0, width: 200, height: 120), windowTitle: "主窗口"))
+        reader.capture = .success(
+            WindowCapture(
+                png: Self.makePNG(width: 200, height: 120), width: 200, height: 120, scale: 1,
+                windowFrame: Rect(x: 0, y: 0, width: 200, height: 120), windowTitle: "主窗口"))
         let read = t.callTool(s, "get_ax_state", ["pid": 42, "window": "主窗口"])
         let tok = token(from: read)
         let shot = t.callTool(s, "get_screenshot", ["token": .string(tok)])
-        let sid = shot.text.split(separator: "\n").first
+        let sid =
+            shot.text.split(separator: "\n").first
             .flatMap { $0.split(separator: " ").first { $0.hasPrefix("screenshot_id=") } }
             .map { String($0.dropFirst("screenshot_id=".count)) } ?? ""
-        let r = t.callTool(s, "click_at", [
-            "token": .string(tok), "screenshot_id": .string(sid), "x": 10, "y": 20,
-        ])
+        let r = t.callTool(
+            s, "click_at",
+            [
+                "token": .string(tok), "screenshot_id": .string(sid), "x": 10, "y": 20,
+            ])
         #expect(!r.isError)
         #expect(reader.coordinateClickWindowTitles == ["主窗口"])
     }
 
     @Test func clickAtRejectsOutOfBoundsCoordinatesAndStaleScreenshots() {
         let (t, s, reader) = rig(actions: true)
-        reader.capture = .success(WindowCapture(
-            png: Self.makePNG(width: 400, height: 300), width: 400, height: 300, scale: 1,
-            windowFrame: Rect(x: 0, y: 0, width: 400, height: 300)))
+        reader.capture = .success(
+            WindowCapture(
+                png: Self.makePNG(width: 400, height: 300), width: 400, height: 300, scale: 1,
+                windowFrame: Rect(x: 0, y: 0, width: 400, height: 300)))
         let read = t.callTool(s, "get_ax_state", ["pid": 42])
         let tok = token(from: read)
         let shot = t.callTool(s, "get_screenshot", ["token": .string(tok)])
-        let sid = shot.text.split(separator: "\n").first
+        let sid =
+            shot.text.split(separator: "\n").first
             .flatMap { $0.split(separator: " ").first { $0.hasPrefix("screenshot_id=") } }
             .map { String($0.dropFirst("screenshot_id=".count)) } ?? ""
 
-        let out = t.callTool(s, "click_at", [
-            "token": .string(tok), "screenshot_id": .string(sid), "x": 400, "y": 10,
-        ])
+        let out = t.callTool(
+            s, "click_at",
+            [
+                "token": .string(tok), "screenshot_id": .string(sid), "x": 400, "y": 10,
+            ])
         #expect(out.isError && out.text.hasPrefix("[invalid_coordinates]"))
         #expect(reader.coordinateClicks.isEmpty)
 
-        let stale = t.callTool(s, "click_at", [
-            "token": .string(tok), "screenshot_id": "nope", "x": 1, "y": 1,
-        ])
+        let stale = t.callTool(
+            s, "click_at",
+            [
+                "token": .string(tok), "screenshot_id": "nope", "x": 1, "y": 1,
+            ])
         #expect(stale.isError && stale.text.hasPrefix("[stale_geometry]"))
         #expect(reader.coordinateClicks.isEmpty)
     }
@@ -769,29 +817,35 @@ final class FakeAppLauncher: AppLauncher, @unchecked Sendable {
 
     @Test func scrollAndDragUseScreenshotCoordinates() {
         let (t, s, reader) = rig(actions: true)
-        reader.capture = .success(WindowCapture(
-            png: Self.makePNG(width: 400, height: 300), width: 400, height: 300, scale: 2,
-            windowFrame: Rect(x: 100, y: 200, width: 200, height: 150)))
+        reader.capture = .success(
+            WindowCapture(
+                png: Self.makePNG(width: 400, height: 300), width: 400, height: 300, scale: 2,
+                windowFrame: Rect(x: 100, y: 200, width: 200, height: 150)))
         let read = t.callTool(s, "get_ax_state", ["pid": 42])
         let tok = token(from: read)
         let shot = t.callTool(s, "get_screenshot", ["token": .string(tok)])
-        let sid = shot.text.split(separator: "\n").first
+        let sid =
+            shot.text.split(separator: "\n").first
             .flatMap { $0.split(separator: " ").first { $0.hasPrefix("screenshot_id=") } }
             .map { String($0.dropFirst("screenshot_id=".count)) } ?? ""
 
-        let scrolled = t.callTool(s, "scroll_at", [
-            "token": .string(tok), "screenshot_id": .string(sid),
-            "x": 40, "y": 60, "dx": 0, "dy": 120,
-        ])
+        let scrolled = t.callTool(
+            s, "scroll_at",
+            [
+                "token": .string(tok), "screenshot_id": .string(sid),
+                "x": 40, "y": 60, "dx": 0, "dy": 120,
+            ])
         #expect(!scrolled.isError)
         #expect(reader.scrolls.count == 1)
         #expect(reader.scrolls[0].x == 120 && reader.scrolls[0].y == 230)
         #expect(reader.scrolls[0].dx == 0 && reader.scrolls[0].dy == 120)
 
-        let dragged = t.callTool(s, "drag", [
-            "token": .string(tok), "screenshot_id": .string(sid),
-            "from_x": 20, "from_y": 30, "to_x": 60, "to_y": 80, "duration_ms": 300,
-        ])
+        let dragged = t.callTool(
+            s, "drag",
+            [
+                "token": .string(tok), "screenshot_id": .string(sid),
+                "from_x": 20, "from_y": 30, "to_x": 60, "to_y": 80, "duration_ms": 300,
+            ])
         #expect(!dragged.isError)
         #expect(reader.drags.count == 1)
         #expect(reader.drags[0].fromX == 110 && reader.drags[0].fromY == 215)
@@ -801,26 +855,32 @@ final class FakeAppLauncher: AppLauncher, @unchecked Sendable {
 
     @Test func scrollAndDragRejectZeroDeltaOrSamePoint() {
         let (t, s, reader) = rig(actions: true)
-        reader.capture = .success(WindowCapture(
-            png: Self.makePNG(width: 400, height: 300), width: 400, height: 300, scale: 1,
-            windowFrame: Rect(x: 0, y: 0, width: 400, height: 300)))
+        reader.capture = .success(
+            WindowCapture(
+                png: Self.makePNG(width: 400, height: 300), width: 400, height: 300, scale: 1,
+                windowFrame: Rect(x: 0, y: 0, width: 400, height: 300)))
         let read = t.callTool(s, "get_ax_state", ["pid": 42])
         let tok = token(from: read)
         let shot = t.callTool(s, "get_screenshot", ["token": .string(tok)])
-        let sid = shot.text.split(separator: "\n").first
+        let sid =
+            shot.text.split(separator: "\n").first
             .flatMap { $0.split(separator: " ").first { $0.hasPrefix("screenshot_id=") } }
             .map { String($0.dropFirst("screenshot_id=".count)) } ?? ""
 
-        let zeroScroll = t.callTool(s, "scroll_at", [
-            "token": .string(tok), "screenshot_id": .string(sid),
-            "x": 10, "y": 10, "dx": 0, "dy": 0,
-        ])
+        let zeroScroll = t.callTool(
+            s, "scroll_at",
+            [
+                "token": .string(tok), "screenshot_id": .string(sid),
+                "x": 10, "y": 10, "dx": 0, "dy": 0,
+            ])
         #expect(zeroScroll.isError && zeroScroll.text.hasPrefix("[invalid_coordinates]"))
 
-        let samePoint = t.callTool(s, "drag", [
-            "token": .string(tok), "screenshot_id": .string(sid),
-            "from_x": 10, "from_y": 10, "to_x": 10, "to_y": 10,
-        ])
+        let samePoint = t.callTool(
+            s, "drag",
+            [
+                "token": .string(tok), "screenshot_id": .string(sid),
+                "from_x": 10, "from_y": 10, "to_x": 10, "to_y": 10,
+            ])
         #expect(samePoint.isError && samePoint.text.hasPrefix("[invalid_coordinates]"))
         #expect(reader.scrolls.isEmpty && reader.drags.isEmpty)
     }
@@ -841,9 +901,11 @@ final class FakeAppLauncher: AppLauncher, @unchecked Sendable {
     @Test func typeTextUsesTokenAndReportsTheObservedEffect() {
         let (t, s, reader) = rig(actions: true)
         let read = t.callTool(s, "get_ax_state", ["pid": 42])
-        let r = t.callTool(s, "type_text", [
-            "token": .string(token(from: read)), "handle": 3, "text": "hello",
-        ])
+        let r = t.callTool(
+            s, "type_text",
+            [
+                "token": .string(token(from: read)), "handle": 3, "text": "hello",
+            ])
         #expect(!r.isError)
         #expect(r.text.contains("AXTextField#3"))
         #expect(r.text.contains("投递输入"))
@@ -855,9 +917,11 @@ final class FakeAppLauncher: AppLauncher, @unchecked Sendable {
     @Test func pressKeyUsesTokenAndReportsTheObservedEffect() {
         let (t, s, reader) = rig(actions: true)
         let read = t.callTool(s, "get_ax_state", ["pid": 42])
-        let r = t.callTool(s, "press_key", [
-            "token": .string(token(from: read)), "handle": 3, "key": "Return",
-        ])
+        let r = t.callTool(
+            s, "press_key",
+            [
+                "token": .string(token(from: read)), "handle": 3, "key": "Return",
+            ])
         #expect(!r.isError)
         #expect(r.text.contains("投递按键"))
         #expect(reader.pressed.count == 1)
@@ -868,9 +932,11 @@ final class FakeAppLauncher: AppLauncher, @unchecked Sendable {
         let (t, s, reader) = rig(actions: true)
         #expect(toolNames(t, s).contains("set_value"))
         let read = t.callTool(s, "get_ax_state", ["pid": 42])
-        let r = t.callTool(s, "set_value", [
-            "token": .string(token(from: read)), "handle": 3, "value": "written",
-        ])
+        let r = t.callTool(
+            s, "set_value",
+            [
+                "token": .string(token(from: read)), "handle": 3, "value": "written",
+            ])
         #expect(!r.isError)
         #expect(r.text.contains("投递设值"))
         #expect(reader.written.count == 1)
@@ -965,7 +1031,6 @@ final class FakeAppLauncher: AppLauncher, @unchecked Sendable {
         #expect(ScuTool.click.isAction && !ScuTool.getAXState.isAction)
     }
 }
-
 
 @Suite struct ScreenshotOverlayTests {
     @Test func imageRectHandlesNegativeWindowOriginAndScale() {

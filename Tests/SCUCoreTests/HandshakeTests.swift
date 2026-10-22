@@ -27,7 +27,10 @@ import Testing
         let client = try NativeClient(nativeExecutable: try Self.nativeURL())
         defer { client.close() }
         let reply = try client.call(.checkPermissions)
-        guard case .permissions = reply else { Issue.record("应返回权限状态"); return }
+        guard case .permissions = reply else {
+            Issue.record("应返回权限状态")
+            return
+        }
     }
 
     @Test func versionMismatchFailsExplicitlyWithBothVersions() throws {

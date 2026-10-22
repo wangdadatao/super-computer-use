@@ -1,5 +1,5 @@
-import Foundation
 import Dispatch
+import Foundation
 import SCUCore
 import SCUMCP
 import SCUWire
@@ -13,6 +13,7 @@ import SCUWire
 //   scu windows --pid <pid>
 //   scu dump --pid <pid> [--window <title>] [--depth <n>] [--json]
 //   scu identity --pid <pid> [--window <title>] [--depth <n>] [--show-k4] [--by-role]
+//   scu --help | --version
 //
 // 退出码：0 成功；1 失败；2 缺系统权限；64 用法错误。
 // 所有失败路径都通过抛出 CLIExit 回到 main，**不在 run 内调用 exit()**：
@@ -22,6 +23,23 @@ struct CLIExit: Error {
     var code: Int32
     var message: String?
 }
+
+let scuUsage = """
+    用法：
+      scu mcp [--actions] [--allow-app <id>]... [--allow-app-file <path>]
+      scu permissions
+      scu apps
+      scu windows --pid <pid>
+      scu dump --pid <pid> [--window <title>] [--depth <n>] [--budget-ms <n>] [--json]
+      scu identity --pid <pid> [--window <title>] [--depth <n>] [--show-k4] [--by-role]
+      scu --help | --version
+
+    scu mcp 默认只读；加 --actions 才暴露 click / click_at / scroll_at / drag / type_text /
+    press_key / set_value / launch_app。--allow-app 把连接限制在指定应用上。
+
+    退出码：0 成功；1 失败；2 缺系统权限（辅助功能）；64 用法错误。
+    文档：docs/operations/local_setup.md
+    """
 
 func usage(_ message: String) -> CLIExit { CLIExit(code: 64, message: message) }
 
@@ -197,7 +215,7 @@ func run(command: String, args: [String]) throws {
         runMCP(options: options, appAuthorization: authorization)
         return
     } else if command != "permissions" && command != "apps" && command != "windows" {
-        throw usage("未知命令：\(command)")
+        throw usage("未知命令：\(command)（用 scu --help 查看用法）")
     }
 
     let client = try NativeClient(nativeExecutable: nativeExecutableURL())
@@ -228,10 +246,11 @@ func run(command: String, args: [String]) throws {
         }
 
     case "identity":
-        guard case .tree(let root, let truncated) = try client.call(
-            .dumpTree(
-                pid: pid, windowTitle: windowTitle, maxDepth: depth, budgetMs: budgetMs),
-            timeoutMs: treeTimeoutMs(budgetMs))
+        guard
+            case .tree(let root, let truncated) = try client.call(
+                .dumpTree(
+                    pid: pid, windowTitle: windowTitle, maxDepth: depth, budgetMs: budgetMs),
+                timeoutMs: treeTimeoutMs(budgetMs))
         else {
             throw CLIExit(code: 1, message: "应答类型错误")
         }
@@ -242,26 +261,30 @@ func run(command: String, args: [String]) throws {
         print("匹配键档位分布。保守口径：不把 _NS:<数字> 算作显式标识符")
         print(IdentityAnalyzer.report(root, policy: .conservative).text(title: "[A] 保守 · 仅 title（ADR-0013 冻结口径）"))
         print(IdentityAnalyzer.report(root, policy: .inclusive).text(title: "[B] 计入 _NS:<数字> · 仅 title"))
-        print(IdentityAnalyzer.report(root, policy: .conservative, labels: .titleOrDescription)
-            .text(title: "[C] 保守 · title 或 description（实验）"))
+        print(
+            IdentityAnalyzer.report(root, policy: .conservative, labels: .titleOrDescription)
+                .text(title: "[C] 保守 · title 或 description（实验）"))
         if args.contains("--by-role") {
             print("\n可交互元素按 role 拆分（口径 C）：")
             print(IdentityAnalyzer.report(root, policy: .conservative, labels: .titleOrDescription).byRoleText())
         }
         if args.contains("--show-k4") {
             print("\n可交互元素中落入 K4 的元素：")
-            for e in IdentityAnalyzer.analyze(root, labels: .titleOrDescription) where e.isInteractive && e.matchLevel == .k4 {
-                print("  \(e.role) title=\(e.title.map { "\"\($0)\"" } ?? "-") id=\(e.identifier ?? "-") path=\(e.path)")
+            for e in IdentityAnalyzer.analyze(root, labels: .titleOrDescription)
+            where e.isInteractive && e.matchLevel == .k4 {
+                print(
+                    "  \(e.role) title=\(e.title.map { "\"\($0)\"" } ?? "-") id=\(e.identifier ?? "-") path=\(e.path)")
             }
         }
         FileHandle.standardError.write(
             Data("深度上限 \(depth)：更深的节点未读取，分布只覆盖已读取部分。\n".utf8))
 
     default:  // dump
-        guard case .tree(let root, let truncated) = try client.call(
-            .dumpTree(
-                pid: pid, windowTitle: windowTitle, maxDepth: depth, budgetMs: budgetMs),
-            timeoutMs: treeTimeoutMs(budgetMs))
+        guard
+            case .tree(let root, let truncated) = try client.call(
+                .dumpTree(
+                    pid: pid, windowTitle: windowTitle, maxDepth: depth, budgetMs: budgetMs),
+                timeoutMs: treeTimeoutMs(budgetMs))
         else {
             throw CLIExit(code: 1, message: "应答类型错误")
         }
@@ -282,9 +305,18 @@ func run(command: String, args: [String]) throws {
 func main() -> Int32 {
     let argv = Array(CommandLine.arguments.dropFirst())
     guard let command = argv.first else {
-        FileHandle.standardError.write(
-            Data("用法：scu mcp [--actions] [--allow-app <id>]... [--allow-app-file <path>] | permissions | apps | windows --pid <pid> | dump|identity --pid <pid> [--window <title>] [--depth <n>] [--budget-ms <n>] [--json|--show-k4|--by-role]\n".utf8))
+        FileHandle.standardError.write(Data((scuUsage + "\n").utf8))
         return 64
+    }
+    switch command {
+    case "--help", "-h", "help":
+        print(scuUsage)
+        return 0
+    case "--version", "-v", "version":
+        print("scu \(scuVersion)")
+        return 0
+    default:
+        break
     }
     do {
         try run(command: command, args: Array(argv.dropFirst()))

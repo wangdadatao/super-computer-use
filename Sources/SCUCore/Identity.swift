@@ -3,9 +3,9 @@ import SCUWire
 /// 候选键档位。数值越小越稳定、越抗变化。
 public enum KeyLevel: Int, Comparable, Sendable, CaseIterable {
     case k1 = 1  // 显式标识符
-    case k2      // role + subrole + title + 祖先 role 路径
-    case k3      // role + subrole + 祖先 role 路径
-    case k4      // 逐级「同 role 兄弟序号」的完整位置路径
+    case k2  // role + subrole + title + 祖先 role 路径
+    case k3  // role + subrole + 祖先 role 路径
+    case k4  // 逐级「同 role 兄弟序号」的完整位置路径
 
     public static func < (a: KeyLevel, b: KeyLevel) -> Bool { a.rawValue < b.rawValue }
     public var label: String { "K\(rawValue)" }
@@ -85,8 +85,8 @@ public enum IdentityAnalyzer {
     private struct Raw {
         var node: AXNode
         var path: [Int]
-        var rolePath: [String]      // 含自身
-        var ordinalPath: [String]   // 每级 "Role[同 role 兄弟序号]"，含自身
+        var rolePath: [String]  // 含自身
+        var ordinalPath: [String]  // 每级 "Role[同 role 兄弟序号]"，含自身
     }
 
     /// 先序遍历，返回每个元素的身份。顺序与先序一致。
@@ -97,7 +97,12 @@ public enum IdentityAnalyzer {
         collect(root, path: [], rolePath: [], ordinalPath: [], ordinal: 0, into: &raws)
 
         // 候选键（K4 单独处理：由位置唯一决定，天然树内唯一）。
-        struct Cands { var k1: String?; var k2: String?; var k3: String; var k4: String }
+        struct Cands {
+            var k1: String?
+            var k2: String?
+            var k3: String
+            var k4: String
+        }
         let sep = "\u{1F}"
         let cands: [Cands] = raws.map { r in
             let n = r.node
@@ -125,10 +130,15 @@ public enum IdentityAnalyzer {
             dict[.k4] = c.k4
 
             let (level, key): (KeyLevel, String)
-            if let k = c.k1, count[k] == 1 { (level, key) = (.k1, k) }
-            else if let k = c.k2, count[k] == 1 { (level, key) = (.k2, k) }
-            else if count[c.k3] == 1 { (level, key) = (.k3, c.k3) }
-            else { (level, key) = (.k4, c.k4) }
+            if let k = c.k1, count[k] == 1 {
+                (level, key) = (.k1, k)
+            } else if let k = c.k2, count[k] == 1 {
+                (level, key) = (.k2, k)
+            } else if count[c.k3] == 1 {
+                (level, key) = (.k3, c.k3)
+            } else {
+                (level, key) = (.k4, c.k4)
+            }
 
             return ElementIdentity(
                 path: r.path, role: r.node.role, title: r.node.title, identifier: r.node.identifier,
@@ -205,7 +215,8 @@ public struct IdentityReport: Sendable, Equatable {
     public func byRoleText() -> String {
         interactiveByRole.sorted { $0.value.total > $1.value.total }.map { role, d in
             let k4 = d.ratio(.k4).map { String(format: "%5.1f%%", $0 * 100) } ?? "    -"
-            return "  \(role.padding(toLength: 16, withPad: " ", startingAt: 0)) 共 \(String(format: "%4d", d.total))  K4 \(String(format: "%4d", d.count(.k4))) \(k4)"
+            return
+                "  \(role.padding(toLength: 16, withPad: " ", startingAt: 0)) 共 \(String(format: "%4d", d.total))  K4 \(String(format: "%4d", d.count(.k4))) \(k4)"
         }.joined(separator: "\n")
     }
 

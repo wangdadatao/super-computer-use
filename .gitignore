@@ -11,8 +11,17 @@ Package.resolved
 .vscode/
 *.swp
 
-# 分发产物
+# 分发产物与签名材料
 dist/
+*.p12
+*.cer
+*.mobileprovision
+*.provisionprofile
+
+# 本地配置与密钥
+.env
+.env.*
+*.key
 
 # 覆盖率产物
 *.profraw

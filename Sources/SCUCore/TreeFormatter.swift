@@ -52,6 +52,7 @@ public struct FieldCoverage: Equatable, Sendable {
 
     public var summary: String {
         func pct(_ x: Int) -> String { total == 0 ? "-" : String(format: "%.1f%%", Double(x) * 100 / Double(total)) }
-        return "元素 \(total)；有 AXIdentifier \(withIdentifier)（\(pct(withIdentifier))）；有 title \(withTitle)（\(pct(withTitle))）；有 description \(withDescription)（\(pct(withDescription))）"
+        return
+            "元素 \(total)；有 AXIdentifier \(withIdentifier)（\(pct(withIdentifier))）；有 title \(withTitle)（\(pct(withTitle))）；有 description \(withDescription)（\(pct(withDescription))）"
     }
 }

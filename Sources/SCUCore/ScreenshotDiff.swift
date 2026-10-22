@@ -41,10 +41,11 @@ public enum ScreenshotDiff {
         guard width > 0, height > 0 else { return nil }
         var bytes = [UInt8](repeating: 0, count: width * height * 4)
         let colorSpace = CGColorSpaceCreateDeviceRGB()
-        guard let context = CGContext(
-            data: &bytes, width: width, height: height, bitsPerComponent: 8,
-            bytesPerRow: width * 4, space: colorSpace,
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        guard
+            let context = CGContext(
+                data: &bytes, width: width, height: height, bitsPerComponent: 8,
+                bytesPerRow: width * 4, space: colorSpace,
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
         else {
             return nil
         }

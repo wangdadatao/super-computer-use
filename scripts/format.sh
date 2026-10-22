@@ -6,8 +6,7 @@
 #   scripts/format.sh --check         只检查，不写回；有不符合项时退出 1
 #   scripts/format.sh Sources/Foo.swift Tests/BarTests.swift
 #
-# 说明：现有代码树尚未整体重排，scripts/check.sh 不强制调用本脚本。
-# 建议对自己改过的文件运行，避免把无关文件带进 diff。
+# scripts/check.sh 会以 --check 调用本脚本；提交前也可以只检查自己改过的文件。
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

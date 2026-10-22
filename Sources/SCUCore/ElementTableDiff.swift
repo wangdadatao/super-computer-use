@@ -78,7 +78,8 @@ extension ElementTable {
             changedNew.formUnion(newSurvivors)
         }
 
-        let removedIDs = removedOld.isEmpty
+        let removedIDs =
+            removedOld.isEmpty
             ? nil : handleRanges(removedOld.map { $0 + 1 })
         if addedNew.isEmpty && changedNew.isEmpty && removedOld.isEmpty {
             return .noChange
@@ -96,8 +97,9 @@ extension ElementTable {
             }
             let entry = current[index]
             lines.append(
-                prefix + " " + line(
-                    entry.node, handle: index + 1, depth: entry.depth, label: entry.label))
+                prefix + " "
+                    + line(
+                        entry.node, handle: index + 1, depth: entry.depth, label: entry.label))
         }
         let lineCount = lines.count
         if lineCount > maxLines {

@@ -37,15 +37,19 @@ import Testing
     @Test func responseWithTreeRoundTrip() throws {
         let tree = AXNode(
             role: "AXWindow", title: "t",
-            children: [AXNode(role: "AXButton", identifier: "ok", description: "确定", enabled: true,
-                                actions: ["AXPress"])])
+            children: [
+                AXNode(
+                    role: "AXButton", identifier: "ok", description: "确定", enabled: true,
+                    actions: ["AXPress"])
+            ])
         let frame = ResponseFrame(id: 1, response: .tree(tree, truncated: true))
         let data = try Frame.encode(frame)
         #expect(try Frame.decode(ResponseFrame.self, body: data.dropFirst(4)) == frame)
     }
 
     @Test func windowCaptureRequestAndResponseRoundTrip() throws {
-        let requestFrame = try WireFormatTests.json(RequestFrame(id: 8, request: .captureWindow(pid: 42, windowTitle: nil)))
+        let requestFrame = try WireFormatTests.json(
+            RequestFrame(id: 8, request: .captureWindow(pid: 42, windowTitle: nil)))
         let request = requestFrame["request"] as! [String: Any]
         #expect(request["type"] as? String == "captureWindow")
         #expect(request["pid"] as? Int == 42)
@@ -92,7 +96,6 @@ import Testing
         #expect(drag["durationMs"] as? Int == 400)
     }
 
-
     @Test func windowTitleIsOptionalButEncodedWhenPresent() throws {
         let withTitle = try WireFormatTests.json(
             RequestFrame(id: 12, request: .captureWindow(pid: 42, windowTitle: "主窗口")))
@@ -113,7 +116,10 @@ import Testing
         let err = WireError.versionMismatch(client: 2, server: 1)
         let data = try Frame.encode(ResponseFrame(id: 1, response: .failure(err)))
         let back = try Frame.decode(ResponseFrame.self, body: data.dropFirst(4))
-        guard case .failure(let e) = back.response else { Issue.record("应为 failure"); return }
+        guard case .failure(let e) = back.response else {
+            Issue.record("应为 failure")
+            return
+        }
         #expect(e.code == "protocol_version_mismatch")
         #expect(e.layer == "boundary")
         #expect(e.retry == "no")
@@ -122,7 +128,10 @@ import Testing
     @Test func socketCarriesFramesBothWays() throws {
         var fds: [Int32] = [0, 0]
         #expect(socketpair(AF_UNIX, SOCK_STREAM, 0, &fds) == 0)
-        defer { close(fds[0]); close(fds[1]) }
+        defer {
+            close(fds[0])
+            close(fds[1])
+        }
         try Frame.write(RequestFrame(id: 3, request: .listApps), to: fds[0])
         let got = try Frame.read(RequestFrame.self, from: fds[1])
         #expect(got == RequestFrame(id: 3, request: .listApps))
@@ -154,14 +163,20 @@ import Testing
     @Test func waitReadableTimesOutWhenPeerIsSilent() throws {
         var fds: [Int32] = [0, 0]
         #expect(socketpair(AF_UNIX, SOCK_STREAM, 0, &fds) == 0)
-        defer { close(fds[0]); close(fds[1]) }
+        defer {
+            close(fds[0])
+            close(fds[1])
+        }
         #expect(throws: TransportError.timeout) { try UnixSocket.waitReadable(fds[0], timeoutMs: 50) }
     }
 
     @Test func oversizedHeaderIsRejectedWithoutAllocating() throws {
         var fds: [Int32] = [0, 0]
         #expect(socketpair(AF_UNIX, SOCK_STREAM, 0, &fds) == 0)
-        defer { close(fds[0]); close(fds[1]) }
+        defer {
+            close(fds[0])
+            close(fds[1])
+        }
         try Frame.writeAll(fds[0], Data([0xFF, 0xFF, 0xFF, 0xFF]))
         #expect(throws: TransportError.frameTooLarge(Int(UInt32.max))) {
             try Frame.read(RequestFrame.self, from: fds[1])
@@ -185,7 +200,8 @@ import Testing
         #expect(req["type"] as? String == "hello")
         #expect(req["protocolVersion"] as? Int == 1)
 
-        let dump = try Self.json(RequestFrame(id: 2, request: .dumpTree(pid: 9, windowTitle: nil, maxDepth: 3, budgetMs: 700)))
+        let dump = try Self.json(
+            RequestFrame(id: 2, request: .dumpTree(pid: 9, windowTitle: nil, maxDepth: 3, budgetMs: 700)))
         let d = dump["request"] as! [String: Any]
         #expect(d["type"] as? String == "dumpTree")
         #expect(d["pid"] as? Int == 9)
@@ -209,7 +225,8 @@ import Testing
     }
 
     @Test func treeResponseCarriesTruncatedFlag() throws {
-        let t = try Self.json(ResponseFrame(id: 1, response: .tree(AXNode(role: "AXWindow", description: "d"), truncated: true)))
+        let t = try Self.json(
+            ResponseFrame(id: 1, response: .tree(AXNode(role: "AXWindow", description: "d"), truncated: true)))
         let r = t["response"] as! [String: Any]
         #expect(r["type"] as? String == "tree")
         #expect(r["truncated"] as? Bool == true)
@@ -235,7 +252,8 @@ import Testing
 
     @Test func performActionShape() throws {
         let f = try Self.json(
-            RequestFrame(id: 3, request: .performAction(pid: 7, windowTitle: nil, locator: Self.locator, action: .press)))
+            RequestFrame(
+                id: 3, request: .performAction(pid: 7, windowTitle: nil, locator: Self.locator, action: .press)))
         let r = f["request"] as! [String: Any]
         #expect(r["type"] as? String == "performAction")
         #expect(r["pid"] as? Int == 7)

@@ -5,15 +5,18 @@ import Testing
 
 @Suite struct ElementTableTests {
     @Test func handlesAreOnePerElementInPreorderStartingAtOne() {
-        let tree = AXNode(role: "AXWindow", children: [
-            AXNode(role: "AXGroup", children: [AXNode(role: "AXButton"), AXNode(role: "AXButton")]),
-            AXNode(role: "AXButton"),
-        ])
+        let tree = AXNode(
+            role: "AXWindow",
+            children: [
+                AXNode(role: "AXGroup", children: [AXNode(role: "AXButton"), AXNode(role: "AXButton")]),
+                AXNode(role: "AXButton"),
+            ])
         let r = ElementTable.render(tree)
         let lines = r.text.split(separator: "\n").map(String.init)
-        #expect(lines == [
-            "[AXWindow#1]", "  [AXGroup#2]", "    [AXButton#3]", "    [AXButton#4]", "  [AXButton#5]",
-        ])
+        #expect(
+            lines == [
+                "[AXWindow#1]", "  [AXGroup#2]", "    [AXButton#3]", "    [AXButton#4]", "  [AXButton#5]",
+            ])
         #expect(r.total == 5 && r.shown == 5 && r.depth == 2)
     }
 
@@ -21,8 +24,9 @@ import Testing
         let n = AXNode(
             role: "AXButton", subrole: "AXCloseButton", title: "关闭", identifier: "close",
             value: "v", description: "d", enabled: false)
-        #expect(ElementTable.line(n, handle: 7, depth: 1)
-            == #"  [AXButton#7] "关闭" subrole=AXCloseButton desc="d" value="v" id="close" state=disabled"#)
+        #expect(
+            ElementTable.line(n, handle: 7, depth: 1)
+                == #"  [AXButton#7] "关闭" subrole=AXCloseButton desc="d" value="v" id="close" state=disabled"#)
 
         // 空字符串与 enabled=true/nil 都省略
         let plain = AXNode(role: "AXButton", title: "", identifier: "", value: "", description: "", enabled: true)
@@ -30,11 +34,13 @@ import Testing
     }
 
     @Test func interactiveElementsGetLabelsAndFrames() {
-        let tree = AXNode(role: "AXWindow", children: [
-            AXNode(role: "AXButton", title: "确定", frame: Rect(x: 10, y: 20, width: 80, height: 24)),
-            AXNode(role: "AXStaticText", value: "说明", frame: Rect(x: 10, y: 50, width: 200, height: 18)),
-            AXNode(role: "AXTextField", frame: Rect(x: 10, y: 80, width: 200, height: 24)),
-        ])
+        let tree = AXNode(
+            role: "AXWindow",
+            children: [
+                AXNode(role: "AXButton", title: "确定", frame: Rect(x: 10, y: 20, width: 80, height: 24)),
+                AXNode(role: "AXStaticText", value: "说明", frame: Rect(x: 10, y: 50, width: 200, height: 18)),
+                AXNode(role: "AXTextField", frame: Rect(x: 10, y: 80, width: 200, height: 24)),
+            ])
         let r = ElementTable.render(tree)
         let lines = r.text.split(separator: "\n").map(String.init)
         #expect(lines[0] == "[AXWindow#1]")
@@ -49,11 +55,13 @@ import Testing
     }
 
     @Test func labelsSkipDisabledAndZeroSizedElements() {
-        let tree = AXNode(role: "AXWindow", children: [
-            AXNode(role: "AXButton", title: "禁用", enabled: false, frame: Rect(x: 0, y: 0, width: 40, height: 20)),
-            AXNode(role: "AXButton", title: "零宽", frame: Rect(x: 0, y: 30, width: 0, height: 20)),
-            AXNode(role: "AXButton", title: "可用", frame: Rect(x: 0, y: 60, width: 40, height: 20)),
-        ])
+        let tree = AXNode(
+            role: "AXWindow",
+            children: [
+                AXNode(role: "AXButton", title: "禁用", enabled: false, frame: Rect(x: 0, y: 0, width: 40, height: 20)),
+                AXNode(role: "AXButton", title: "零宽", frame: Rect(x: 0, y: 30, width: 0, height: 20)),
+                AXNode(role: "AXButton", title: "可用", frame: Rect(x: 0, y: 60, width: 40, height: 20)),
+            ])
         let r = ElementTable.render(tree)
         #expect(r.labels.map(\.text) == ["a"])
         #expect(r.labels.first?.title == "可用")
@@ -94,9 +102,11 @@ import Testing
     }
 
     @Test func labelCapKeepsTheRestAddressableByHandle() {
-        let tree = AXNode(role: "AXGroup", children: (0..<(ElementTable.maxLabels + 5)).map { i in
-            AXNode(role: "AXButton", title: "b\(i)", frame: Rect(x: 0, y: Double(i), width: 10, height: 10))
-        })
+        let tree = AXNode(
+            role: "AXGroup",
+            children: (0..<(ElementTable.maxLabels + 5)).map { i in
+                AXNode(role: "AXButton", title: "b\(i)", frame: Rect(x: 0, y: Double(i), width: 10, height: 10))
+            })
         let r = ElementTable.render(tree, maxElements: ElementTable.maxLabels + 10)
         #expect(r.labels.count == ElementTable.maxLabels)
         #expect(r.labelTotal == ElementTable.maxLabels + 5)
@@ -129,11 +139,13 @@ import Testing
 
     /// 根 → [A（50 个叶子）, B, C]。先序截断会让 A 的叶子占满配额，看不到 B 与 C。
     static func bigFirstSubtree() -> AXNode {
-        AXNode(role: "AXWindow", children: [
-            AXNode(role: "AXGroup", title: "A", children: (0..<50).map { _ in AXNode(role: "AXButton") }),
-            AXNode(role: "AXToolbar", title: "B"),
-            AXNode(role: "AXGroup", title: "C"),
-        ])
+        AXNode(
+            role: "AXWindow",
+            children: [
+                AXNode(role: "AXGroup", title: "A", children: (0..<50).map { _ in AXNode(role: "AXButton") }),
+                AXNode(role: "AXToolbar", title: "B"),
+                AXNode(role: "AXGroup", title: "C"),
+            ])
     }
 
     @Test func levelFirstShowsSiblingsBeforeDescendants() {
@@ -165,7 +177,7 @@ import Testing
     @Test func levelFirstRespectsCapAndKeepsParentsVisibleForArbitraryTrees() {
         var seed: UInt64 = 0xC0FFEE
         func next(_ n: Int) -> Int {
-            seed = seed &* 6364136223846793005 &+ 1442695040888963407
+            seed = seed &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
             return Int((seed >> 33) % UInt64(n))
         }
         func tree(_ depth: Int) -> AXNode {
@@ -192,18 +204,28 @@ import Testing
     // MARK: - focus
 
     static func sample() -> AXNode {
-        AXNode(role: "AXWindow", title: "主窗口", children: [
-            AXNode(role: "AXToolbar", children: [
-                AXNode(role: "AXButton", description: "返回"),
-                AXNode(role: "AXButton", description: "前进"),
-            ]),
-            AXNode(role: "AXScrollArea", children: [
-                AXNode(role: "AXOutline", description: "边栏", children: [
-                    AXNode(role: "AXRow", children: [AXNode(role: "AXStaticText", value: "边栏项目一")]),
-                    AXNode(role: "AXRow", children: [AXNode(role: "AXStaticText", identifier: "side-2", value: "项目二")]),
-                ])
-            ]),
-        ])
+        AXNode(
+            role: "AXWindow", title: "主窗口",
+            children: [
+                AXNode(
+                    role: "AXToolbar",
+                    children: [
+                        AXNode(role: "AXButton", description: "返回"),
+                        AXNode(role: "AXButton", description: "前进"),
+                    ]),
+                AXNode(
+                    role: "AXScrollArea",
+                    children: [
+                        AXNode(
+                            role: "AXOutline", description: "边栏",
+                            children: [
+                                AXNode(role: "AXRow", children: [AXNode(role: "AXStaticText", value: "边栏项目一")]),
+                                AXNode(
+                                    role: "AXRow",
+                                    children: [AXNode(role: "AXStaticText", identifier: "side-2", value: "项目二")]),
+                            ])
+                    ]),
+            ])
     }
 
     @Test func focusTextMatchesAnyFieldCaseInsensitivelyAndShowsAncestorPath() {
@@ -239,7 +261,9 @@ import Testing
     @Test func focusHandlesAgreeWithTheUnfocusedTable() {
         let full = ElementTable.render(Self.sample()).text
         let part = ElementTable.render(Self.sample(), focus: .init(text: "前进")).text
-        let handle = part.split(separator: "\n").last.flatMap { l in l.split(separator: "#").last?.split(separator: "]").first }
+        let handle = part.split(separator: "\n").last.flatMap { l in
+            l.split(separator: "#").last?.split(separator: "]").first
+        }
         #expect(handle != nil)
         #expect(full.contains("#\(handle ?? "")]") && full.contains("desc=\"前进\""))
     }
@@ -252,9 +276,13 @@ import Testing
     }
 
     @Test func focusSharesTheCapAcrossMatchesLevelFirst() {
-        let groups = AXNode(role: "AXWindow", children: (0..<3).map { i in
-            AXNode(role: "AXGroup", title: "g", children: (0..<10).map { _ in AXNode(role: "AXButton", title: "b\(i)") })
-        })
+        let groups = AXNode(
+            role: "AXWindow",
+            children: (0..<3).map { i in
+                AXNode(
+                    role: "AXGroup", title: "g",
+                    children: (0..<10).map { _ in AXNode(role: "AXButton", title: "b\(i)") })
+            })
         let r = ElementTable.render(groups, maxElements: 6, focus: .init(text: "g", role: "Group"))
         #expect(r.matches == 3 && r.scope == 33 && r.shown == 6)
         // 3 个子树根都显示（第 0 层先放满），其余配额按先序分给下一层。

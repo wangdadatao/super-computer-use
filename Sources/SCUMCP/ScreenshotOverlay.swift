@@ -2,9 +2,9 @@ import CoreGraphics
 import CoreText
 import Foundation
 import ImageIO
-import UniformTypeIdentifiers
 import SCUCore
 import SCUWire
+import UniformTypeIdentifiers
 
 /// 把快照标签画到窗口截图上。图像是辅助，文本元素表才是权威：
 /// 徽标太小、重叠或被裁掉时，模型仍应按 `get_ax_state` 的标签选择。
@@ -23,9 +23,10 @@ enum ScreenshotOverlay {
         guard width > 0, height > 0 else { return nil }
 
         let colorSpace = CGColorSpaceCreateDeviceRGB()
-        guard let context = CGContext(
-            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
-            space: colorSpace, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        guard
+            let context = CGContext(
+                data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+                space: colorSpace, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
         else {
             return nil
         }
@@ -62,10 +63,11 @@ enum ScreenshotOverlay {
 
         let fontSize = max(10, 11 * capture.scale)
         let font = CTFontCreateWithName("Menlo-Bold" as CFString, fontSize, nil)
-        let attributes = [
-            kCTFontAttributeName: font,
-            kCTForegroundColorAttributeName: CGColor(red: 1, green: 1, blue: 1, alpha: 1),
-        ] as CFDictionary
+        let attributes =
+            [
+                kCTFontAttributeName: font,
+                kCTForegroundColorAttributeName: CGColor(red: 1, green: 1, blue: 1, alpha: 1),
+            ] as CFDictionary
         guard let attributed = CFAttributedStringCreate(nil, text as CFString, attributes) else { return }
         let line = CTLineCreateWithAttributedString(attributed)
         var ascent: CGFloat = 0
@@ -91,8 +93,9 @@ enum ScreenshotOverlay {
 
     static func encodePNG(_ image: CGImage) -> Data? {
         let data = NSMutableData()
-        guard let destination = CGImageDestinationCreateWithData(
-            data as CFMutableData, UTType.png.identifier as CFString, 1, nil)
+        guard
+            let destination = CGImageDestinationCreateWithData(
+                data as CFMutableData, UTType.png.identifier as CFString, 1, nil)
         else {
             return nil
         }

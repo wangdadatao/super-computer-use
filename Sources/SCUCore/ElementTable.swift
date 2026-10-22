@@ -229,7 +229,9 @@ public enum ElementTable {
             let base = entries[r].depth
             for j in r..<(r + entries[r].size) {
                 let d = entries[j].depth - base
-                if d >= perLevel.count { perLevel.append(contentsOf: Array(repeating: 0, count: d - perLevel.count + 1)) }
+                if d >= perLevel.count {
+                    perLevel.append(contentsOf: Array(repeating: 0, count: d - perLevel.count + 1))
+                }
                 perLevel[d] += 1
             }
         }

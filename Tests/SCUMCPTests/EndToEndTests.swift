@@ -35,7 +35,9 @@ import Testing
         if let tmpdir { env["TMPDIR"] = tmpdir }
         for (k, v) in extra { env[k] = v }
         p.environment = env
-        let stdin = Pipe(), stdout = Pipe(), stderr = Pipe()
+        let stdin = Pipe()
+        let stdout = Pipe()
+        let stderr = Pipe()
         p.standardInput = stdin
         p.standardOutput = stdout
         p.standardError = stderr
@@ -59,12 +61,13 @@ import Testing
         try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tmp) }
 
-        let r = try Self.run([
-            #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"0"}}}"#,
-            #"{"jsonrpc":"2.0","method":"notifications/initialized"}"#,
-            #"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#,
-            #"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"list_apps","arguments":{}}}"#,
-        ], tmpdir: tmp.path + "/")
+        let r = try Self.run(
+            [
+                #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"0"}}}"#,
+                #"{"jsonrpc":"2.0","method":"notifications/initialized"}"#,
+                #"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#,
+                #"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"list_apps","arguments":{}}}"#,
+            ], tmpdir: tmp.path + "/")
 
         #expect(r.status == 0, "stderr：\(r.stderr)")
         // stdout 只允许协议消息：每一行都必须是合法 JSON-RPC 应答。
@@ -93,7 +96,8 @@ import Testing
         #expect(actions.status == 0)
         #expect(actions.lines.count == 1 && actions.lines[0].contains("\"click\""))
         // 没有开启时直接调用也不可用。
-        let call = #"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"click","arguments":{"token":"x","handle":1}}}"#
+        let call =
+            #"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"click","arguments":{"token":"x","handle":1}}}"#
         let denied = try Self.run([call])
         #expect(JSONValue.parse(denied.lines.first ?? "")?["error"]?["code"] == .int(-32602))
     }
@@ -117,10 +121,11 @@ import Testing
         try "#!/bin/sh\ntouch '\(marker)'\nsleep 1\n".write(to: fake, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fake.path)
 
-        let r = try Self.run([
-            #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}"#,
-            #"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#,
-        ], env: ["SCU_NATIVE": fake.path])
+        let r = try Self.run(
+            [
+                #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}"#,
+                #"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#,
+            ], env: ["SCU_NATIVE": fake.path])
         #expect(r.status == 0)
         #expect(r.lines.count == 2)
         #expect(!FileManager.default.fileExists(atPath: marker), "只读协议请求不应拉起原生进程")
@@ -137,9 +142,10 @@ import Testing
         try "#!/bin/sh\necho \"$2\" > '\(record)'\nsleep 1\n".write(to: fake, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fake.path)
 
-        let r = try Self.run([
-            #"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_apps"}}"#,
-        ], tmpdir: dir.path + "/", env: ["SCU_NATIVE": fake.path])
+        let r = try Self.run(
+            [
+                #"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_apps"}}"#
+            ], tmpdir: dir.path + "/", env: ["SCU_NATIVE": fake.path])
         #expect(r.status == 0)
         let socket = try String(contentsOfFile: record, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
         #expect(socket.hasPrefix(dir.path + "/scu-"), "socket 路径：\(socket)")

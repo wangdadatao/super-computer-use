@@ -21,9 +21,10 @@ enum Mouse {
             throw WireError.actionFailed("无法创建滚轮事件源")
         }
         // wheel1 的正方向是向上；对外约定 dy > 0 表示向下滚。
-        guard let event = CGEvent(
-            scrollWheelEvent2Source: source, units: .pixel, wheelCount: 2,
-            wheel1: Int32(-dy.rounded()), wheel2: Int32(-dx.rounded()), wheel3: 0)
+        guard
+            let event = CGEvent(
+                scrollWheelEvent2Source: source, units: .pixel, wheelCount: 2,
+                wheel1: Int32(-dy.rounded()), wheel2: Int32(-dx.rounded()), wheel3: 0)
         else {
             throw WireError.actionFailed("无法创建滚轮事件")
         }

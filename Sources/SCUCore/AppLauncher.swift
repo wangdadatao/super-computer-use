@@ -105,12 +105,14 @@ public struct WorkspaceAppLauncher: AppLauncher {
     private func info(for url: URL) -> AppInfo {
         let bundle = Bundle(url: url)
         let bundleId = bundle?.bundleIdentifier
-        let name = (bundle?.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String)
+        let name =
+            (bundle?.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String)
             ?? (bundle?.object(forInfoDictionaryKey: "CFBundleName") as? String)
             ?? url.deletingPathExtension().lastPathComponent
-        let running = bundleId.flatMap { id in
-            NSRunningApplication.runningApplications(withBundleIdentifier: id).first
-        } ?? NSWorkspace.shared.runningApplications.first { $0.localizedName == name }
+        let running =
+            bundleId.flatMap { id in
+                NSRunningApplication.runningApplications(withBundleIdentifier: id).first
+            } ?? NSWorkspace.shared.runningApplications.first { $0.localizedName == name }
         return AppInfo(pid: running?.processIdentifier ?? 0, name: name, bundleId: bundleId)
     }
 

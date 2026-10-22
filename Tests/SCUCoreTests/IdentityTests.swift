@@ -70,7 +70,9 @@ import Testing
     @Test func ordinalCountsOnlySameRoleSiblings() {
         // 插入一个不同 role 的兄弟，不应改变既有 Button 的 K4。
         let a = Self.win([AXNode(role: "AXButton", title: "X"), AXNode(role: "AXButton", title: "X")])
-        let b = Self.win([AXNode(role: "AXStaticText"), AXNode(role: "AXButton", title: "X"), AXNode(role: "AXButton", title: "X")])
+        let b = Self.win([
+            AXNode(role: "AXStaticText"), AXNode(role: "AXButton", title: "X"), AXNode(role: "AXButton", title: "X"),
+        ])
         let ka = IdentityAnalyzer.analyze(a).first { $0.path == [1] }!.matchKey
         let kb = IdentityAnalyzer.analyze(b).first { $0.path == [2] }!.matchKey
         #expect(ka == kb)
@@ -80,7 +82,7 @@ import Testing
         // 确定性伪随机树：重复的 role/title 很多，逼出碰撞。
         var seed: UInt64 = 0x9E37_79B9_7F4A_7C15
         func next(_ n: Int) -> Int {
-            seed = seed &* 6364136223846793005 &+ 1442695040888963407
+            seed = seed &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
             return Int((seed >> 33) % UInt64(n))
         }
         func tree(depth: Int) -> AXNode {
@@ -108,15 +110,25 @@ import Testing
     }
 
     @Test func menuBarElementsAreCountedSeparatelyFromWindowControls() {
-        let menuBar = AXNode(role: "AXMenuBar", children: [
-            AXNode(role: "AXMenuBarItem", title: "文件", children: [
-                AXNode(role: "AXMenu", children: [AXNode(role: "AXMenuItem", title: "新建"), AXNode(role: "AXMenuItem", title: "新建")]),
-            ]),
-        ])
-        let app = AXNode(role: "AXApplication", children: [menuBar, AXNode(role: "AXWindow", children: [AXNode(role: "AXButton", title: "OK")])])
+        let menuBar = AXNode(
+            role: "AXMenuBar",
+            children: [
+                AXNode(
+                    role: "AXMenuBarItem", title: "文件",
+                    children: [
+                        AXNode(
+                            role: "AXMenu",
+                            children: [
+                                AXNode(role: "AXMenuItem", title: "新建"), AXNode(role: "AXMenuItem", title: "新建"),
+                            ])
+                    ])
+            ])
+        let app = AXNode(
+            role: "AXApplication",
+            children: [menuBar, AXNode(role: "AXWindow", children: [AXNode(role: "AXButton", title: "OK")])])
         let ids = IdentityAnalyzer.analyze(app)
         #expect(ids.filter(\.isInteractive).map(\.role) == ["AXButton"])  // 菜单项不计入
-        #expect(ids.filter(\.inMenuBar).count == 5)                        // 菜单栏子树整体另计
+        #expect(ids.filter(\.inMenuBar).count == 5)  // 菜单栏子树整体另计
         let r = IdentityAnalyzer.report(app)
         #expect(r.interactive.total == 1)
         #expect(r.menuBar.total == 5)

@@ -72,8 +72,9 @@ import Testing
         let chain = ProcessAncestry.chain(from: getpid())
         #expect(chain.first == getpid())
         if getppid() > 1 { #expect(chain.contains(getppid())) }
-        #expect(PolicyGate.forCurrentProcess().evaluate(pid: getpid(), bundleId: nil)
-            == .deny(category: PolicyGate.hostCategoryId))
+        #expect(
+            PolicyGate.forCurrentProcess().evaluate(pid: getpid(), bundleId: nil)
+                == .deny(category: PolicyGate.hostCategoryId))
     }
 
     // MARK: - 会话中的策略

@@ -12,8 +12,16 @@ import Testing
         private let lock = NSLock()
         private var _error: Error?
         var error: Error? {
-            get { lock.lock(); defer { lock.unlock() }; return _error }
-            set { lock.lock(); defer { lock.unlock() }; _error = newValue }
+            get {
+                lock.lock()
+                defer { lock.unlock() }
+                return _error
+            }
+            set {
+                lock.lock()
+                defer { lock.unlock() }
+                _error = newValue
+            }
         }
     }
 
@@ -45,7 +53,10 @@ import Testing
         }
         var fd: Int32?
         for _ in 0..<100 {
-            if let c = try? UnixSocket.connect(to: path) { fd = c; break }
+            if let c = try? UnixSocket.connect(to: path) {
+                fd = c
+                break
+            }
             usleep(20_000)
         }
         guard let fd else { throw TransportError.timeout }
@@ -121,12 +132,17 @@ import Testing
         defer { r.finish() }
         try Self.handshake(r)
         try Frame.write(
-            RequestFrame(id: 2, request: .dumpTree(pid: 1, windowTitle: nil, maxDepth: scuMaxTreeDepth + 1, budgetMs: 1000)), to: r.fd)
+            RequestFrame(
+                id: 2, request: .dumpTree(pid: 1, windowTitle: nil, maxDepth: scuMaxTreeDepth + 1, budgetMs: 1000)),
+            to: r.fd)
         try Self.expectFailure(r, code: "internal_error")
         // 越界参数是单次请求的错误，连接仍可用。
         try Frame.write(RequestFrame(id: 3, request: .checkPermissions), to: r.fd)
         let reply = try Frame.read(ResponseFrame.self, from: r.fd)
-        guard case .permissions = reply.response else { Issue.record("连接应仍可用"); return }
+        guard case .permissions = reply.response else {
+            Issue.record("连接应仍可用")
+            return
+        }
     }
 
     @Test func budgetOutsideRangeIsRejected() throws {
@@ -134,7 +150,8 @@ import Testing
         defer { r.finish() }
         try Self.handshake(r)
         for bad in [0, scuTreeBudgetMsRange.upperBound + 1] {
-            try Frame.write(RequestFrame(id: 2, request: .dumpTree(pid: 1, windowTitle: nil, maxDepth: 1, budgetMs: bad)), to: r.fd)
+            try Frame.write(
+                RequestFrame(id: 2, request: .dumpTree(pid: 1, windowTitle: nil, maxDepth: 1, budgetMs: bad)), to: r.fd)
             try Self.expectFailure(r, code: "internal_error")
         }
     }
@@ -301,14 +318,17 @@ import Testing
 
     static func locator(toThirdOfMain ok2: Node) -> ElementLocator {
         ElementLocator(
-            path: [PathStep(index: 0, siblings: 2, role: "AXWindow"), PathStep(index: 2, siblings: 3, role: "AXButton")],
+            path: [
+                PathStep(index: 0, siblings: 2, role: "AXWindow"), PathStep(index: 2, siblings: 3, role: "AXButton"),
+            ],
             target: ok2.key)
     }
 
     @Test func matchingLocatorFindsTheTarget() {
         let t = Self.build()
         guard case .found(let n) = Self.locate(t.root, Self.locator(toThirdOfMain: t.ok2)) else {
-            Issue.record("应找到"); return
+            Issue.record("应找到")
+            return
         }
         #expect(n === t.ok2)
     }
@@ -316,7 +336,10 @@ import Testing
     @Test func emptyPathTargetsTheRootItself() {
         let t = Self.build()
         let l = ElementLocator(path: [], target: t.root.key)
-        guard case .found(let n) = Self.locate(t.root, l) else { Issue.record("应找到"); return }
+        guard case .found(let n) = Self.locate(t.root, l) else {
+            Issue.record("应找到")
+            return
+        }
         #expect(n === t.root)
         let wrong = ElementLocator(path: [], target: TargetKey(role: "AXWindow"))
         #expect(Self.locate(t.root, wrong).staleDetail?.reason == .target)
@@ -405,11 +428,14 @@ import Testing
         try ServerProtocolTests.handshake(r)
         let bad = ElementLocator(
             path: [PathStep(index: 9, siblings: 2, role: "AXWindow")], target: TargetKey(role: "AXButton"))
-        try Frame.write(RequestFrame(id: 2, request: .performAction(pid: 1, windowTitle: nil, locator: bad, action: .verify)), to: r.fd)
+        try Frame.write(
+            RequestFrame(id: 2, request: .performAction(pid: 1, windowTitle: nil, locator: bad, action: .verify)),
+            to: r.fd)
         try ServerProtocolTests.expectFailure(r, code: "internal_error")
         try Frame.write(RequestFrame(id: 3, request: .checkPermissions), to: r.fd)
         guard case .permissions = try Frame.read(ResponseFrame.self, from: r.fd).response else {
-            Issue.record("连接应仍可用"); return
+            Issue.record("连接应仍可用")
+            return
         }
     }
 
@@ -421,7 +447,10 @@ import Testing
         // 取第一个有子节点的一级子节点（菜单栏），定位到它的第一个子节点。
         guard let top = tree.children.firstIndex(where: { !$0.children.isEmpty }),
             let count = tree.childCount, let topCount = tree.children[top].childCount
-        else { Issue.record("访达树没有可用的二级节点"); return }
+        else {
+            Issue.record("访达树没有可用的二级节点")
+            return
+        }
         let target = tree.children[top].children[0]
         let loc = ElementLocator(
             path: [
@@ -429,18 +458,29 @@ import Testing
                 PathStep(index: 0, siblings: topCount, role: target.role),
             ],
             target: TargetKey(target))
-        #expect(try AXBackend.performAction(pid: finder.pid, windowTitle: nil, locator: loc, action: .verify) == .located)
+        #expect(
+            try AXBackend.performAction(pid: finder.pid, windowTitle: nil, locator: loc, action: .verify) == .located)
 
         var tampered = loc
         tampered.path[0].siblings += 1
-        guard case .stale(let d) = try AXBackend.performAction(pid: finder.pid, windowTitle: nil, locator: tampered, action: .verify)
-        else { Issue.record("子节点数被改动，应判失效"); return }
+        guard
+            case .stale(let d) = try AXBackend.performAction(
+                pid: finder.pid, windowTitle: nil, locator: tampered, action: .verify)
+        else {
+            Issue.record("子节点数被改动，应判失效")
+            return
+        }
         #expect(d.reason == .childCount && d.step == 0)
 
         tampered = loc
         tampered.target.title = "不存在的标题"
-        guard case .stale(let d2) = try AXBackend.performAction(pid: finder.pid, windowTitle: nil, locator: tampered, action: .verify)
-        else { Issue.record("核对键被改动，应判失效"); return }
+        guard
+            case .stale(let d2) = try AXBackend.performAction(
+                pid: finder.pid, windowTitle: nil, locator: tampered, action: .verify)
+        else {
+            Issue.record("核对键被改动，应判失效")
+            return
+        }
         #expect(d2.reason == .target)
     }
 }

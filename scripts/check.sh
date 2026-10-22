@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 提交前统一检查：文档、构建、测试、命令行与 MCP 冒烟（含 SIGKILL 后的回收）。前面任一步失败则冒烟不再执行。
+# 提交前统一检查：文档、格式、构建、测试、命令行与 MCP 冒烟（含 SIGKILL 后的回收）。前面任一步失败则冒烟不再执行。
 # 真实应用测试需要宿主有辅助功能权限；没有权限时本脚本失败并提示，显式设置 SCU_SKIP_LIVE=1 才会跳过这些测试。
 #
 # 用法：scripts/check.sh
@@ -14,14 +14,17 @@ cd "$(dirname "$0")/.."
 fail=0
 step() { echo; echo "━━ $1 ━━"; }
 
-step "1/4 文档与代码锚点"
+step "1/5 文档与代码锚点"
 scripts/check_docs.sh || fail=1
 
-step "2/4 构建"
+step "2/5 代码格式"
+scripts/format.sh --check || fail=1
+
+step "3/5 构建"
 swift build 2>&1 | tail -3
 [ "${PIPESTATUS[0]}" -eq 0 ] || fail=1
 
-step "3/4 测试"
+step "4/5 测试"
 # 真实应用测试（夹具、访达）需要宿主有辅助功能权限。没有权限时在这里就说清楚，而不是让十几个测试各自失败。
 if [ -z "${SCU_SKIP_LIVE:-}" ]; then
   "$(swift build --show-bin-path)/scu" permissions >/dev/null 2>&1
@@ -38,10 +41,14 @@ swift test 2>&1 | grep -E "✘|error:|Test run with" | tail -20
 [ "${PIPESTATUS[0]}" -eq 0 ] || fail=1
 
 # 冒烟：失败路径也必须清理临时目录（回归：失败路径曾经调用 exit() 绕过清理）。
-step "4/4 命令行与 MCP 冒烟（失败路径、被杀路径都不泄漏临时目录）"
+step "5/5 命令行与 MCP 冒烟（帮助、退出码、失败路径、被杀路径都不泄漏临时目录）"
 if [ "$fail" -eq 0 ]; then
   bin="$(swift build --show-bin-path)/scu"
   tmp="$(mktemp -d /tmp/scu-smoke.XXXXXX)"
+  "$bin" --help >/dev/null 2>&1                       # 帮助，退出码 0
+  rc_help=$?
+  "$bin" --version 2>/dev/null | grep -q "^scu "      # 版本号，stdout 一行
+  rc_version=$?
   TMPDIR="$tmp/" "$bin" dump >/dev/null 2>&1          # 用法错误，退出码 64
   rc1=$?
   TMPDIR="$tmp/" "$bin" dump --pid 1 --depth 999 >/dev/null 2>&1   # 深度越界，退出码 64
@@ -50,14 +57,17 @@ if [ "$fail" -eq 0 ]; then
   rc3=$?
   leaked="$(ls "$tmp" | wc -l | tr -d ' ')"
   rm -rf "$tmp"
-  if [ "$rc1" -ne 64 ] || [ "$rc2" -ne 64 ] || { [ "$rc3" -ne 0 ] && [ "$rc3" -ne 2 ]; }; then
+  if [ "$rc_help" -ne 0 ] || [ "$rc_version" -ne 0 ]; then
+    echo "   ❌ --help/--version 失败：help=${rc_help} version=${rc_version}"
+    fail=1
+  elif [ "$rc1" -ne 64 ] || [ "$rc2" -ne 64 ] || { [ "$rc3" -ne 0 ] && [ "$rc3" -ne 2 ]; }; then
     echo "   ❌ 退出码不符：dump=${rc1} depth=${rc2} permissions=${rc3}"
     fail=1
   elif [ "$leaked" -ne 0 ]; then
     echo "   ❌ 泄漏 ${leaked} 个临时目录"
     fail=1
   else
-    echo "   ✅ 退出码符合预期，无泄漏（permissions 退出码 ${rc3}）"
+    echo "   ✅ help/version、退出码符合预期，无泄漏（permissions 退出码 ${rc3}）"
   fi
 else
   echo "   跳过（前面的步骤已失败）"

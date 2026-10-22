@@ -35,8 +35,9 @@ import UniformTypeIdentifiers
     }
 
     @Test func mismatchedSizesAreNotComparable() {
-        #expect(ScreenshotDiff.changedRatio(
-            before: Self.png((1, 1, 1), width: 10, height: 10),
-            after: Self.png((1, 1, 1), width: 20, height: 20)) == nil)
+        #expect(
+            ScreenshotDiff.changedRatio(
+                before: Self.png((1, 1, 1), width: 10, height: 10),
+                after: Self.png((1, 1, 1), width: 20, height: 20)) == nil)
     }
 }
