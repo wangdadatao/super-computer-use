@@ -144,7 +144,7 @@ B 组额外需要屏幕录制权限。
 
 - 令牌有效时执行动作 → 应成功，不误报失效
 - 界面变化后使用旧令牌 → 应拒绝，且分类为「树变化」
-- 窗口移动后使用旧坐标令牌 → 应拒绝，且分类为「窗口变化」（**未实现**：当前没有几何预检，见 [ADR-0021 追加记录](../decisions/adr_0021_scroll_and_drag.md)）
+- 窗口移动后使用旧坐标令牌 → 动作前复核绑定窗口几何，拒绝并分类为「窗口变化」（已实现，见 [ADR-0021 追加记录](../decisions/adr_0021_scroll_and_drag.md)）
 - 切换目标后使用旧令牌 → 应拒绝，且分类为「目标切换」
 - 重复使用同一失效令牌 → **每次都拒绝**，失效迁移只记一次（[ADR-0015](../decisions/adr_0015_handle_resolution_by_path.md) §4）
 
@@ -251,8 +251,9 @@ verification/
 浏览器操作面当前没有实现，也没有测试夹具；`list_windows`/`get_ax_state(window=)` 只验证了“把浏览器当窗口读”，不代表页面标签页或 DOM 自动化。规划见[操作面模型](../architecture/surface_model.md)。
 访达内联重命名仍无法定位（AX 树没有重命名输入框），先记为缺口，不引入隐式焦点写入；
 坐标动作前的指示环靠人工观察，不能截图验证；
-其他真实应用未验证；窗口移动后的截图过期判断**未实现**（动作前不校验几何，只事后报
-`geometryChanged`），见 [MCP 接入面](../interfaces/mcp_surface.md#click_tool)；TextEdit 两窗口的 `set_value`/`type_text` 隔离已复测。
+其他真实应用未验证；窗口移动后的截图过期判断已在动作前用绑定窗口的几何复核，变化时返回
+`stale_geometry`（见 [MCP 接入面](../interfaces/mcp_surface.md#click_tool)）；同名窗口仍可能因标题相同而选错。
+TextEdit 两窗口的 `set_value`/`type_text` 隔离已复测。
 权限按宿主归属，不是机器级事实（见 [macOS 权限](permissions.md)）：
 2026-10-18 的验证是在 Cursor 的 agent 会话里跑的，该宿主当时已授予辅助功能；换一个宿主要先用 `scu permissions` 确认。
 没有权限的宿主上，`scripts/check.sh` 会失败并提示；显式设置 `SCU_SKIP_LIVE=1` 才会跳过夹具与访达上的真实应用测试

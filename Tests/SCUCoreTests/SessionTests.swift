@@ -23,6 +23,9 @@ final class ScriptedReader: DesktopReader {
     var action: Result<ActionOutcome, WireError> = .success(.acted)
     private(set) var actionCalls: [(pid: Int32, locator: ElementLocator, action: ActionKind)] = []
     private(set) var actionWindowTitles: [String?] = []
+    private(set) var coordinateClicks: [(pid: Int32, windowTitle: String?, x: Double, y: Double)] = []
+    /// 非 nil 时坐标动作直接抛出，用来模拟“请求已写出但结果未知”。
+    var coordinateError: WireError?
     private(set) var typed: [(pid: Int32, locator: ElementLocator, text: String)] = []
     private(set) var pressed: [(pid: Int32, locator: ElementLocator, key: String)] = []
     private(set) var written: [(pid: Int32, locator: ElementLocator, value: String)] = []
@@ -49,6 +52,12 @@ final class ScriptedReader: DesktopReader {
     func captureWindow(pid: Int32, windowTitle: String?) throws -> WindowCapture {
         captureTitles.append(windowTitle)
         return try capture.get()
+    }
+
+    func clickAt(pid: Int32, windowTitle: String?, x: Double, y: Double) throws -> ActionOutcome {
+        coordinateClicks.append((pid, windowTitle, x, y))
+        if let coordinateError { throw coordinateError }
+        return .acted
     }
     func performAction(
         pid: Int32, windowTitle: String?, locator: ElementLocator, action kind: ActionKind
@@ -244,8 +253,6 @@ final class FakeLauncher: AppLauncher, @unchecked Sendable {
 
     // MARK: - 令牌未知
 
-
-
     // MARK: - 差异渲染
 
     @Test func secondReadReportsNoChange() throws {
@@ -300,9 +307,10 @@ final class FakeLauncher: AppLauncher, @unchecked Sendable {
 
     @Test func changingTheSelectedWindowIssuesANewTokenAndStalesTheOldOne() throws {
         let (s, r) = session()
-        r.capture = .success(WindowCapture(
-            png: Data([0x89, 0x50]), width: 80, height: 20, scale: 1,
-            windowFrame: Rect(x: 0, y: 0, width: 80, height: 20), windowTitle: "A"))
+        r.capture = .success(
+            WindowCapture(
+                png: Data([0x89, 0x50]), width: 80, height: 20, scale: 1,
+                windowFrame: Rect(x: 0, y: 0, width: 80, height: 20), windowTitle: "A"))
         let a = try s.readState(pid: 10, maxDepth: 12, budgetMs: 1000, windowTitle: "A")
         let b = try s.readState(pid: 10, maxDepth: 12, budgetMs: 1000, windowTitle: "A")
         #expect(a.token == b.token && b.reused)
@@ -321,6 +329,149 @@ final class FakeLauncher: AppLauncher, @unchecked Sendable {
 
         _ = try s.captureScreenshot(token: c.token.value)
         #expect(r.captureTitles == ["B"])
+    }
+
+    @Test func screenshotBindsTheActuallyCapturedWindowWhenTheTokenHasNone() throws {
+        let (s, r) = session()
+        let inside = AXNode(
+            role: "AXButton", title: "内", frame: Rect(x: 0, y: 0, width: 80, height: 20))
+        let actual = AXNode(
+            role: "AXWindow", title: "实际", frame: Rect(x: 0, y: 0, width: 80, height: 20),
+            childCount: 1, children: [inside])
+        let other = AXNode(
+            role: "AXWindow", title: "其他", frame: Rect(x: 200, y: 0, width: 80, height: 20))
+        r.tree = TreeReading(
+            root: AXNode(role: "AXApplication", childCount: 2, children: [actual, other]),
+            truncated: false)
+        // 令牌没有绑定窗口（默认窗口），原生层选中的是「实际」窗口。
+        let a = try read(s)
+        #expect(a.windowTitle == nil)
+        r.capture = .success(
+            WindowCapture(
+                png: Data([0x89, 0x50]), width: 80, height: 20, scale: 1,
+                windowFrame: Rect(x: 0, y: 0, width: 80, height: 20), windowTitle: "实际"))
+        let shot = try s.captureScreenshot(token: a.token.value)
+
+        let report = try s.clickAt(token: a.token.value, screenshotID: shot.id, x: 10, y: 10)
+        #expect(r.coordinateClicks.count == 1)
+        #expect(r.coordinateClicks[0].windowTitle == "实际")
+        // 观察仍在令牌的应用根上读取，避免把 nil 换成实际标题后每次都签发新令牌；
+        // 变化比较限定到绑定窗口，因此结构没变时不能报 treeChanged=true。
+        #expect(r.readWindowTitles.allSatisfy { $0 == nil })
+        #expect(report.treeChanged == false)
+        #expect(report.tokenInvalidated == false)
+    }
+
+    @Test func coordinateObservationIgnoresChangesInOtherWindows() throws {
+        let (s, r) = session()
+        let inside = AXNode(
+            role: "AXButton", title: "内", frame: Rect(x: 0, y: 0, width: 80, height: 20))
+        let actual = AXNode(
+            role: "AXWindow", title: "实际", frame: Rect(x: 0, y: 0, width: 80, height: 20),
+            childCount: 1, children: [inside])
+        let oldOtherButton = AXNode(
+            role: "AXButton", title: "旧", frame: Rect(x: 200, y: 0, width: 80, height: 20))
+        let other = AXNode(
+            role: "AXWindow", title: "其他", frame: Rect(x: 200, y: 0, width: 80, height: 20),
+            childCount: 1, children: [oldOtherButton])
+        r.tree = TreeReading(
+            root: AXNode(role: "AXApplication", childCount: 2, children: [actual, other]),
+            truncated: false)
+        let a = try read(s)
+        r.capture = .success(
+            WindowCapture(
+                png: Data([0x89, 0x50]), width: 80, height: 20, scale: 1,
+                windowFrame: Rect(x: 0, y: 0, width: 80, height: 20), windowTitle: "实际"))
+        let shot = try s.captureScreenshot(token: a.token.value)
+
+        // 只改另一个窗口；截图绑定的「实际」窗口结构不变。
+        let newOtherButton = AXNode(
+            role: "AXButton", title: "新", frame: Rect(x: 200, y: 0, width: 80, height: 20))
+        let changedOther = AXNode(
+            role: "AXWindow", title: "其他", frame: Rect(x: 200, y: 0, width: 80, height: 20),
+            childCount: 1, children: [newOtherButton])
+        r.tree = TreeReading(
+            root: AXNode(role: "AXApplication", childCount: 2, children: [actual, changedOther]),
+            truncated: false)
+
+        let report = try s.clickAt(token: a.token.value, screenshotID: shot.id, x: 10, y: 10)
+        // 全局结构变了，令牌会失效；但这次动作的效果仍应按绑定窗口判为“没变化”。
+        #expect(report.treeChanged == false)
+        #expect(report.tokenInvalidated == true)
+    }
+
+    @Test func screenshotLabelsAreClippedToTheCapturedWindow() throws {
+        let (s, r) = session()
+        let inside = AXNode(role: "AXButton", title: "内", frame: Rect(x: 0, y: 0, width: 80, height: 20))
+        let outside = AXNode(role: "AXButton", title: "外", frame: Rect(x: 300, y: 0, width: 80, height: 20))
+        let window = AXNode(role: "AXWindow", title: "主", childCount: 2, children: [inside, outside])
+        r.tree = TreeReading(
+            root: AXNode(role: "AXApplication", childCount: 1, children: [window]), truncated: false)
+        let a = try read(s)
+        r.capture = .success(
+            WindowCapture(
+                png: Data([0x89, 0x50]), width: 80, height: 20, scale: 1,
+                windowFrame: Rect(x: 0, y: 0, width: 100, height: 20), windowTitle: "主"))
+        let shot = try s.captureScreenshot(token: a.token.value)
+        #expect(shot.labels.map(\.title) == ["内"])
+    }
+
+    @Test func coordinateActionRejectsAWindowThatMovedAfterScreenshot() throws {
+        let (s, r) = session()
+        let a = try read(s)
+        r.capture = .success(
+            WindowCapture(
+                png: Data([0x89, 0x50]), width: 80, height: 20, scale: 1,
+                windowFrame: Rect(x: 0, y: 0, width: 80, height: 20), windowTitle: "主"))
+        let shot = try s.captureScreenshot(token: a.token.value)
+        r.capture = .success(
+            WindowCapture(
+                png: Data([0x89, 0x50]), width: 80, height: 20, scale: 1,
+                windowFrame: Rect(x: 20, y: 0, width: 80, height: 20), windowTitle: "主"))
+
+        expectError("stale_geometry", retry: "after_refresh") {
+            _ = try s.clickAt(token: a.token.value, screenshotID: shot.id, x: 10, y: 10)
+        }
+        #expect(r.coordinateClicks.isEmpty)
+    }
+
+    @Test func actionOutcomeUnknownInvalidatesTokenAndScreenshots() throws {
+        let (s, r) = session()
+        let a = try read(s)
+        r.capture = .success(
+            WindowCapture(
+                png: Data([0x89, 0x50]), width: 80, height: 20, scale: 1,
+                windowFrame: Rect(x: 0, y: 0, width: 80, height: 20), windowTitle: "主"))
+        let shot = try s.captureScreenshot(token: a.token.value)
+        r.action = .failure(.actionOutcomeUnknown("模拟动作已写出但无应答"))
+
+        expectError("action_outcome_unknown", retry: "after_refresh") {
+            _ = try s.click(token: a.token.value, handle: 3)
+        }
+        #expect(s.screenshotBindings[shot.id] == nil)
+        expectError("stale_snapshot", retry: "after_refresh") {
+            _ = try s.click(token: a.token.value, handle: 3)
+        }
+        #expect(r.actionCalls.count == 1)
+    }
+
+    @Test func coordinateOutcomeUnknownInvalidatesTokenAndScreenshots() throws {
+        let (s, r) = session()
+        let a = try read(s)
+        r.capture = .success(
+            WindowCapture(
+                png: Data([0x89, 0x50]), width: 80, height: 20, scale: 1,
+                windowFrame: Rect(x: 0, y: 0, width: 80, height: 20), windowTitle: "主"))
+        let shot = try s.captureScreenshot(token: a.token.value)
+        r.coordinateError = .actionOutcomeUnknown("模拟坐标动作已写出但无应答")
+
+        expectError("action_outcome_unknown", retry: "after_refresh") {
+            _ = try s.clickAt(token: a.token.value, screenshotID: shot.id, x: 10, y: 10)
+        }
+        #expect(s.screenshotBindings[shot.id] == nil)
+        expectError("stale_snapshot", retry: "after_refresh") {
+            _ = try s.clickAt(token: a.token.value, screenshotID: shot.id, x: 10, y: 10)
+        }
     }
 
     // MARK: - 连接级应用授权
@@ -356,9 +507,10 @@ final class FakeLauncher: AppLauncher, @unchecked Sendable {
             reader: r,
             appAuthorization: AppAuthorization(mode: .allowlist, bundleIds: ["com.example.demo"]))
         let windows = try s.listWindows(pid: 10)
-        #expect(windows == [
-            WindowInfo(title: "主", frame: Rect(x: 0, y: 0, width: 100, height: 80))
-        ])
+        #expect(
+            windows == [
+                WindowInfo(title: "主", frame: Rect(x: 0, y: 0, width: 100, height: 80))
+            ])
         #expect(r.listWindowsCalls == [10])
     }
 
@@ -382,7 +534,6 @@ final class FakeLauncher: AppLauncher, @unchecked Sendable {
         }
         #expect(r.actionCalls.isEmpty)
     }
-
 
     @Test func launchAppChecksTheConnectionAllowlistBeforeLaunching() throws {
         let launcher = FakeLauncher()

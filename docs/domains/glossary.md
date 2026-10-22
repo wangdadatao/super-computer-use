@@ -79,8 +79,9 @@ K1 显式标识符 / K2 role + title + 祖先路径 / K3 role + 祖先路径 / K
 **坐标令牌（coordinate token）**
 设计上的协议字段名为 `geometryToken`，标识截图几何基准的凭证。
 **当前实现不用这个字段**：v2 用 `get_screenshot` 返回的 `screenshot_id` 绑定截图与令牌，
-坐标动作必须同时给出令牌和 `screenshot_id`；截图最多保留 16 个。窗口移动后的过期判断**未实现**
-（动作前不校验几何，只事后报 `geometryChanged`），独立的 `geometryToken` 也没有实现。
+坐标动作必须同时给出令牌和 `screenshot_id`；截图最多保留 16 个。坐标动作前会重新取绑定窗口的几何，
+位置/缩放变化返回 `stale_geometry`；窗口标题仍是唯一跨进程标识，同名窗口的风险见
+[MCP 接入面](../interfaces/mcp_surface.md#click_tool)。独立的 `geometryToken` 没有实现。
 
 **失效（stale）**
 令牌不再可用。失效的动作请求会被拒绝，而不是执行。

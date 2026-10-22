@@ -1,0 +1,38 @@
+name: check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: build / tests / docs
+    # 必须用 macOS：SCUNative 依赖 ApplicationServices、ScreenCaptureKit 与 AppKit。
+    runs-on: macos-15
+    timeout-minutes: 20
+    env:
+      # GitHub 托管的 runner 无法给辅助功能授权，真实夹具测试在这里跳过；
+      # live 套件由维护者在已授权的机器上单独跑（见 docs/operations/testing.md）。
+      SCU_SKIP_LIVE: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Swift version
+        run: swift --version
+
+      - name: Build
+        run: swift build
+
+      - name: Tests (non-live)
+        run: swift test
+
+      - name: Docs structure and anchors
+        run: scripts/check_docs.sh

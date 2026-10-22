@@ -152,13 +152,20 @@ struct ToolReply: Equatable {
         guard case .array(let tools)? = r["result"]?["tools"] else { Issue.record("缺少 tools"); return }
         let names = tools.compactMap { $0["name"]?.stringValue }
         #expect(names == ["check_permissions", "list_apps", "list_windows", "get_ax_state", "get_screenshot"])
-        for t in tools {
-            // 只读档的核心承诺：没有任何工具会改变桌面状态。
+        for t in tools where t["name"]?.stringValue != "get_screenshot" {
+            // 严格只读的四个工具：没有任何副作用。
             #expect(t["annotations"]?["readOnlyHint"] == .bool(true))
             #expect(t["annotations"]?["destructiveHint"] == .bool(false))
             #expect(t["inputSchema"]?["type"]?.stringValue == "object")
             #expect(t["description"]?.stringValue?.isEmpty == false)
         }
+        let screenshot = tools.first { $0["name"]?.stringValue == "get_screenshot" }
+        // 截图不改内容，但会激活并 raise 窗口，不能声明为只读。
+        #expect(screenshot?["annotations"]?["readOnlyHint"] == .bool(false))
+        #expect(screenshot?["annotations"]?["destructiveHint"] == .bool(false))
+        #expect(screenshot?["annotations"]?["idempotentHint"] == .bool(false))
+        #expect(screenshot?["inputSchema"]?["type"]?.stringValue == "object")
+        #expect(screenshot?["description"]?.stringValue?.isEmpty == false)
         let ax = tools.first { $0["name"]?.stringValue == "get_ax_state" }
         #expect(ax?["inputSchema"]?["required"] == ["pid"])
     }

@@ -1,7 +1,9 @@
 # MCP 接入面（只读档与动作档）
 
 `scu mcp` 以 MCP stdio 服务运行，是接入层的第一个实现。**默认只读**：
-能读取应用与无障碍树，不能改变任何东西。**`scu mcp --actions` 额外暴露 `launch_app`、`click`、`click_at`、`scroll_at`、`drag`、`type_text`、`press_key`、`set_value`**（动作档）。
+能读取应用与无障碍树，不能点击、输入或改变应用内容；唯一可见副作用是 `get_screenshot`
+会把目标窗口激活并 raise（不修改内容）。这是有意保留的取舍（见
+[ADR-0019](../decisions/adr_0019_window_screenshot.md#addendum_2026_10_22)），不是漏标注。**`scu mcp --actions` 额外暴露 `launch_app`、`click`、`click_at`、`scroll_at`、`drag`、`type_text`、`press_key`、`set_value`**（动作档）。
 完整的会话 API 与 `js` 工具面是拟实施设计，见[协议总览](protocol_overview.md)。
 
 ## 导航
@@ -52,7 +54,8 @@ scu mcp --actions --allow-app-file ~/.config/scu/pi-apps.json
 ## 工具目录
 
 每个工具都带 `title` 与 `annotations`（含 `title`、`readOnlyHint`、`destructiveHint`、`idempotentHint`、`openWorldHint`）。
-只读工具五个：`check_permissions`、`list_apps`、`list_windows`、`get_ax_state`、`get_screenshot`，均为 `readOnlyHint: true`、`destructiveHint: false`、`idempotentHint: true`、`openWorldHint: false`；
+严格只读工具四个：`check_permissions`、`list_apps`、`list_windows`、`get_ax_state`，均为 `readOnlyHint: true`、`destructiveHint: false`、`idempotentHint: true`、`openWorldHint: false`。
+`get_screenshot` 在只读档可用，但**不修改内容、会激活并 raise 目标窗口**，因此如实声明 `readOnlyHint: false`、`destructiveHint: false`、`idempotentHint: false`、`openWorldHint: false`；它不是动作工具。
 动作工具（仅 `--actions`）如实声明 `readOnlyHint: false`、`destructiveHint: true`、`idempotentHint: false`、`openWorldHint: true`。
 
 | 工具 | 参数 | 作用 |
@@ -61,7 +64,7 @@ scu mcp --actions --allow-app-file ~/.config/scu/pi-apps.json
 | `list_apps` | 无 | 每行 `pid<TAB>名称<TAB>bundle id`（无 bundle id 时为 `-`） |
 | `list_windows` | `pid`（必填） | 每行 `"标题"<TAB>(x,y,w,h)`；标题缺失为 `-`。只枚举窗口，不激活、不截图 |
 | `get_ax_state` | `pid`（必填）、`max_depth`、`budget_ms`、`max_elements`、`focus`、`focus_role`、`window`、`full` | 读取无障碍树，返回带标签与 `frame` 的文本化元素表；默认只返回与上次读取的差异，`full=true` 返回完整表；`window` 存在时以该窗口为根，截图与坐标动作也绑定它 |
-| `get_screenshot` | `token` | 截取令牌对应的目标窗口，叠加标签，返回 PNG、`screenshot_id`、窗口 frame 与 title；需要屏幕录制权限 |
+| `get_screenshot` | `token` | 截取令牌对应的目标窗口，叠加标签，返回 PNG、`screenshot_id`、窗口 frame 与 title；需要屏幕录制权限。不改内容，但会激活并 raise 目标窗口 |
 | `launch_app`（仅 `--actions`） | `app` | 启动/激活应用（bundle id、名称或 `.app` 路径）；见下 |
 | `click`（仅 `--actions`） | `token`、`handle` 或 `label`（二选一） | 对目标执行 `AXPress`；见下 |
 | `click_at`（仅 `--actions`） | `token`、`screenshot_id`、`x`、`y` | 在截图坐标投递真实鼠标点击；见下 |
@@ -139,9 +142,9 @@ effect: delivered=true observed=true converged=true treeChanged=false targetChan
 坐标点击是**最后手段**：优先 `click`；只有 AX 动作无效或没有 AX 元素时再用。
 
 1. 坐标以 `get_screenshot` 的图像左上角为原点，单位是图像像素；越界返回 `invalid_coordinates`。
-2. `screenshot_id` 必须属于当前令牌，否则 `stale_geometry`。**窗口几何不在动作前校验**：
-   窗口移动/缩放后，旧截图仍会按旧的 `windowFrame` 换算全局坐标，从而点到错位置；
-   几何变化只在动作后以 `geometryChanged=true` 报告。可能被移动过时，先重新 `get_screenshot`。
+2. `screenshot_id` 必须属于当前令牌，否则 `stale_geometry`。动作前会重新取绑定窗口的几何；
+   位置/缩放/尺寸变化时返回 `stale_geometry`，不投递事件。窗口标题仍是唯一跨进程标识，
+   同名窗口可能被选中；完整修复需要窗口 ID。动作后仍以 `geometryChanged` 报告事后变化。
 3. 点击前会激活并 raise 目标窗口，确认它成为 frontmost；失败则**不点击**，避免点到别的应用。
    随后在目标位置显示约 120ms 的蓝色指示环（不在截图里），再投递事件。
 4. 用真实鼠标事件（会移动光标），不是 `CGEvent.postToPid`。
@@ -176,6 +179,10 @@ effect: delivered=true observed=true converged=true treeChanged=false targetChan
   真正接收文字的是 key window 的 first responder，所以多窗口下必须 raise 目标窗口；
   输入会切换前台，但不会移动鼠标。
 - `type_text` 逐字符投递 Unicode；换行与制表符分别按 Return 与 Tab 投递；文本上限 10000 字符。
+  逐字间隔 5ms，客户端等待上限按“字符数 × 5ms + 15 秒余量”动态计算（夹在 30–180 秒之间）；
+  10,000 字符约需 50 秒以上，属于长请求，不要假设它会在普通 30 秒窗口内完成。
+  MCP stdio 的主循环是同步的：一次长输入期间 `ping`、`tools/list` 与其他调用会被阻塞；
+  宿主自己的请求超时应大于 SCU 的 180 秒上限，或把长文本拆成多次输入。SCU 目前不返回输入进度。
 - `press_key` 的键名用 `+` 分隔，修饰键顺序无关：`Return`、`Tab`、`esc`、`cmd+c`、`shift+left`。
   修饰键用事件 `flags` 表达；每次都是 down + up，**不跨动作保持按住状态**。
 - 不认识的键名、空键名、多个主键、空文本都会被拒绝，不猜测；元素不接受焦点时返回 `unsupported_operation`。
@@ -203,9 +210,12 @@ effect: delivered=true observed=true converged=true treeChanged=false targetChan
 
 <a id="element_table_output"></a>
 
+<a id="get_screenshot"></a>
+
 ### `get_screenshot`
 
-只读，截取 `get_ax_state` 令牌对应的**目标窗口**（不是整屏），返回一张带标签徽标的 PNG：
+截取 `get_ax_state` 令牌对应的**目标窗口**（不是整屏），返回一张带标签徽标的 PNG。
+它不修改应用内容，但截图前会激活并 raise 目标窗口（复用坐标动作的窗口语义），所以带可见副作用：
 
 ```text
 screenshot_id=g1abc.1 图像 1600x1138 scale=1.514 window=(353,199,1057,752)
@@ -215,8 +225,13 @@ screenshot_id=g1abc.1 图像 1600x1138 scale=1.514 window=(353,199,1057,752)
 - **权限**：需要屏幕录制，与辅助功能是两项独立授权，按宿主进程归属；未授予时为
   `system_permission_missing`，文案指向“屏幕录制”。
 - **坐标**：图像像素 = `(element.frame - windowFrame) * scale`；`windowFrame` 可为负（副屏）。
-- **绑定**：`screenshot_id` 绑定 `token + windowFrame + scale`；动作后如果几何变了会报 `geometryChanged=true`。
-  但**动作前不校验几何**：窗口移动/缩放后旧截图的坐标会算到新位置上，动作前必须重新截图。
+- **绑定**：`screenshot_id` 绑定 `token + 实际截图窗口标题 + windowFrame + scale`。令牌没有指定窗口时，
+  原生层会选最大非最小化窗口；会话把**实际截到的窗口标题**存进绑定，坐标动作不再重新选一次。
+  动作前会重新取绑定窗口的几何，位置/缩放/尺寸变化返回 `stale_geometry`；动作后如果几何变了
+  仍会报 `geometryChanged=true`。动作后的 AX 观察使用绑定的实际窗口，而不是令牌上的窗口。
+  窗口标题仍是跨进程的唯一标识：标题来源（SCWindow 与 AX）可能不一致，同名窗口也可能选错；
+  无标题窗口则退化为“按最大窗口重选”。完整修复需要把窗口 ID 带进线协议，
+  当前把这些残余风险如实列为已知限制。
 - **权威**：文本元素表仍为准。徽标太小、重叠或被裁掉时，按 `get_ax_state` 的标签选，不靠图猜。\n  图上可能标出文本表因 `max_elements`/`focus` 未显示的元素；这些标签仍然可用，但优先使用文本表里的。
 - **隐私**：截图只返回给调用方，不写日志、不落盘；可能包含敏感内容，不要把它当作可长期保存的证据。
 
@@ -287,7 +302,7 @@ Removed element IDs: 12-15, 20（旧快照句柄，不可用于动作）
 标题行携带**快照令牌**：不透明字符串，由会话签发（[ADR-0015](../decisions/adr_0015_handle_resolution_by_path.md)）。
 令牌的失效类别、复用规则与"重复使用失效令牌"的语义见[快照生命周期](../architecture/snapshot_lifecycle.md#p0_implementation)。
 令牌出现在 `get_ax_state` 的输出里；接受它的动作工具是 `click` / `type_text` / `press_key` / `set_value`（仅动作档），
-只读工具 `get_screenshot` 也接受同一个令牌。
+只读档工具 `get_screenshot` 也接受同一个令牌（它不修改内容，但会激活窗口）。
 
 ### 完整性标注
 
@@ -369,8 +384,10 @@ Removed element IDs: 12-15, 20（旧快照句柄，不可用于动作）
   所以它既不会混入协议流，也不会读走协议流。这一点由端到端测试与 `scripts/check.sh` 冒烟检查。
 - **懒启动。** `initialize` 与 `tools/list` 不拉起原生进程；首次工具调用才启动。
   宿主只是列出工具时不应产生子进程。
-- **自动重建。** 原生进程崩溃或读树超时被终止后（`platform_unavailable`），丢弃旧连接，
-  下一次调用重新拉起。长驻服务不能因一次失败永久不可用。
+- **自动重建。** 原生进程崩溃、读请求超时（`platform_unavailable`）或动作请求结果未知
+  （`action_outcome_unknown`：超时、应答前断开、通信失败或帧错位）后，丢弃旧连接，下一次调用重新拉起。
+  长驻服务不能因一次失败永久不可用。动作结果未知时不要立刻重发：动作可能已经执行，先重读状态
+  （`after_refresh`）；会话会同时作废旧令牌与截图绑定。
 - **EOF 正常退出。** stdin 关闭后结束循环，终止原生进程，删除 socket 目录。
 - **被 SIGTERM / SIGINT / SIGHUP 终止。** 信号处理器终止原生进程并删除其 socket 目录，退出码 128 + 信号。
 - **被 SIGKILL 终止。** `scu` 无法清理；原生进程发现连接断开后退出，并回收
@@ -403,8 +420,8 @@ socket 目录建在 `TMPDIR`（若设置且存在）或系统临时目录下。
   左侧栏坐标点击从「推荐」切到「精选」并成功返回（2026-10-20）。
   滚动已在网易云验证（推荐页上下滚动，diff 约 0.387）；TextEdit 拖拽选区实测
   `screenshotChanged=true`、`diffRatio=0.0036`，但未读回选区语义。
-  其他应用、区域级 diff 未验证；**窗口移动后的过期判断未实现**（动作前不校验几何，只事后报
-  `geometryChanged`，见上文 `click_at` 第 2 点）；TextEdit 两窗口已复测元素动作不串窗；
+  其他应用、区域级 diff 未验证；窗口移动后的过期判断已在动作前复核绑定窗口几何并返回
+  `stale_geometry`（见上文 `click_at` 第 2 点）；同名窗口仍可能因标题相同而选错；TextEdit 两窗口已复测元素动作不串窗；
   多窗口目标一致性与窗口标题绑定有单元/MCP 测试；窗口列表与窗口根已在 TextEdit 两个文档窗口上实测
   （`list_windows` 返回两个标题，`get_ax_state`/`dump --window` 的根是目标 `AXWindow`）。
 - **应用允许列表**：已做单元与 MCP 测试；已在网易云/访达上验证“列表外应用读取前被拒”。

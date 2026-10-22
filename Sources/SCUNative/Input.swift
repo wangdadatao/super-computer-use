@@ -44,7 +44,7 @@ extension AXBackend {
                 default:
                     postUnicode(String(character), pid: pid, source: source)
                 }
-                Thread.sleep(forTimeInterval: 0.005)
+                Thread.sleep(forTimeInterval: Double(scuInputPerCharacterMs) / 1000)
             }
             return .acted
         }
@@ -101,15 +101,7 @@ extension AXBackend {
     static func locateTarget(
         pid: Int32, windowTitle: String? = nil, locator: ElementLocator
     ) throws -> LocateResult<AXUIElement> {
-        let root = try rootElement(pid: pid, windowTitle: windowTitle)
-        return locate(
-            root: root, locator: locator,
-            children: { element in
-                let kids = elements(element, kAXChildrenAttribute)
-                for kid in kids ?? [] { AXUIElementSetMessagingTimeout(kid, messagingTimeout) }
-                return kids
-            },
-            key: { element in TargetKey(readNode(element, wantChildren: false).node) })
+        try locateInApp(pid: pid, windowTitle: windowTitle, locator: locator)
     }
 
     /// 键盘事件按进程投递，但真正接收文字的是**该进程当前 key window 的 first responder**。
@@ -153,7 +145,7 @@ extension AXBackend {
         guard let value = copy(app, kAXFocusedUIElementAttribute),
             CFGetTypeID(value) == AXUIElementGetTypeID()
         else { return nil }
-        return value as! AXUIElement
+        return (value as! AXUIElement)
     }
 
     /// 把焦点设到目标元素。焦点是异步生效的，等它被读回为 true 最多约 300 毫秒；
@@ -180,7 +172,7 @@ extension AXBackend {
 
     // MARK: - 事件投递
 
-    static let inputTextLimit = 10_000
+    static let inputTextLimit = scuMaxInputTextLength
 
     static func postKey(_ combo: KeyCombo, pid: Int32, source: CGEventSource?) {
         for down in [true, false] {

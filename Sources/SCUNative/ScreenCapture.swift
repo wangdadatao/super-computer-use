@@ -1,10 +1,10 @@
-import Foundation
 import AppKit
-import ScreenCaptureKit
 import CoreGraphics
+import Foundation
 import ImageIO
-import UniformTypeIdentifiers
 import SCUWire
+import ScreenCaptureKit
+import UniformTypeIdentifiers
 
 /// 目标窗口的截图。只截一个窗口，不截整屏：
 /// - 坐标以窗口左上角为原点，模型只需要处理一张图；
@@ -22,7 +22,7 @@ enum ScreenCapture {
         // ScreenCaptureKit 依赖 WindowServer/CoreGraphics 的进程级初始化。
         // sidecar 是纯命令行进程；显式建立 NSApplication 共享实例，避免
         // CGS_REQUIRE_INIT 断言（真实崩溃，不是可捕获的错误）。
-        _ = NSApplication.shared
+        AppKitBootstrap.ensureApplication()
 
         // 截图前把窗口带到当前 Space/显示器：否则 SCWindow.frame 可能与
         // AX/CGWindowList 的屏幕坐标不一致，模型拿到的坐标会点空。
@@ -130,8 +130,9 @@ enum ScreenCapture {
 
     static func encodePNG(_ image: CGImage) throws -> Data {
         let data = NSMutableData()
-        guard let destination = CGImageDestinationCreateWithData(
-            data as CFMutableData, UTType.png.identifier as CFString, 1, nil)
+        guard
+            let destination = CGImageDestinationCreateWithData(
+                data as CFMutableData, UTType.png.identifier as CFString, 1, nil)
         else {
             throw WireError.platformUnavailable("无法创建 PNG 编码器")
         }

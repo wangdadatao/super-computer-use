@@ -49,7 +49,7 @@ agent 侧的会话 API 见[协议总览](protocol_overview.md)，两者是不同
 | `listWindows` | `pid: int` | 列出该进程可枚举的窗口（`title?`、`frame?`）。只读；不激活应用、不截图。见 [ADR-0027](../decisions/adr_0027_window_root_locator.md) |
 | `dumpTree` | `pid: int`、`windowTitle?: string`、`maxDepth: int`、`budgetMs: int` | 读取某进程的无障碍树。`windowTitle` 存在时按标题精确匹配窗口并以该窗口为根；找不到返回 `window_not_found`，不退回其他窗口。`maxDepth` 范围 `0...64`；`budgetMs` 是整棵树的总时间预算，范围 `100...120000`。越界一律拒绝而不是截断。见 [ADR-0027](../decisions/adr_0027_window_root_locator.md) |
 | `performAction` | `pid: int`、`windowTitle?: string`、`locator: ElementLocator`、`action: "press" \| "verify"` | 沿定位器的路径定位目标并核对，通过后执行动作；`verify` 只定位核对、不执行。`windowTitle` 存在时定位根为该窗口。路径长度上限同 `maxDepth`，每步须满足 `siblings ≥ 1` 且 `0 ≤ index < siblings`，否则 `internal_error`（连接保持）。见 [ADR-0015](../decisions/adr_0015_handle_resolution_by_path.md)、[ADR-0027](../decisions/adr_0027_window_root_locator.md) |
-| `typeText` | `pid: int`、`windowTitle?: string`、`locator: ElementLocator`、`text: string` | 定位并核对目标，聚焦它，再把文本逐字投递到目标进程。`windowTitle` 存在时定位根为该窗口。`text` 上限 10000 字符，空串被拒绝。见 [ADR-0016](../decisions/adr_0016_input_and_keys.md)、[ADR-0027](../decisions/adr_0027_window_root_locator.md) |
+| `typeText` | `pid: int`、`windowTitle?: string`、`locator: ElementLocator`、`text: string` | 定位并核对目标，聚焦它，再把文本逐字投递到目标进程。`windowTitle` 存在时定位根为该窗口。`text` 上限 `scuMaxInputTextLength`（10000 字符），空串被拒绝；逐字间隔 `scuInputPerCharacterMs`（5ms）。见 [ADR-0016](../decisions/adr_0016_input_and_keys.md)、[ADR-0027](../decisions/adr_0027_window_root_locator.md) |
 | `pressKey` | `pid: int`、`windowTitle?: string`、`locator: ElementLocator`、`key: string` | 定位并核对目标，聚焦它，再发送按键或组合键（`cmd+shift+t`）。`windowTitle` 存在时定位根为该窗口。不认识的键名被拒绝。见 [ADR-0016](../decisions/adr_0016_input_and_keys.md)、[ADR-0027](../decisions/adr_0027_window_root_locator.md) |
 | `setValue` | `pid: int`、`windowTitle?: string`、`locator: ElementLocator`、`value: string` | 定位并核对目标，通过无障碍接口直接写 `AXValue`。`windowTitle` 存在时定位根为该窗口。**元素必须声明该属性可写**，否则返回 `unsupported_operation`；空串是合法值。见 [ADR-0016](../decisions/adr_0016_input_and_keys.md)、[ADR-0027](../decisions/adr_0027_window_root_locator.md) |
 | `captureWindow` | `pid: int`、`windowTitle?: string` | 截取该进程的一个窗口。`windowTitle` 存在时按标题精确匹配；否则选 `windowLayer == 0`、on-screen、面积最大的窗口。需要屏幕录制权限，未授予时返回 `system_permission_missing`。见 [ADR-0019](../decisions/adr_0019_window_screenshot.md)、[ADR-0026](../decisions/adr_0026_window_selection.md) |
@@ -129,9 +129,13 @@ agent 侧的会话 API 见[协议总览](protocol_overview.md)，两者是不同
   避免协议层在连接前死亡时留下孤儿进程。协议层这一侧最多重试连接约 3 秒（60 次、间隔 50 毫秒），
   连不上就以连接超时失败，由会话层收成 `platform_unavailable`；两侧的等待时间并不对齐。
 - 对端在半帧之后关闭：视为正常关闭，原生进程退出。
-- 协议层等待应答有**超时**：读树的上限为 `budgetMs` + 10 秒（其中单次 AX 调用另有 2 秒的消息超时，在原生层内部），其他请求 30 秒。
-  超时意味着原生进程无响应，连接无法再对齐帧边界，协议层关闭连接、终止子进程，
-  以 `platform_unavailable` 失败。
+- 协议层等待应答有**超时**：读树的上限为 `budgetMs` + 10 秒（其中单次 AX 调用另有 2 秒的消息超时，在原生层内部），
+  `typeText` 按“字符数 × 5ms + 15 秒余量”计算并夹在 30–180 秒之间，其他请求 30 秒。
+  超时意味着原生进程无响应，连接无法再对齐帧边界，协议层关闭连接、终止子进程。
+  读请求，以及尚未完整写出的动作请求，以 `platform_unavailable` 失败；动作请求（`performAction` /
+  `typeText` / `pressKey` / `setValue` / `clickAt` / `scrollAt` / `dragAt`）在**请求已完整写出**后，
+  无论是等待超时、对端在应答前断开、socket 通信失败还是应答帧错位，都以 `action_outcome_unknown` 失败，
+  因为动作可能已经执行；调用方必须先重读状态（见[错误分类](error_taxonomy.md)）。
 - 协议层的关闭路径必须终止子进程并清理 socket 目录，**包括失败退出的路径**。
 - 协议层启动原生进程时把它的 stdout 重定向到协议层的 stderr、stdin 断开：接入层（如 MCP stdio）独占 stdout 与 stdin，
   原生进程的输出不能混入协议流，也不能读走它。
@@ -155,7 +159,8 @@ agent 侧的会话 API 见[协议总览](protocol_overview.md)，两者是不同
 原生层在本边界上产生的错误码：`system_permission_missing`、`target_missing`、
 `protocol_version_mismatch`、`window_not_found`、`internal_error`，以及 `AXPress` 失败时的 `unsupported_operation`
 （平台报动作不支持、属性不支持或未实现）与 `action_failed`（其余平台错误，含 `apiDisabled`）。`platform_unavailable` 由协议层在
-**连接失败或对端消失**时本地生成，不经线路传输。
+**读请求连接失败、对端消失，或动作请求尚未完整写出**时本地生成，不经线路传输；
+`action_outcome_unknown` 由协议层在**动作请求已完整写出、但应答前发生超时/断开/通信失败/帧错位**时本地生成。
 
 越界参数、无法解析的帧、握手前的请求目前都归入 `internal_error`。
 是否为它们引入专门的错误码待定。
@@ -180,7 +185,10 @@ agent 侧的会话 API 见[协议总览](protocol_overview.md)，两者是不同
 
 `press` 对真实应用的投递由 `FixtureTests` 覆盖（真实 `scu-native`、真实夹具进程 `scu-fixture`、真实 `AXPress`；见 [夹具验证](../../verification/2026-10-18-fixture-validation.md)）。第三方应用（如 Electron）上未覆盖。
 
-读取应答超时的**映射**（关闭连接、终止子进程、`platform_unavailable`）在 `NativeClient.call` 中实现；测试只覆盖到等待可读时抛出超时，没有覆盖后面的清理路径。
+读取应答超时的**映射**（关闭连接、终止子进程、`platform_unavailable`）在 `NativeClient.call` 中实现；
+动作请求在完整写出后的超时/断开/通信失败/帧错位映射为 `action_outcome_unknown`，见
+`NativeClient.transportError` 与 `Tests/SCUCoreTests/NativeClientTimeoutTests.swift`。
+该测试覆盖映射函数，不覆盖真实子进程的关闭与回收；后者由握手/关闭类测试与 MCP 冒烟分别覆盖。
 
 当前协议版本为 **11**（P0 时为 3；v1 依次加入 `typeText` / `pressKey` 与 `setValue`；
 v2 加入 `captureWindow`、`AXNode.actions`、`clickAt`、`scrollAt` 与 `dragAt`，v3 收口窗口读取）。

@@ -1,5 +1,5 @@
-import ApplicationServices
 import AppKit
+import ApplicationServices
 import SCUWire
 
 /// 动作定位：沿协议层给出的路径下行，逐层核对，到达目标后核对其核对键。
@@ -45,19 +45,28 @@ extension AXBackend {
         case stale(StaleDetail)
     }
 
+    /// 读取真实 AX 子节点，并给每个子节点设置消息超时。定位与输入共用这一份，
+    /// 避免两处各写一遍同样的闭包而出现行为差异。
+    static func readChildren(_ element: AXUIElement) -> [AXUIElement]? {
+        let kids = elements(element, kAXChildrenAttribute)
+        for kid in kids ?? [] { AXUIElementSetMessagingTimeout(kid, messagingTimeout) }
+        return kids
+    }
+
+    /// 应用内的真实定位：从进程/窗口根开始，沿路径下行并核对目标键。
+    static func locateInApp(
+        pid: Int32, windowTitle: String?, locator: ElementLocator
+    ) throws -> LocateResult<AXUIElement> {
+        let root = try rootElement(pid: pid, windowTitle: windowTitle)
+        return locate(
+            root: root, locator: locator, children: readChildren,
+            key: { element in TargetKey(readNode(element, wantChildren: false).node) })
+    }
+
     public static func performAction(
         pid: Int32, windowTitle: String? = nil, locator: ElementLocator, action: ActionKind
     ) throws -> ActionResult {
-        let root = try rootElement(pid: pid, windowTitle: windowTitle)
-
-        let result = locate(
-            root: root, locator: locator,
-            children: { el in
-                let kids = elements(el, kAXChildrenAttribute)
-                for kid in kids ?? [] { AXUIElementSetMessagingTimeout(kid, messagingTimeout) }
-                return kids
-            },
-            key: { el in TargetKey(readNode(el, wantChildren: false).node) })
+        let result = try locateInApp(pid: pid, windowTitle: windowTitle, locator: locator)
         switch result {
         case .stale(let detail):
             return .stale(detail)

@@ -31,6 +31,20 @@ scripts/measure_token_reject.py  # 令牌误拒与重读成本的测量（需辅
 git config core.hooksPath scripts/hooks
 ```
 
+### 格式化
+
+仓库根目录的 `.swift-format` 统一了缩进（4 空格）与行宽（120）。格式化工具由 Xcode
+自带；若不在 `PATH`，脚本会用 `xcrun --find swift-format` 查找：
+
+```bash
+scripts/format.sh --check Sources/SCUCore/DesktopSession.swift  # 只检查
+scripts/format.sh Sources/SCUCore/DesktopSession.swift          # 写回
+scripts/format.sh                                               # 全树（改动很大，慎用）
+```
+
+`scripts/check.sh` 还没有强制格式化：现有代码树是逐步收敛的，全树重排会产生大量与逻辑无关的
+diff。提交前建议只对自己改过的文件运行 `--check`；新文件应当无告警。
+
 构建产物目录用 `swift build --show-bin-path` 查询。`scu` 默认在自己的同目录下
 找 `scu-native`。
 
@@ -72,13 +86,13 @@ git config core.hooksPath scripts/hooks
 | 坐标点击：`click_at(token, screenshot_id, x, y)` 激活目标窗口后用真实鼠标事件点击（[ADR-0020](../decisions/adr_0020_coordinate_click.md)） | `Mouse.swift`、`WindowActivation.swift`、`DesktopSession` | 已实现，有 MCP 测试；已在网易云左侧栏从推荐切到精选，截图 diff 约 43% |
 | 滚动与拖拽：`scroll_at` / `drag` 按截图坐标投递滚轮/拖拽事件（[ADR-0021](../decisions/adr_0021_scroll_and_drag.md)） | `Mouse.swift`、`DesktopSession`、`Tools` | 已实现，有 MCP 测试；滚动已在网易云验证（diff 约 0.387）；TextEdit 拖拽选区实测像素变化 diff 0.0036（未读回选区语义） |
 | 应用启动：`launch_app` 按 bundle id/名称/路径解析，策略检查后启动或激活（[ADR-0022](../decisions/adr_0022_app_launch.md)） | `AppLauncher.swift`、`DesktopSession`、`Tools` | 已实现，有单元与 MCP 测试；已在计算器冷启动与网易云（已运行）上验证 |
-| 连接级应用允许列表：`--allow-app` / `--allow-app-file`，列表外应用读取/动作前拒绝（[ADR-0024](../decisions/adr_0024_app_authorization.md)） | `AppAuthorization.swift`、`DesktopSession`、`scu` 参数解析 | 已实现，有单元与 MCP 测试；已在网易云/访达上验证读取门禁（动作门禁为单元测试） |
+| 连接级应用允许列表：`--allow-app` / `--allow-app-file`，列表外应用读取/动作前拒绝（[ADR-0024](../decisions/adr_0024_app_authorization.md)） | `AppAuthorization.swift`、`TargetAuthorizer.swift`、`DesktopSession`、`scu` 参数解析 | 已实现，有单元与 MCP 测试；已在网易云/访达上验证读取门禁（动作门禁为单元测试） |
 | 坐标动作指示环：点击/滚动/拖拽前 120ms 显示不拦截、不进入截图的圆环（[ADR-0023](../decisions/adr_0023_indicator.md)） | `Indicator.swift`、`Mouse.swift` | 已实现；靠人工观察，不能截图验证 |
-| MCP stdio 服务：只读的 `check_permissions`、`list_apps`、`list_windows`、`get_ax_state`（默认差异，`full=true` 完整表）、`get_screenshot`；加 `--actions` 额外提供 `launch_app`、`click`、`click_at`、`scroll_at`、`drag`、`type_text`、`press_key`、`set_value`；`--allow-app` / `--allow-app-file` 配置连接级应用允许列表（见 [MCP 接入面](../interfaces/mcp_surface.md)） | `SCUMCP`、`scu mcp`、`NativeSession` | 已实现，有单元测试与真实管道的端到端测试；只读工具已在 Cursor 一个宿主里跑通。**`click` 已在自制夹具应用 `scu-fixture` 与网易云 3.1.12（CEF）上用真实 `AXPress` 验证过**（见 [夹具验证](../../verification/2026-10-18-fixture-validation.md) 与 [网易云验证](../../verification/2026-10-19-real-app-netease.md)），其他 Electron 等第三方应用未验证（见 [MCP 接入面的未验证项](../interfaces/mcp_surface.md#未验证项)） |
+| MCP stdio 服务：严格只读的 `check_permissions`、`list_apps`、`list_windows`、`get_ax_state`（默认差异，`full=true` 完整表），加 `get_screenshot`（不改内容，但会激活/raise 窗口）；加 `--actions` 额外提供 `launch_app`、`click`、`click_at`、`scroll_at`、`drag`、`type_text`、`press_key`、`set_value`；`--allow-app` / `--allow-app-file` 配置连接级应用允许列表（见 [MCP 接入面](../interfaces/mcp_surface.md)） | `SCUMCP`、`scu mcp`、`NativeSession` | 已实现，有单元测试与真实管道的端到端测试；只读工具已在 Cursor 一个宿主里跑通。**`click` 已在自制夹具应用 `scu-fixture` 与网易云 3.1.12（CEF）上用真实 `AXPress` 验证过**（见 [夹具验证](../../verification/2026-10-18-fixture-validation.md) 与 [网易云验证](../../verification/2026-10-19-real-app-netease.md)），其他 Electron 等第三方应用未验证（见 [MCP 接入面的未验证项](../interfaces/mcp_surface.md#未验证项)） |
 | 会话：快照令牌签发与复用、按路径加核对键定位句柄、`click`（`AXPress`）、轮询式收敛与效果摘要（[ADR-0015](../decisions/adr_0015_handle_resolution_by_path.md)） | `DesktopSession` | 已实现，有假读取器的单元测试、真实访达的 `verify` 测试与夹具上的真实点击测试 |
 | 定位器：沿路径逐层核对子节点数与角色，再核对目标核对键，通过后 `press` / `verify` | `AXLocator`、`NativeServer` | 已实现，有测试（`performAction`，v4 引入，当前 v11） |
 | 输入与按键：先 raise 目标窗口、激活应用并聚焦元素，再把 Unicode 键盘事件与组合键投递到目标进程；设值走无障碍 `AXValue`，不激活 | `Input.swift`、`DesktopSession` | 已实现，有按键解析单元测试、会话层测试与夹具上的真实输入/提交/设值测试 |
-| 拒绝类目与宿主祖先链（拒绝类目只拒绝动作；连接级允许列表可另外限制读取） | `PolicyGate`、`AppAuthorization` | 已实现，有测试；真实终端用例仅在终端运行时才执行 |
+| 拒绝类目与宿主祖先链（拒绝类目只拒绝动作；连接级允许列表可另外限制读取） | `PolicyGate`、`AppAuthorization`、`TargetAuthorizer` | 已实现，有测试；真实终端用例仅在终端运行时才执行 |
 | 夹具应用（按钮、延迟变化、动画、被遮挡等场景），验证用，不是产品的一部分 | `scu-fixture`、`FixtureTests` | 已实现；见 [夹具验证](../../verification/2026-10-18-fixture-validation.md) |
 | 进程被信号终止或 SIGKILL 时回收原生进程与 socket 目录 | `NativeClient.terminateAllForShutdown`、`scu-native` 退出清理 | 已实现，由 `scripts/check.sh` 冒烟覆盖 |
 | K1~K4 候选键与匹配键计算（纯函数，无状态） | `IdentityAnalyzer` | 已实现，有测试（含唯一性的伪随机性质测试） |

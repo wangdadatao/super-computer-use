@@ -4,8 +4,8 @@ import SCUWire
 /// 协议层到原生进程的连接：启动 sidecar、握手、同步请求/应答。
 /// 动作在会话内串行，因此这里不需要并发请求（见 session_and_lease.md）。
 ///
-/// 传输层的任何失败（对端关闭、写失败）都映射为 `platform_unavailable`，
-/// 不让底层的 `TransportError` 泄漏给调用方。
+/// 传输层的失败不把底层 `TransportError` 泄漏给调用方：读请求映射为
+/// `platform_unavailable`，已写出的动作请求映射为 `action_outcome_unknown`。
 // @project-doc docs/architecture/system_overview.md#process_boundary
 public final class NativeClient {
     public enum ClientError: Error, CustomStringConvertible {
@@ -30,7 +30,13 @@ public final class NativeClient {
 
         func add(dir: String, pid: Int32) { lock.withLock { entries[dir] = pid } }
         func remove(dir: String) { lock.withLock { _ = entries.removeValue(forKey: dir) } }
-        func drain() -> [String: Int32] { lock.withLock { let e = entries; entries = [:]; return e } }
+        func drain() -> [String: Int32] {
+            lock.withLock {
+                let e = entries
+                entries = [:]
+                return e
+            }
+        }
     }
 
     private static let live = LiveRegistry()
@@ -130,32 +136,75 @@ public final class NativeClient {
     /// 发送一条请求并等待应答。`.failure` 以 WireError 抛出，调用方按 code 分支。
     ///
     /// `timeoutMs`：等待应答的上限。超时意味着原生进程无响应；此时连接已无法再对齐帧边界，
-    /// 本连接被关闭（并终止原生进程），以 `platform_unavailable` 失败。
+    /// 本连接被关闭（并终止原生进程）。
+    ///
+    /// `actionMayHaveStarted`：请求是否可能在超时前已经被原生层执行。读操作传 false，
+    /// 得到可立即重试的 `platform_unavailable`；动作传 true，得到
+    /// `action_outcome_unknown`（retry=after_refresh），避免“以为没执行”而重复点击/输入。
     @discardableResult
-    public func call(_ request: Request, timeoutMs: Int32 = 30_000) throws -> Response {
+    public func call(
+        _ request: Request, timeoutMs: Int32 = 30_000, actionMayHaveStarted: Bool = false
+    ) throws -> Response {
         let id = nextId
         nextId += 1
         let frame: ResponseFrame
+        // 只有完整写出请求之后，动作才可能已经执行。写完前的失败可以安全重试。
+        var requestWasWritten = false
         do {
             try Frame.write(RequestFrame(id: id, request: request), to: fd)
+            requestWasWritten = true
             try UnixSocket.waitReadable(fd, timeoutMs: timeoutMs)
             frame = try Frame.read(ResponseFrame.self, from: fd)
         } catch let e as TransportError {
-            switch e {
-            case .timeout:
-                close()
-                throw WireError.platformUnavailable("原生进程在 \(timeoutMs) 毫秒内无应答，已终止")
-            case .closed:
-                // 握手阶段版本错配时，原生层会先回错误帧再关闭；写后读到的是错误帧而不是 EOF，
-                // 因此走到这里意味着对端在未应答的情况下消失了。
-                throw WireError.platformUnavailable("原生进程已断开")
-            default:
-                throw WireError.platformUnavailable("与原生进程通信失败：\(e)")
+            // 任何传输失败后这条连接都不能再复用：帧边界可能已错位，进程也可能已死。
+            close()
+            throw Self.transportError(
+                e, actionMayHaveStarted: actionMayHaveStarted, requestWasWritten: requestWasWritten,
+                timeoutMs: timeoutMs)
+        } catch let e as DecodingError {
+            // 已经写出请求却读不到合法应答；对动作来说同样可能已经执行。
+            close()
+            if actionMayHaveStarted && requestWasWritten {
+                throw WireError.actionOutcomeUnknown(
+                    "动作请求已写出，但原生进程返回了无法解码的应答（\(e)）；动作可能已经执行。先重新读取状态。")
             }
+            throw WireError.platformUnavailable("原生进程返回了无法解码的应答：\(e)")
         }
-        guard frame.id == id else { throw ClientError.unexpectedResponse("应答 id \(frame.id) ≠ \(id)") }
+        guard frame.id == id else {
+            close()
+            if actionMayHaveStarted && requestWasWritten {
+                throw WireError.actionOutcomeUnknown(
+                    "动作请求已写出，但应答 id \(frame.id) ≠ \(id)，帧流已错位；动作可能已经执行。先重新读取状态。")
+            }
+            throw ClientError.unexpectedResponse("应答 id \(frame.id) ≠ \(id)")
+        }
         if case .failure(let e) = frame.response { throw e }
         return frame.response
+    }
+
+    /// 传输失败映射。读请求失败可立即重试；动作请求只有在**请求已完整写出**后
+    /// 才把失败视为“结果未知”，避免把“没发出去”误报成可能已执行。
+    static func transportError(
+        _ error: TransportError, actionMayHaveStarted: Bool, requestWasWritten: Bool,
+        timeoutMs: Int32 = 30_000
+    ) -> WireError {
+        if case .timeout = error {
+            return timeoutError(actionMayHaveStarted: actionMayHaveStarted, timeoutMs: timeoutMs)
+        }
+        if actionMayHaveStarted && requestWasWritten {
+            return WireError.actionOutcomeUnknown(
+                "动作请求已写出，但原生进程在应答前断开或通信失败（\(error)）；动作可能已经执行。先重新读取状态，再决定是否重发。")
+        }
+        return WireError.platformUnavailable("与原生进程通信失败：\(error)")
+    }
+
+    /// 超时映射。抽成静态函数便于在不启动 sidecar 的情况下测试两种语义。
+    static func timeoutError(actionMayHaveStarted: Bool, timeoutMs: Int32) -> WireError {
+        if actionMayHaveStarted {
+            return WireError.actionOutcomeUnknown(
+                "原生进程在 \(timeoutMs) 毫秒内无应答，已终止；动作请求可能已经执行。先重新读取状态，再决定是否重发。")
+        }
+        return WireError.platformUnavailable("原生进程在 \(timeoutMs) 毫秒内无应答，已终止")
     }
 
     /// 幂等：可重复调用。

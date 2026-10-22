@@ -13,6 +13,26 @@ public let scuDefaultTreeDepth = 12
 public let scuTreeBudgetMsRange = 100...120_000
 public let scuDefaultTreeBudgetMs = 15_000
 
+/// 单次 `type_text` / `set_value` 允许的字符上限。
+/// `type_text` 逐字投递，每字符之间有固定间隔；客户端等待上限必须按这个上限算，
+/// 否则合法参数会在传输层被超时截断（见 `scuTypeTextTimeoutMs`）。
+public let scuMaxInputTextLength = 10_000
+/// 逐字输入时每个字符之间的固定间隔（毫秒）。
+public let scuInputPerCharacterMs = 5
+/// 输入等待的超时下限 / 上限（毫秒）。
+public let scuInputTimeoutFloorMs = 30_000
+public let scuInputTimeoutCeilingMs = 180_000
+/// 输入等待的固定余量（毫秒）：聚焦、窗口激活、事件编码与传输。
+public let scuInputTimeoutMarginMs = 15_000
+
+/// `type_text` 的客户端等待上限：按字符数估算，并夹在上下限之间。
+/// 与 `AXBackend.typeText` 的逐字间隔共用同一组常量，避免两处漂移。
+public func scuTypeTextTimeoutMs(characterCount: Int) -> Int32 {
+    let count = min(max(characterCount, 0), 1_000_000)
+    let estimate = count * scuInputPerCharacterMs + scuInputTimeoutMarginMs
+    return Int32(min(scuInputTimeoutCeilingMs, max(scuInputTimeoutFloorMs, estimate)))
+}
+
 /// 线上错误。code 取自错误码表。
 ///
 /// **P0 子集**：`error_taxonomy.md` 的 `ScuError` 还定义了 `details` 与 `candidates`，
@@ -61,6 +81,13 @@ public struct WireError: Error, Codable, Sendable, Equatable {
         WireError(code: "platform_unavailable", layer: "platform", retry: "immediate", message: message)
     }
 
+    /// 动作请求已经写出，但等应答超时。**动作可能已经执行**，不能当作“没发生”直接重试；
+    /// 先重读状态，再决定是否重发（见 error_taxonomy.md 与 ADR-0015 的边界说明）。
+    public static func actionOutcomeUnknown(_ message: String) -> WireError {
+        WireError(
+            code: "action_outcome_unknown", layer: "platform", retry: "after_refresh", message: message)
+    }
+
     /// 令牌已失效，或从未签发。树已变化，需要重读。
     public static func staleSnapshot(_ message: String) -> WireError {
         WireError(code: "stale_snapshot", layer: "protocol", retry: "after_refresh", message: message)
@@ -98,7 +125,8 @@ public struct WireError: Error, Codable, Sendable, Equatable {
         let identity = bundleId.map { "\(app)（\($0)）" } ?? app
         return WireError(
             code: "app_not_authorized", layer: "policy", retry: "no",
-            message: "应用 \(identity) 不在本次连接的应用允许列表里；\(detail)。请让用户确认后调整 --allow-app / --allow-app-file 并重启服务；本次连接不会自行放行。")
+            message:
+                "应用 \(identity) 不在本次连接的应用允许列表里；\(detail)。请让用户确认后调整 --allow-app / --allow-app-file 并重启服务；本次连接不会自行放行。")
     }
 
     /// 找不到指定标题的目标窗口。

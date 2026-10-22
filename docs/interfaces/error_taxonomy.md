@@ -71,7 +71,7 @@ interface ScuError {
 | code | layer | retry | 含义 |
 | --- | --- | --- | --- |
 | `stale_snapshot` | protocol | `after_refresh` | 快照令牌失效，树已变化 |
-| `stale_geometry` | protocol | `after_refresh` | 截图不存在、已过期或不属于当前令牌；窗口几何变化目前不在动作前拦截，只事后报 `geometryChanged`（见 [MCP 接入面](mcp_surface.md#click_tool)） |
+| `stale_geometry` | protocol | `after_refresh` | 截图不存在、已过期、不属于当前令牌，或动作前复核发现绑定窗口的几何已变化（见 [MCP 接入面](mcp_surface.md#click_tool)） |
 | `invalid_coordinates` | protocol | `no` | 坐标不在截图范围内；v2 新增 |
 | `target_switched` | protocol | `after_rebind` | 令牌属于已解绑的目标 |
 | `target_missing` | protocol | `no` | 目标不存在或已退出 |
@@ -87,14 +87,15 @@ interface ScuError {
 | `confirmation_denied` | policy | `no` | 用户在审批提示中明确拒绝 |
 | `confirmation_timeout` | policy | `after_user_action` | 审批提示超时未响应 |
 | `system_permission_missing` | platform | `after_user_action` | 系统权限未授予（辅助功能或屏幕录制） |
-| `platform_unavailable` | platform | `immediate` | 原生层不可达或崩溃 |
+| `platform_unavailable` | platform | `immediate` | 原生层不可达、崩溃，或**读请求**等待应答超时（请求未产生动作） |
+| `action_outcome_unknown` | platform | `after_refresh` | **动作请求已写出**但等应答超时、连接在应答前断开、通信失败或应答帧错位；动作可能已经执行，先重读状态再决定是否重发 |
 | `action_failed` | platform | `immediate` | 目标仍在、定位核对通过，但平台拒绝或未能完成动作（如 `AXPress` 返回 `cannotComplete`）。P0 新增，见 [ADR-0015](../decisions/adr_0015_handle_resolution_by_path.md) |
 | `protocol_version_mismatch` | boundary | `no` | 两侧协议版本不一致 |
 | `internal_error` | boundary | `immediate` | 未归类的内部故障 |
 
 **当前实际发出的码**：`stale_snapshot`、`stale_geometry`、`invalid_coordinates`、`app_not_found`、`app_not_authorized`、`window_not_found`、`target_switched`、`element_gone`、
 `unsupported_operation`、`policy_denied`、`system_permission_missing`、`target_missing`、`platform_unavailable`、
-`action_failed`、`protocol_version_mismatch`、`internal_error`。
+`action_outcome_unknown`、`action_failed`、`protocol_version_mismatch`、`internal_error`。
 `ambiguous_reference`、`authorization_*`、`confirmation_*` 是设计目标，尚无构造它们的代码（目标歧义、逐次审批未实现）。
 应用允许列表的拒绝使用 `app_not_authorized`，不是 `authorization_denied`；后者保留给交互式授权提示。
 
@@ -125,10 +126,15 @@ interface ScuError {
 | `after_disambiguation` | 用 `candidates` 中的一项重发 |
 | `after_user_action` | 需要用户完成某个动作（授权 / 确认），然后重试 |
 
-**关于"超时"为什么不是 `immediate`**：超时的原因是用户没有响应。
-立即重试会重新弹出提示——如果用户仍然不在，就是一次无效的弹窗循环。
-因此超时归为 `after_user_action`：它要求的是"用户回到电脑前"这个动作，
-而不是重试本身。
+**关于"超时"为什么不是 `immediate`**：这里的“超时”专指**等待用户响应**的授权/审批提示。
+超时的原因是用户没有响应。立即重试会重新弹出提示——如果用户仍然不在，就是一次无效的弹窗循环。
+因此这种超时归为 `after_user_action`：它要求的是"用户回到电脑前"这个动作，而不是重试本身。
+
+**动作传输失败是另一回事**：请求已经写出，原生层可能已经执行了点击/输入，只是应答没回来。
+这包括等待应答超时、对端在应答前断开、socket 通信失败与应答帧 id 错位。把它标成 `immediate`
+会让调用方重复一次动作；因此动作类请求在**完整写出之后**的这些失败都返回 `action_outcome_unknown`
+（`after_refresh`）：先重读状态，确认动作是否已经生效，再决定是否重发。
+读请求，以及尚未完整写出的动作请求，仍是 `platform_unavailable`（`immediate`），因为没有产生动作。
 
 **`after_refresh` 是最常见的一类**，它对应[ADR-0003](../decisions/adr_0003_snapshot_token_contract.md)
 的核心机制：状态已变，重新读取后即可继续。这类错误**不是故障，是正常流程的一部分**。

@@ -100,6 +100,17 @@ v1 第一项实现两个动作：
 - 测试：按键解析单元测试、会话层令牌/效果测试、夹具上的真实输入与提交测试
 - [edit_semantics](../interfaces/edit_semantics.md) 的"三种写入路径"中，逐字输入已实现，设值待做
 
+## 追加记录（2026-10-22，输入超时）
+
+`type_text` 的 10,000 字符上限与固定 30 秒客户端等待互相矛盾：逐字间隔 5ms，
+上限输入至少需要 50 秒，合法参数必然在传输层超时，sidecar 被终止，界面留下部分文本。
+
+修正：上限、逐字间隔与等待上下限收进 `SCUWire` 的 `scuMaxInputTextLength` /
+`scuInputPerCharacterMs` / `scuInputTimeoutFloorMs` / `scuInputTimeoutCeilingMs`；
+`NativeSession.typeText` 用 `scuTypeTextTimeoutMs(characterCount:)` 计算等待上限
+（字符数 × 5ms + 15 秒余量，夹在 30–180 秒）。上限仍是 10,000，但长输入现在是**长请求**，
+调用方不能假设它会在 30 秒内返回。动作请求超时的错误语义见[错误分类](../interfaces/error_taxonomy.md)。
+
 ## 追加记录（2026-10-20，多窗口输入修正）
 
 真实任务：TextEdit 同时打开 `/tmp/scu-task-a.txt` 与 `/tmp/scu-task-b.txt`，用 A 的令牌与句柄

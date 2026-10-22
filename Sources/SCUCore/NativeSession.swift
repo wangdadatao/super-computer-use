@@ -132,7 +132,16 @@ public final class NativeSession: DesktopReader {
         do {
             return try body(c)
         } catch let e as WireError {
-            if e.code == "platform_unavailable" {
+            // 超时会让 NativeClient 关闭连接；动作超时还会返回 action_outcome_unknown。
+            // 这两种情况都必须丢弃旧连接，下一次调用重新拉起 sidecar。
+            if e.code == "platform_unavailable" || e.code == "action_outcome_unknown" {
+                c.close()
+                client = nil
+            }
+            throw e
+        } catch let e as NativeClient.ClientError {
+            // 应答 id 对不上说明帧流已经错位，不能再复用这条连接。
+            if case .unexpectedResponse = e {
                 c.close()
                 client = nil
             }
@@ -172,9 +181,10 @@ public final class NativeSession: DesktopReader {
     ) throws -> TreeReading {
         try withClient { c in
             // 客户端等待上限 = 时间预算 + 余量（单次 AX 调用最多再耗 2 秒，加上编码与传输）。
-            guard case .tree(let root, let truncated) = try c.call(
-                .dumpTree(pid: pid, windowTitle: windowTitle, maxDepth: maxDepth, budgetMs: budgetMs),
-                timeoutMs: Int32(budgetMs + 10_000))
+            guard
+                case .tree(let root, let truncated) = try c.call(
+                    .dumpTree(pid: pid, windowTitle: windowTitle, maxDepth: maxDepth, budgetMs: budgetMs),
+                    timeoutMs: Int32(budgetMs + 10_000))
             else {
                 throw WireError.internalError("读树的应答类型错误")
             }
@@ -186,7 +196,10 @@ public final class NativeSession: DesktopReader {
         pid: Int32, windowTitle: String?, locator: ElementLocator, action: ActionKind
     ) throws -> ActionOutcome {
         try withClient { c in
-            switch try c.call(.performAction(pid: pid, windowTitle: windowTitle, locator: locator, action: action), timeoutMs: 30_000) {
+            switch try c.call(
+                .performAction(pid: pid, windowTitle: windowTitle, locator: locator, action: action),
+                timeoutMs: 30_000, actionMayHaveStarted: true)
+            {
             case .acted: return .acted
             case .located: return .located
             case .stale(let d): return .stale(d)
@@ -199,7 +212,11 @@ public final class NativeSession: DesktopReader {
         pid: Int32, windowTitle: String?, locator: ElementLocator, text: String
     ) throws -> ActionOutcome {
         try withClient { c in
-            switch try c.call(.typeText(pid: pid, windowTitle: windowTitle, locator: locator, text: text), timeoutMs: 30_000) {
+            switch try c.call(
+                .typeText(pid: pid, windowTitle: windowTitle, locator: locator, text: text),
+                timeoutMs: scuTypeTextTimeoutMs(characterCount: text.count),
+                actionMayHaveStarted: true)
+            {
             case .acted: return .acted
             case .stale(let d): return .stale(d)
             default: throw WireError.internalError("输入应答类型错误")
@@ -211,7 +228,10 @@ public final class NativeSession: DesktopReader {
         pid: Int32, windowTitle: String?, locator: ElementLocator, key: String
     ) throws -> ActionOutcome {
         try withClient { c in
-            switch try c.call(.pressKey(pid: pid, windowTitle: windowTitle, locator: locator, key: key), timeoutMs: 30_000) {
+            switch try c.call(
+                .pressKey(pid: pid, windowTitle: windowTitle, locator: locator, key: key),
+                timeoutMs: 30_000, actionMayHaveStarted: true)
+            {
             case .acted: return .acted
             case .stale(let d): return .stale(d)
             default: throw WireError.internalError("按键应答类型错误")
@@ -223,7 +243,10 @@ public final class NativeSession: DesktopReader {
         pid: Int32, windowTitle: String?, locator: ElementLocator, value: String
     ) throws -> ActionOutcome {
         try withClient { c in
-            switch try c.call(.setValue(pid: pid, windowTitle: windowTitle, locator: locator, value: value), timeoutMs: 30_000) {
+            switch try c.call(
+                .setValue(pid: pid, windowTitle: windowTitle, locator: locator, value: value),
+                timeoutMs: 30_000, actionMayHaveStarted: true)
+            {
             case .acted: return .acted
             case .stale(let d): return .stale(d)
             default: throw WireError.internalError("设值应答类型错误")
@@ -233,8 +256,9 @@ public final class NativeSession: DesktopReader {
 
     public func captureWindow(pid: Int32, windowTitle: String?) throws -> WindowCapture {
         try withClient { c in
-            guard case .windowCapture(let capture) = try c.call(
-                .captureWindow(pid: pid, windowTitle: windowTitle), timeoutMs: 35_000)
+            guard
+                case .windowCapture(let capture) = try c.call(
+                    .captureWindow(pid: pid, windowTitle: windowTitle), timeoutMs: 35_000)
             else {
                 throw WireError.internalError("截图的应答类型错误")
             }
@@ -244,7 +268,10 @@ public final class NativeSession: DesktopReader {
 
     public func clickAt(pid: Int32, windowTitle: String?, x: Double, y: Double) throws -> ActionOutcome {
         try withClient { c in
-            switch try c.call(.clickAt(pid: pid, windowTitle: windowTitle, x: x, y: y), timeoutMs: 10_000) {
+            switch try c.call(
+                .clickAt(pid: pid, windowTitle: windowTitle, x: x, y: y), timeoutMs: 10_000,
+                actionMayHaveStarted: true)
+            {
             case .acted: return .acted
             case .failure(let e): throw e
             default: throw WireError.internalError("坐标点击的应答类型错误")
@@ -256,7 +283,10 @@ public final class NativeSession: DesktopReader {
         pid: Int32, windowTitle: String?, x: Double, y: Double, dx: Double, dy: Double
     ) throws -> ActionOutcome {
         try withClient { c in
-            switch try c.call(.scrollAt(pid: pid, windowTitle: windowTitle, x: x, y: y, dx: dx, dy: dy), timeoutMs: 10_000) {
+            switch try c.call(
+                .scrollAt(pid: pid, windowTitle: windowTitle, x: x, y: y, dx: dx, dy: dy),
+                timeoutMs: 10_000, actionMayHaveStarted: true)
+            {
             case .acted: return .acted
             case .failure(let e): throw e
             default: throw WireError.internalError("滚动的应答类型错误")
@@ -273,7 +303,7 @@ public final class NativeSession: DesktopReader {
                 .dragAt(
                     pid: pid, windowTitle: windowTitle, fromX: fromX, fromY: fromY, toX: toX, toY: toY,
                     durationMs: durationMs),
-                timeoutMs: 15_000)
+                timeoutMs: 15_000, actionMayHaveStarted: true)
             {
             case .acted: return .acted
             case .failure(let e): throw e

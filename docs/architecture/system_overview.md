@@ -62,6 +62,12 @@ SCU 分为四层，依赖方向单向向下。这四层是**内部职责分层**
 以及什么时候必须让调用方重新读取状态。这一层不直接调用任何操作系统 API，
 也不做策略判断。
 
+> **当前实现现状（2026-10-22）**：上面这条边界尚未完全做到。`SCUCore` 仍有三处平台依赖：
+> `AppLauncher`（AppKit + `/usr/bin/open`）、`PolicyGate`（Darwin `proc_pidinfo` 读宿主祖先链）、
+> `ScreenshotDiff`（CoreGraphics/ImageIO 像素 diff）。它们被列在
+> [ADR-0005 的追加记录](../decisions/adr_0005_macos_first_linux_later.md#addendum_2026_10_22)里；
+> Linux 移植前需要先移到平台侧或改走线协议。除这三处外，协议层不判断平台。
+
 **原生层**是薄封装，把平台 API 归一化成协议层需要的原语。它不做决策，
 不判断元素是否"看起来一样"，只忠实返回平台给的事实。
 
@@ -96,14 +102,16 @@ macOS（AXUIElement / CGEvent / ScreenCaptureKit）
   只有原生进程需要这两项权限，服务进程不需要。
 - **崩溃隔离**：原生 API 调用（尤其是跨进程的 AX 调用）可能挂起或崩溃，
   不应连带杀死持有会话状态的服务进程。
-- **替换成本**：移植到 Linux 时只需替换原生进程，其余三层不变。
+- **替换成本**：移植到 Linux 时理论上只需替换原生进程，其余三层不变。
+  当前实现尚未达到这一点：`SCUCore` 的启动应用、宿主祖先链与截图像素 diff 仍直接使用 macOS API，
+  移植时需要先把它们移到平台侧（见 [ADR-0005 追加记录](../decisions/adr_0005_macos_first_linux_later.md#addendum_2026_10_22)）。
 
 跨进程边界的版本协商规则见
 [ADR-0012](../decisions/adr_0012_protocol_versioning.md)。
 
 ## 跨平台抽象
 
-协议层面向一个平台无关的**目标（Target）**接口工作。设计上有两类实现：
+协议层**设计上**面向一个平台无关的**目标（Target）**接口工作。设计上有两类实现：
 
 - **应用目标（app target）**：一个正在运行的桌面应用的一个窗口
 - **页面目标（tab target）**：一个浏览器标签页
@@ -111,8 +119,10 @@ macOS（AXUIElement / CGEvent / ScreenCaptureKit）
 两者共享同一套操作面的设计目标，这样"点击编号 42"这个语义对应用和网页是同构的，
 agent 不需要为两者写不同的代码路径。
 
-**当前只实现了应用目标。** 页面目标是设计，不是现有行为；浏览器接入的边界与顺序见
-[操作面模型](surface_model.md)。网页内容不应通过 macOS AX 模拟成页面目标。
+**当前只实现了应用目标，而且代码里还没有这个 `Target` 协议。** `DesktopSession` 直接绑定
+`pid` / `windowTitle` / `AXNode`；页面目标是设计，不是现有行为。接入浏览器适配器前，
+需要先把令牌、效果观察与授权抽成面无关的接缝，否则 `BrowserSession` 会复制桌面会话的逻辑。
+浏览器接入的边界与顺序见[操作面模型](surface_model.md)。网页内容不应通过 macOS AX 模拟成页面目标。
 
 平台差异被隔离在原生层。已知的差异点（待实现时验证）：
 

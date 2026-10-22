@@ -50,6 +50,21 @@ Linux 侧的特殊困难：X11 与 Wayland 的注入机制不同，
 - 与浏览器标签页交互的部分（页面目标）本身是跨平台的，
   不受此决策影响
 
+## 追加记录（2026-10-22）
+
+<a id="addendum_2026_10_22"></a>
+
+0.4.x 的代码复核确认：决策本身不变（macOS 优先、保留跨平台抽象），但**实现尚未达到“平台差异全部隔离在原生层”**。
+`SCUCore` 仍直接使用三处 macOS API：
+
+- `AppLauncher`：AppKit `NSWorkspace` + `/usr/bin/open` 启动应用；
+- `PolicyGate`：Darwin `proc_pidinfo` 读取 SCU 自身的宿主祖先链；
+- `ScreenshotDiff`：CoreGraphics/ImageIO 做截图像素 diff。
+
+另外，代码里尚无文中所说的平台无关 `Target` 协议；`DesktopSession` 仍直接绑定 `pid` / `windowTitle` / `AXNode`。
+后果是“移植 Linux 只需替换原生进程”目前不成立。移植前需要先把上述三处移到平台侧（或改走线协议请求），
+并在浏览器适配器之前抽出令牌/效果/授权接缝。此次只修文档与代码不一致，不移动这些实现。
+
 ## 相关文档
 
 - [系统总览](../architecture/system_overview.md)

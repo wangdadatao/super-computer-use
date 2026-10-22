@@ -24,7 +24,8 @@ SCU 是一个 MCP 服务：读取 macOS 应用的无障碍树，并用 `AXPress`
 也可以截图后点坐标；但 `get_ax_state` 不是 DOM，`list_windows` 也不是标签页列表。
 网页内容优先用 Playwright MCP / Codex Browser，见下面的操作面选择。
 
-只读档只有 `check_permissions` / `list_apps` / `list_windows` / `get_ax_state` / `get_screenshot`；
+只读档提供 `check_permissions` / `list_apps` / `list_windows` / `get_ax_state` / `get_screenshot`；
+其中 `get_screenshot` 不改内容，但会激活并 raise 目标窗口（`readOnlyHint: false`），
 `launch_app` / `click` / `click_at` / `scroll_at` / `drag` / `type_text` / `press_key` / `set_value` 需要服务以 `--actions` 启动。
 如果调用这些工具返回"未知工具"（JSON-RPC `-32602`），说明动作档没开，请用户改启动参数。
 

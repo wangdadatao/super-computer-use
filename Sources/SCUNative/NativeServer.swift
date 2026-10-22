@@ -161,6 +161,7 @@ public struct NativeServer: Sendable {
                 return .failure(.actionFailed("拖拽失败：\(error)"))
             }
         }
+    }
 
     /// 把动作结果或错误统一映射为应答，避免三类动作各写一遍。
     func actionResponse(_ body: () throws -> AXBackend.ActionResult) -> Response {
@@ -175,7 +176,6 @@ public struct NativeServer: Sendable {
         } catch {
             return .failure(.internalError("\(error)"))
         }
-    }
     }
 
     /// 定位器的结构检查。深度上限与读树一致：路径不可能比能读到的树更深。

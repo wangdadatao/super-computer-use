@@ -119,3 +119,7 @@ swift build && swift test
 - [决策记录](docs/decisions/index.md)：30 条取舍的背景与代价，包括对本项目有直接影响的两套外部实现分析。
 - [元素身份](docs/architecture/element_identity.md)：跨快照句柄注册表为什么没做，当前句柄如何失效。
 - [策略与审批](docs/architecture/policy_layer.md)：动作准入机制，SCU 的安全边界。
+
+## 许可证
+
+[MIT](LICENSE)。

@@ -72,10 +72,39 @@ WindowCapture {
 ## 后果
 
 - 线协议升到 v6：新增 `captureWindow` 请求与 `windowCapture` 应答；
-- MCP 新增只读工具 `get_screenshot`，返回文本元数据 + PNG 图像内容；
+- MCP 新增只读档工具 `get_screenshot`，返回文本元数据 + PNG 图像内容；
 - 新增 CoreGraphics/CoreText 叠加，避免 NSImage 在无 GUI 会话里的 TIFF 失败；
 - `click_at` 复用 `screenshot_id` 与坐标换算（ADR-0020）；
 - 截图权限、隐私与窗口选择写入已知限制。
+
+<a id="addendum_2026_10_22"></a>
+
+## 追加记录（2026-10-22，只读标注与绑定窗口）
+
+`get_screenshot` 仍然在只读档可用、不修改应用内容；但它在截图前激活并 raise 目标窗口，
+这是可见副作用，与 [ADR-0020](adr_0020_coordinate_click.md) 的坐标动作共用窗口语义。
+0.4.x 之前把它标成 `readOnlyHint: true` / `idempotentHint: true`，和实际行为矛盾；
+现在如实改为 `readOnlyHint: false`、`destructiveHint: false`、`idempotentHint: false`。
+它仍然不是动作工具（动作档开关不控制它的可用性）。
+
+同轮修正：截图绑定改为保存**实际被截到的窗口标题**（`WindowCapture.windowTitle`），
+而不是令牌上的 `windowTitle`。令牌没有指定窗口时，原生层会选最大非最小化窗口；
+旧实现让坐标动作再选一次，窗口顺序变化时可能点到另一个窗口。动作后的 AX 观察仍按令牌自己的
+窗口根读取（保持令牌复用/失效语义，避免把 nil 换成实际标题后每次观察都签发新令牌），
+但树变化的比较范围限定在绑定窗口的子树：其他窗口的变化只可能作废令牌，不算这次动作的效果。
+无标题窗口仍退化为按最大窗口重选，且窗口身份仍只靠标题；
+该残余风险记录在 [MCP 接入面](../interfaces/mcp_surface.md#get_screenshot)。
+
+### 只读档与截图的前台副作用（2026-10-22）
+
+`get_screenshot` 继续留在只读档，但**不声称它没有前台副作用**。截图前激活并 raise 窗口是
+ScreenCaptureKit 在当前 Space 可靠取帧、并让 `windowFrame` 与屏幕坐标一致的前提；若完全不激活，
+其他 Space 的窗口会取不到或拿不到可点击的坐标。把截图移到 `--actions` 会剥夺只读档唯一的视觉能力；
+增加独立开关则是新的工具面，当前不做。
+
+因此只读档的承诺限定为：**不修改应用内容、不点击、不输入**；截图会改变前台窗口，已通过
+`readOnlyHint: false` 明确告知宿主。会按 `readOnlyHint` 自动放行只读工具的宿主可能因此对截图要求审批，
+这是如实标注的预期结果，而不是要让截图“看起来无副作用”。
 
 ## 相关文档
 

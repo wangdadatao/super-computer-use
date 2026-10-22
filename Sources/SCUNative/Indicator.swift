@@ -18,7 +18,7 @@ enum Indicator {
 
     static func show(points: [CGPoint]) {
         guard isEnabled, !points.isEmpty, let main = NSScreen.screens.first else { return }
-        _ = NSApplication.shared
+        AppKitBootstrap.ensureApplication()
         hide()
         let size: CGFloat = 48
         for point in points {
