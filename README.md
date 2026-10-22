@@ -35,7 +35,7 @@ SCU 把这三件事从"调用方自律"提升为协议行为：每次读取状�
 要求：macOS 14.4+、Swift 6.x（Xcode 命令行工具即可）。没有第三方依赖。
 
 ```bash
-git clone <你的仓库地址> SuperComputerUse
+git clone https://github.com/wangdadatao/super-computer-use.git SuperComputerUse
 cd SuperComputerUse
 swift build -c release
 BIN="$(swift build -c release --show-bin-path)"

@@ -40,7 +40,7 @@ An optional per-connection app allowlist (`--allow-app`) narrows the target scop
 Requires macOS 14.4+ and Swift 6.x (Xcode command line tools). No third-party dependencies.
 
 ```bash
-git clone <your-repo-url> SuperComputerUse
+git clone https://github.com/wangdadatao/super-computer-use.git SuperComputerUse
 cd SuperComputerUse
 swift build -c release
 BIN="$(swift build -c release --show-bin-path)"
