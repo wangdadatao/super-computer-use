@@ -6,9 +6,11 @@ extension ScuTool {
     static func header(
         pid: Int, table: ElementTable.Result, depthLimit: Int, budgetMs: Int, truncated: Bool, focused: Bool,
         token: SnapshotToken, policy: PolicyGate.Decision = .allow, appName: String? = nil,
-        windowTitle: String? = nil, actionsEnabled: Bool = false, diff: ElementTable.Diff? = nil
+        windowID: UInt32? = nil, windowTitle: String? = nil,
+        actionsEnabled: Bool = false, diff: ElementTable.Diff? = nil
     ) -> String {
         var h = "# pid=\(pid) 令牌 \(token) 元素 \(table.total)"
+        if let windowID { h += " window_id=\(windowID)" }
         if let windowTitle { h += " 窗口=\"\(windowTitle)\"" }
         if let diff {
             if diff.unchanged {

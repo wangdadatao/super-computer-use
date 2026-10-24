@@ -22,27 +22,27 @@ extension AXBackend {
 
     /// 逐字输入文本。换行与制表符分别映射为 Return 与 Tab，其余字符按 Unicode 字符串投递。
     public static func typeText(
-        pid: Int32, windowTitle: String? = nil, locator: ElementLocator, text: String
+        target: Target, locator: ElementLocator, text: String
     ) throws -> ActionResult {
         guard !text.isEmpty else { throw WireError.unsupportedOperation("文本为空") }
         guard text.count <= inputTextLimit else {
             throw WireError.internalError("文本过长：\(text.count) 个字符，上限 \(inputTextLimit)")
         }
-        switch try locateTarget(pid: pid, windowTitle: windowTitle, locator: locator) {
+        switch try locateTarget(target: target, locator: locator) {
         case .stale(let detail):
             return .stale(detail)
         case .found(let element):
-            prepareKeyboardTarget(element, pid: pid)
-            try focus(element, pid: pid)
+            prepareKeyboardTarget(element, pid: target.pid)
+            try focus(element, pid: target.pid)
             let source = CGEventSource(stateID: .combinedSessionState)
             for character in text {
                 switch character {
                 case "\n", "\r":
-                    postKey(KeyCombo(code: keyCodes["return"]!, flags: []), pid: pid, source: source)
+                    postKey(KeyCombo(code: keyCodes["return"]!, flags: []), pid: target.pid, source: source)
                 case "\t":
-                    postKey(KeyCombo(code: keyCodes["tab"]!, flags: []), pid: pid, source: source)
+                    postKey(KeyCombo(code: keyCodes["tab"]!, flags: []), pid: target.pid, source: source)
                 default:
-                    postUnicode(String(character), pid: pid, source: source)
+                    postUnicode(String(character), pid: target.pid, source: source)
                 }
                 Thread.sleep(forTimeInterval: Double(scuInputPerCharacterMs) / 1000)
             }
@@ -52,16 +52,16 @@ extension AXBackend {
 
     /// 发送一个按键或组合键。键名与修饰键的解析见 `parseKey`。
     public static func pressKey(
-        pid: Int32, windowTitle: String? = nil, locator: ElementLocator, key: String
+        target: Target, locator: ElementLocator, key: String
     ) throws -> ActionResult {
         let combo = try parseKey(key)
-        switch try locateTarget(pid: pid, windowTitle: windowTitle, locator: locator) {
+        switch try locateTarget(target: target, locator: locator) {
         case .stale(let detail):
             return .stale(detail)
         case .found(let element):
-            prepareKeyboardTarget(element, pid: pid)
-            try focus(element, pid: pid)
-            postKey(combo, pid: pid, source: CGEventSource(stateID: .combinedSessionState))
+            prepareKeyboardTarget(element, pid: target.pid)
+            try focus(element, pid: target.pid)
+            postKey(combo, pid: target.pid, source: CGEventSource(stateID: .combinedSessionState))
             return .acted
         }
     }
@@ -69,12 +69,12 @@ extension AXBackend {
     /// 通过无障碍接口直接写元素的值。**要求元素声明 AXValue 可写**，否则拒绝——
     /// 不自动回退到逐字输入：两者的副作用不同（edit_semantics.md）。
     public static func setValue(
-        pid: Int32, windowTitle: String? = nil, locator: ElementLocator, value: String
+        target: Target, locator: ElementLocator, value: String
     ) throws -> ActionResult {
         guard value.count <= inputTextLimit else {
             throw WireError.internalError("值过长：\(value.count) 个字符，上限 \(inputTextLimit)")
         }
-        switch try locateTarget(pid: pid, windowTitle: windowTitle, locator: locator) {
+        switch try locateTarget(target: target, locator: locator) {
         case .stale(let detail):
             return .stale(detail)
         case .found(let element):
@@ -99,9 +99,9 @@ extension AXBackend {
 
     /// 定位目标并检查可访问性。返回 `.stale` 时不执行任何动作。
     static func locateTarget(
-        pid: Int32, windowTitle: String? = nil, locator: ElementLocator
+        target: Target, locator: ElementLocator
     ) throws -> LocateResult<AXUIElement> {
-        try locateInApp(pid: pid, windowTitle: windowTitle, locator: locator)
+        try locateInApp(target: target, locator: locator)
     }
 
     /// 键盘事件按进程投递，但真正接收文字的是**该进程当前 key window 的 first responder**。

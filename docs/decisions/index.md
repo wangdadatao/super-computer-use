@@ -39,6 +39,7 @@
 - [ADR-0028 元素表默认输出增量差异](adr_0028_incremental_tree_rendering.md)：上一版快照、`~`/`+`/删除范围、200 行预算与 `full=true` 回退。读取时机：改元素表输出、处理大应用树、令牌重读成本时。
 - [ADR-0029 分发：可验证的 zip 优先](adr_0029_distribution.md)：通用二进制、ad-hoc 默认、Developer ID/公证路径、安装器边界。读取时机：改打包、签名、公证、安装流程时。
 - [ADR-0030 浏览器操作面通过适配器接入](adr_0030_browser_surface.md)：桌面加两个浏览器操作面、Playwright MCP/CDP 优先、扩展后置、独立令牌与 origin 策略。读取时机：讨论浏览器支持、标签页接管、Playwright MCP 或扩展时。
+- [ADR-0031 窗口身份：CGWindowID 进入 Target](adr_0031_window_identity.md)：`Target` 与线协议 v12、窗口 ID 优先、CoreGraphics 匹配与回退。读取时机：多窗口、同名/无标题窗口、截图坐标绑定或升线协议时。
 
 ### 范围与安全
 

@@ -31,33 +31,32 @@ extension DesktopSession {
     /// 点击：执行 `AXPress`，再观察效果。
     // @project-doc docs/interfaces/mcp_surface.md#click_tool
     public func click(token: String, handle: Int) throws -> ClickReport {
-        try perform(token: token, handle: handle) { pid, windowTitle, locator in
-            try reader.performAction(
-                pid: pid, windowTitle: windowTitle, locator: locator, action: .press)
+        try perform(token: token, handle: handle) { target, locator in
+            try reader.performAction(target: target, locator: locator, action: .press)
         }
     }
 
     /// 逐字输入到目标元素（先聚焦），再观察效果。
     // @project-doc docs/interfaces/mcp_surface.md#input_tools
     public func typeText(token: String, handle: Int, text: String) throws -> ClickReport {
-        try perform(token: token, handle: handle) { pid, windowTitle, locator in
-            try reader.typeText(pid: pid, windowTitle: windowTitle, locator: locator, text: text)
+        try perform(token: token, handle: handle) { target, locator in
+            try reader.typeText(target: target, locator: locator, text: text)
         }
     }
 
     /// 向目标元素发送按键（先聚焦），再观察效果。
     // @project-doc docs/interfaces/mcp_surface.md#input_tools
     public func pressKey(token: String, handle: Int, key: String) throws -> ClickReport {
-        try perform(token: token, handle: handle) { pid, windowTitle, locator in
-            try reader.pressKey(pid: pid, windowTitle: windowTitle, locator: locator, key: key)
+        try perform(token: token, handle: handle) { target, locator in
+            try reader.pressKey(target: target, locator: locator, key: key)
         }
     }
 
     /// 通过无障碍接口直接写元素的值，再观察效果。
     // @project-doc docs/interfaces/mcp_surface.md#input_tools
     public func setValue(token: String, handle: Int, value: String) throws -> ClickReport {
-        try perform(token: token, handle: handle) { pid, windowTitle, locator in
-            try reader.setValue(pid: pid, windowTitle: windowTitle, locator: locator, value: value)
+        try perform(token: token, handle: handle) { target, locator in
+            try reader.setValue(target: target, locator: locator, value: value)
         }
     }
 
@@ -65,7 +64,7 @@ extension DesktopSession {
     /// 点击、输入、按键共用同一套效果摘要与令牌作废规则。
     func perform(
         token: String, handle: Int,
-        action: (Int32, String?, ElementLocator) throws -> ActionOutcome
+        action: (Target, ElementLocator) throws -> ActionOutcome
     ) throws -> ClickReport {
         // 先于动作取走动作前的快照信息：动作中途令牌可能被作废并释放快照。
         let pre = records[token]?.snapshot
@@ -88,8 +87,7 @@ extension DesktopSession {
             while true {
                 settle.sleep(settle.interval)
                 let reading = try reader.readTree(
-                    pid: record.pid, windowTitle: record.windowTitle,
-                    maxDepth: pre.maxDepth, budgetMs: pre.budgetMs)
+                    target: record.target, maxDepth: pre.maxDepth, budgetMs: pre.budgetMs)
                 report.polls += 1
                 let digest = Self.structuralDigest(ElementTable.flatten(reading.root))
                 settled = reading

@@ -44,7 +44,7 @@ interface Scu {
   getState(): Promise<State>;
 
   /** 绑定一个应用目标。返回 App 句柄。 */
-  getApp(ref: string | { pid: number; windowId?: number }): Promise<App>;
+  getApp(ref: string | { pid: number; windowID?: number; windowTitle?: string }): Promise<App>;
 
   /** 绑定一个页面目标。 */
   getTab(ref: string | { url: string }): Promise<Tab>;
@@ -68,7 +68,7 @@ interface Scu {
 
 绑定是**显式**的，不隐式选择目标。
 
-`getApp` 接受的引用形式：应用名、bundle id、可执行文件路径，或 `{ pid, windowId }`。
+`getApp` 接受的引用形式：应用名、bundle id、可执行文件路径，或 `{ pid, windowID, windowTitle }`。
 浏览器标签页不接受按名称推断，必须给出运行时的标签页标识、完整引用或指定浏览器下的唯一 URL
 匹配。
 

@@ -16,7 +16,7 @@ enum ScreenCapture {
         CGPreflightScreenCaptureAccess()
     }
 
-    static func captureWindow(pid: Int32, windowTitle: String? = nil) throws -> WindowCapture {
+    static func captureWindow(target: Target) throws -> WindowCapture {
         guard isAuthorized() else { throw WireError.screenRecordingMissing() }
 
         // ScreenCaptureKit 依赖 WindowServer/CoreGraphics 的进程级初始化。
@@ -26,13 +26,13 @@ enum ScreenCapture {
 
         // 截图前把窗口带到当前 Space/显示器：否则 SCWindow.frame 可能与
         // AX/CGWindowList 的屏幕坐标不一致，模型拿到的坐标会点空。
-        let target = try WindowActivation.activate(pid: pid, windowTitle: windowTitle)
+        let activated = try WindowActivation.activate(target: target)
 
         let box = CaptureBox()
         let done = DispatchSemaphore(value: 0)
         Task.detached {
             do {
-                box.value = try await capture(pid: pid, target: target)
+                box.value = try await capture(target: activated)
             } catch {
                 box.error = error
             }
@@ -53,7 +53,7 @@ enum ScreenCapture {
         var error: Error?
     }
 
-    private static func matches(_ window: SCWindow, target: WindowActivation.Target) -> Bool {
+    private static func matches(_ window: SCWindow, target: WindowActivation.ActivatedWindow) -> Bool {
         if let targetFrame = target.frame {
             let frame = window.frame
             let tolerance = 2.0
@@ -68,7 +68,7 @@ enum ScreenCapture {
         return false
     }
 
-    private static func capture(pid: Int32, target: WindowActivation.Target) async throws -> WindowCapture {
+    private static func capture(target: WindowActivation.ActivatedWindow) async throws -> WindowCapture {
         let content: SCShareableContent
         do {
             content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
@@ -77,12 +77,17 @@ enum ScreenCapture {
         }
 
         let candidates = content.windows.filter { window in
-            guard let app = window.owningApplication, app.processID == pid else { return false }
+            guard let app = window.owningApplication, app.processID == target.pid else { return false }
             guard window.windowLayer == 0, window.isOnScreen else { return false }
             return window.frame.width >= 80 && window.frame.height >= 60
         }
         let window: SCWindow
-        if let matched = candidates.first(where: { matches($0, target: target) }) {
+        if let windowID = target.windowID {
+            guard let matched = candidates.first(where: { $0.windowID == windowID }) else {
+                throw WireError.windowNotFound(pid: target.pid, windowID: windowID)
+            }
+            window = matched
+        } else if let matched = candidates.first(where: { matches($0, target: target) }) {
             window = matched
         } else if target.title == nil && target.frame == nil,
             let largest = candidates.max(by: {
@@ -125,7 +130,7 @@ enum ScreenCapture {
             windowFrame: Rect(
                 x: Double(frame.origin.x), y: Double(frame.origin.y),
                 width: Double(frame.width), height: Double(frame.height)),
-            windowTitle: window.title)
+            windowID: window.windowID, windowTitle: window.title)
     }
 
     static func encodePNG(_ image: CGImage) throws -> Data {

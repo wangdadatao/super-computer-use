@@ -21,7 +21,9 @@ final class FakeReader: DesktopReader {
     private(set) var windowsCalls: [Int32] = []
     private(set) var treeCalls: [(pid: Int32, depth: Int, budget: Int)] = []
     private(set) var treeWindowTitles: [String?] = []
+    private(set) var treeWindowIDs: [UInt32?] = []
     private(set) var actionWindowTitles: [String?] = []
+    private(set) var actionWindowIDs: [UInt32?] = []
     var action: Result<ActionOutcome, WireError> = .success(.acted)
     private(set) var actionCalls: [(pid: Int32, locator: ElementLocator, action: ActionKind)] = []
     private(set) var typed: [(pid: Int32, locator: ElementLocator, text: String)] = []
@@ -29,32 +31,36 @@ final class FakeReader: DesktopReader {
     private(set) var written: [(pid: Int32, locator: ElementLocator, value: String)] = []
     private(set) var coordinateClicks: [(pid: Int32, x: Double, y: Double)] = []
     private(set) var coordinateClickWindowTitles: [String?] = []
+    private(set) var coordinateClickWindowIDs: [UInt32?] = []
     private(set) var scrolls: [(pid: Int32, x: Double, y: Double, dx: Double, dy: Double)] = []
     private(set) var drags: [(pid: Int32, fromX: Double, fromY: Double, toX: Double, toY: Double, durationMs: Int)] = []
     var capture: Result<WindowCapture, WireError> = .failure(.unsupportedOperation("没有配置截图"))
     private(set) var captureWindowTitles: [String?] = []
+    private(set) var captureWindowIDs: [UInt32?] = []
 
     func checkPermissions() throws -> Bool { try permissions.get() }
-    func captureWindow(pid: Int32, windowTitle: String?) throws -> WindowCapture {
-        captureWindowTitles.append(windowTitle)
+    func captureWindow(target: Target) throws -> WindowCapture {
+        captureWindowTitles.append(target.windowTitle)
+        captureWindowIDs.append(target.windowID)
         return try capture.get()
     }
-    func clickAt(pid: Int32, windowTitle: String?, x: Double, y: Double) throws -> ActionOutcome {
-        coordinateClicks.append((pid, x, y))
-        coordinateClickWindowTitles.append(windowTitle)
+    func clickAt(target: Target, x: Double, y: Double) throws -> ActionOutcome {
+        coordinateClicks.append((target.pid, x, y))
+        coordinateClickWindowTitles.append(target.windowTitle)
+        coordinateClickWindowIDs.append(target.windowID)
         return .acted
     }
     func scrollAt(
-        pid: Int32, windowTitle: String?, x: Double, y: Double, dx: Double, dy: Double
+        target: Target, x: Double, y: Double, dx: Double, dy: Double
     ) throws -> ActionOutcome {
-        scrolls.append((pid, x, y, dx, dy))
+        scrolls.append((target.pid, x, y, dx, dy))
         return .acted
     }
     func dragAt(
-        pid: Int32, windowTitle: String?, fromX: Double, fromY: Double, toX: Double, toY: Double,
+        target: Target, fromX: Double, fromY: Double, toX: Double, toY: Double,
         durationMs: Int
     ) throws -> ActionOutcome {
-        drags.append((pid, fromX, fromY, toX, toY, durationMs))
+        drags.append((target.pid, fromX, fromY, toX, toY, durationMs))
         return .acted
     }
     func listApps() throws -> [AppInfo] { try apps.get() }
@@ -63,38 +69,43 @@ final class FakeReader: DesktopReader {
         return try windows.get()
     }
     func readTree(
-        pid: Int32, windowTitle: String?, maxDepth: Int, budgetMs: Int
+        target: Target, maxDepth: Int, budgetMs: Int
     ) throws -> TreeReading {
-        treeCalls.append((pid, maxDepth, budgetMs))
-        treeWindowTitles.append(windowTitle)
+        treeCalls.append((target.pid, maxDepth, budgetMs))
+        treeWindowTitles.append(target.windowTitle)
+        treeWindowIDs.append(target.windowID)
         return try tree.get()
     }
     func performAction(
-        pid: Int32, windowTitle: String?, locator: ElementLocator, action kind: ActionKind
+        target: Target, locator: ElementLocator, action kind: ActionKind
     ) throws -> ActionOutcome {
-        actionCalls.append((pid, locator, kind))
-        actionWindowTitles.append(windowTitle)
+        actionCalls.append((target.pid, locator, kind))
+        actionWindowTitles.append(target.windowTitle)
+        actionWindowIDs.append(target.windowID)
         return try action.get()
     }
     func typeText(
-        pid: Int32, windowTitle: String?, locator: ElementLocator, text: String
+        target: Target, locator: ElementLocator, text: String
     ) throws -> ActionOutcome {
-        typed.append((pid, locator, text))
-        actionWindowTitles.append(windowTitle)
+        typed.append((target.pid, locator, text))
+        actionWindowTitles.append(target.windowTitle)
+        actionWindowIDs.append(target.windowID)
         return try action.get()
     }
     func pressKey(
-        pid: Int32, windowTitle: String?, locator: ElementLocator, key: String
+        target: Target, locator: ElementLocator, key: String
     ) throws -> ActionOutcome {
-        pressed.append((pid, locator, key))
-        actionWindowTitles.append(windowTitle)
+        pressed.append((target.pid, locator, key))
+        actionWindowTitles.append(target.windowTitle)
+        actionWindowIDs.append(target.windowID)
         return try action.get()
     }
     func setValue(
-        pid: Int32, windowTitle: String?, locator: ElementLocator, value: String
+        target: Target, locator: ElementLocator, value: String
     ) throws -> ActionOutcome {
-        written.append((pid, locator, value))
-        actionWindowTitles.append(windowTitle)
+        written.append((target.pid, locator, value))
+        actionWindowTitles.append(target.windowTitle)
+        actionWindowIDs.append(target.windowID)
         return try action.get()
     }
 }
@@ -682,18 +693,41 @@ final class FakeAppLauncher: AppLauncher, @unchecked Sendable {
         #expect(reader.windowsCalls == [42])
     }
 
+    @Test func listWindowsPrintsWindowIDWhenAvailable() {
+        let (t, s, reader) = rig(actions: false)
+        reader.windows = .success([
+            WindowInfo(windowID: 0xAB, title: "同名", frame: Rect(x: 0, y: 0, width: 10, height: 10)),
+            WindowInfo(windowID: nil, title: nil, frame: nil),
+        ])
+        let r = t.callTool(s, "list_windows", ["pid": 42])
+        #expect(!r.isError)
+        #expect(r.text == "#171\t\"同名\"\t(0,0,10,10)\n-\t-")
+    }
+
+    @Test func getAXStateAcceptsWindowIDAndPassesItToTheReader() {
+        let (t, s, reader) = rig(actions: false)
+        let r = t.callTool(
+            s, "get_ax_state", ["pid": 42, "window_id": 0xAB, "full": true])
+        #expect(!r.isError)
+        #expect(reader.treeWindowIDs == [0xAB])
+        #expect(reader.treeWindowTitles == [nil])
+        #expect(r.text.contains("window_id=171"))
+    }
+
     @Test func getAXStateCanBindAScreenshotWindow() {
         let (t, s, reader) = rig(actions: false)
         reader.capture = .success(
             WindowCapture(
                 png: Self.makePNG(), width: 200, height: 120, scale: 1,
-                windowFrame: Rect(x: 0, y: 0, width: 200, height: 120), windowTitle: "主窗口"))
+                windowFrame: Rect(x: 0, y: 0, width: 200, height: 120),
+                windowID: 0xAB, windowTitle: "主窗口"))
         let read = t.callTool(s, "get_ax_state", ["pid": 42, "window": "主窗口"])
         #expect(!read.isError)
         #expect(read.text.contains("窗口=\"主窗口\""))
         let shot = t.callTool(s, "get_screenshot", ["token": .string(token(from: read))])
         #expect(!shot.isError)
         #expect(shot.text.contains("title=\"主窗口\""))
+        #expect(shot.text.contains("window_id=171"))
         #expect(reader.captureWindowTitles == ["主窗口"])
     }
 

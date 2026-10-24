@@ -150,7 +150,7 @@ cd scu-<version>-macos-universal
 
 - 包版本来自 `scuVersion`；`VERSION`、`serverInfo.version`、包名必须一致。
 - `scu` 与 `scu-native` 的线协议版本在握手时校验；不能混用不同版本的二进制。
-- 当前线协议 v11；分发包不改变协议，只改变交付方式。
+- 0.4.0 包的线协议是 v11；窗口身份改动把源码协议升到 v12，尚未发布分发包。
 - 升级：覆盖安装 `scu` 与 `scu-native`，然后重启宿主；没有自动更新。
 
 ## 当前证据与限制

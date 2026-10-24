@@ -11,8 +11,10 @@ extension DesktopSession {
     }
 
     public func readState(
-        pid: Int32, maxDepth: Int, budgetMs: Int, windowTitle: String? = nil
+        pid: Int32, maxDepth: Int, budgetMs: Int, windowID: UInt32? = nil,
+        windowTitle: String? = nil
     ) throws -> SessionState {
+        let target = Target(pid: pid, windowID: windowID, windowTitle: windowTitle)
         // 受限连接必须在读树之前确认应用身份，避免先读到数据再拒绝。
         let knownIdentity: Identity?
         if appAuthorization.isRestricted {
@@ -31,12 +33,12 @@ extension DesktopSession {
         }
 
         let reading = try reader.readTree(
-            pid: pid, windowTitle: windowTitle, maxDepth: maxDepth, budgetMs: budgetMs)
+            target: target, maxDepth: maxDepth, budgetMs: budgetMs)
         let entries = ElementTable.flatten(reading.root)
         let digest = Self.structuralDigest(entries)
 
         if let t = currentToken, let r = records[t], r.pid == pid,
-            r.windowTitle == windowTitle, let snap = r.snapshot,
+            r.windowID == windowID, r.windowTitle == windowTitle, let snap = r.snapshot,
             snap.digest == digest, snap.truncated == reading.truncated
         {
             // 结构没有变化：沿用令牌。几何不进摘要，窗口移动不会让令牌失效。
@@ -46,16 +48,17 @@ extension DesktopSession {
                 reading.truncated
                 ? nil
                 : Baseline(
-                    pid: pid, windowTitle: windowTitle, maxDepth: maxDepth, budgetMs: budgetMs,
-                    entries: entries)
+                    pid: pid, windowID: windowID, windowTitle: windowTitle,
+                    maxDepth: maxDepth, budgetMs: budgetMs, entries: entries)
             return state(
                 token: t, record: r, reading: reading, reused: true, diff: .noChange)
         }
 
         // 差异只用于展示。完整 entries 仍然写进快照，动作解析不依赖差异文本。
         var diff: ElementTable.Diff?
-        if let b = baseline, b.pid == pid, b.windowTitle == windowTitle,
-            b.maxDepth == maxDepth, b.budgetMs == budgetMs, !reading.truncated
+        if let b = baseline, b.pid == pid, b.windowID == windowID,
+            b.windowTitle == windowTitle, b.maxDepth == maxDepth, b.budgetMs == budgetMs,
+            !reading.truncated
         {
             diff = ElementTable.diff(previous: b.entries, current: entries)
         }
@@ -67,7 +70,7 @@ extension DesktopSession {
         let token = "s\(nonce).\(counter)"
         let record = Record(
             pid: pid, identity: knownIdentity ?? (try? lookupIdentity(pid: pid)), status: .current,
-            windowTitle: windowTitle,
+            windowID: windowID, windowTitle: windowTitle,
             snapshot: Snapshot(
                 entries: entries, digest: digest, truncated: reading.truncated, maxDepth: maxDepth, budgetMs: budgetMs))
         records[token] = record
@@ -80,8 +83,8 @@ extension DesktopSession {
             reading.truncated
             ? nil
             : Baseline(
-                pid: pid, windowTitle: windowTitle, maxDepth: maxDepth, budgetMs: budgetMs,
-                entries: entries)
+                pid: pid, windowID: windowID, windowTitle: windowTitle,
+                maxDepth: maxDepth, budgetMs: budgetMs, entries: entries)
         return state(token: token, record: record, reading: reading, reused: false, diff: diff)
     }
 
@@ -92,7 +95,8 @@ extension DesktopSession {
         SessionState(
             token: SnapshotToken(token), reading: reading, reused: reused, pid: record.pid,
             policy: policy.evaluate(pid: record.pid, bundleId: record.identity?.bundleId),
-            appName: record.identity?.name, windowTitle: record.windowTitle, diff: diff)
+            appName: record.identity?.name, windowID: record.windowID,
+            windowTitle: record.windowTitle, diff: diff)
     }
 
     /// 查进程的 bundle id 与名称。列表里没有该进程时返回空身份（不是失败）；列表本身读不到则抛错。

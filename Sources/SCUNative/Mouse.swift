@@ -10,9 +10,9 @@ import SCUWire
 /// 这会移动真实光标并切换前台应用，代价是可见的，但这是坐标点击的语义。
 enum Mouse {
     static func scrollAt(
-        pid: Int32, windowTitle: String? = nil, x: Double, y: Double, dx: Double, dy: Double
+        target: Target, x: Double, y: Double, dx: Double, dy: Double
     ) throws {
-        try WindowActivation.activate(pid: pid, windowTitle: windowTitle)
+        try WindowActivation.activate(target: target)
         let point = CGPoint(x: x, y: y)
         Indicator.show(points: [point])
         defer { Indicator.hide() }
@@ -33,10 +33,10 @@ enum Mouse {
     }
 
     static func dragAt(
-        pid: Int32, windowTitle: String? = nil, fromX: Double, fromY: Double, toX: Double, toY: Double,
+        target: Target, fromX: Double, fromY: Double, toX: Double, toY: Double,
         durationMs: Int
     ) throws {
-        try WindowActivation.activate(pid: pid, windowTitle: windowTitle)
+        try WindowActivation.activate(target: target)
         let start = CGPoint(x: fromX, y: fromY)
         let end = CGPoint(x: toX, y: toY)
         Indicator.show(points: [start, end])
@@ -72,8 +72,8 @@ enum Mouse {
         up.post(tap: .cghidEventTap)
     }
 
-    static func clickAt(pid: Int32, windowTitle: String? = nil, x: Double, y: Double) throws {
-        try WindowActivation.activate(pid: pid, windowTitle: windowTitle)
+    static func clickAt(target: Target, x: Double, y: Double) throws {
+        try WindowActivation.activate(target: target)
 
         let point = CGPoint(x: x, y: y)
         Indicator.show(points: [point])

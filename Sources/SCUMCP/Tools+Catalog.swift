@@ -35,15 +35,16 @@ extension ScuTool {
                 """
         case .listWindows:
             return """
-                列出指定应用可枚举的窗口，每行标题与 frame（左上角原点）。只读。\
-                标题是 get_ax_state 的 window、get_screenshot 的窗口绑定与坐标动作使用的标识；\
-                同名窗口只选第一个；没有标题的窗口显示为 -。先用 list_apps 取得 pid。
+                列出指定应用可枚举的窗口，每行 window_id（若有）、标题与 frame（左上角原点）。只读。\
+                窗口 ID 是窗口生命周期内的稳定标识，优先用 get_ax_state 的 window_id 绑定；\
+                标题只作可读线索，按标题选择时同名窗口只取第一个；没有标题的窗口显示为 -。先用 list_apps 取得 pid。
                 """
         case .getScreenshot:
             return """
                 截取 get_ax_state 令牌对应的目标窗口，并在图上叠加可交互元素的短标签。\
                 不修改应用内容，但截图前会激活并 raise 目标窗口（可能改变前台），需要屏幕录制权限。\
                 返回 PNG 图像与 screenshot_id；图像坐标以窗口左上角为原点，`scale` 是图像像素 / 窗口点。\
+                文本行还带 window_id（若可取得），用于后续核对窗口身份。\
                 文本元素表仍是权威：徽标太小、重叠或被裁掉时，按 get_ax_state 的标签选择。\
                 屏幕录制权限按宿主应用归属，未授予时返回 system_permission_missing。
                 """
@@ -123,8 +124,8 @@ extension ScuTool {
                 读取指定应用的无障碍树，返回文本化元素表。只读，不会操作应用。\
                 默认返回与上一次读取的差异（~ 变化，+ 新增，删除项用旧句柄范围概括）；\
                 首次读取、切换目标、树被截断或读取参数变化时返回完整表。需要完整表时传 full=true。\
-                可用 window 指定窗口标题：此时元素表以该窗口为根读取，截图与坐标动作也绑定该窗口。\
-                窗口标题来自 list_windows；找不到会返回 window_not_found。\
+                可用 window_id 指定窗口 ID（优先），或用 window 指定窗口标题；此时元素表以该窗口为根读取，\
+                截图与坐标动作也绑定该窗口。窗口 ID/标题来自 list_windows；找不到会返回 window_not_found。\
                 每行一个元素，缩进表示层级，格式 [a] [角色#句柄] "标题" 属性… frame=(x,y,w,h)。\
                 可交互元素前的 [a] 是本次快照的标签；click / type_text / press_key / set_value 可以用 label 代替 handle。\
                 输出带一个令牌，句柄与令牌配对、只在该令牌有效期内可用（界面结构变化后令牌失效）；click / type_text / press_key / set_value（仅动作档提供）接受它们。\

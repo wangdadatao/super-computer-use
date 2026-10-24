@@ -53,7 +53,8 @@ extension ScuTool {
                         window.frame.map {
                             "(\(Int($0.x)),\(Int($0.y)),\(Int($0.width)),\(Int($0.height)))"
                         } ?? "-"
-                    return "\(title)\t\(frame)"
+                    let id = window.windowID.map { "#\($0)\t" } ?? ""
+                    return "\(id)\(title)\t\(frame)"
                 }
                 return Outcome(
                     text: lines.isEmpty ? "（没有可枚举的窗口）" : lines.joined(separator: "\n"),
@@ -64,7 +65,7 @@ extension ScuTool {
                     args,
                     allowed: [
                         "pid", "max_depth", "budget_ms", "max_elements", "focus", "focus_role", "window",
-                        "full",
+                        "window_id", "full",
                     ])
                 guard let pid = try Self.int(args, "pid", range: 1...Int(Int32.max), required: true) else {
                     throw ArgumentError(message: "缺少参数 pid")
@@ -85,10 +86,14 @@ extension ScuTool {
                     (focusText != nil || focusRole != nil)
                     ? ElementTable.Focus(text: focusText, role: focusRole) : nil
                 let windowTitle = try Self.string(args, "window")
+                let windowID =
+                    try Self.int(args, "window_id", range: 1...Int(UInt32.max), required: false)
+                    .map(UInt32.init)
                 let full = try Self.bool(args, "full") ?? false
 
                 let state = try session.readState(
-                    pid: Int32(pid), maxDepth: depth, budgetMs: budget, windowTitle: windowTitle)
+                    pid: Int32(pid), maxDepth: depth, budgetMs: budget,
+                    windowID: windowID, windowTitle: windowTitle)
                 let reading = state.reading
                 let table = ElementTable.render(reading.root, maxElements: maxElements, focus: focus)
                 // 差异只影响展示；完整树仍留在会话快照里，句柄解析不依赖它。
@@ -97,8 +102,9 @@ extension ScuTool {
                 var head = Self.header(
                     pid: pid, table: table, depthLimit: depth, budgetMs: budget,
                     truncated: reading.truncated, focused: focus != nil, token: state.token,
-                    policy: state.policy, appName: state.appName, windowTitle: state.windowTitle,
-                    actionsEnabled: actionsEnabled, diff: useDiff ? diff : nil)
+                    policy: state.policy, appName: state.appName, windowID: state.windowID,
+                    windowTitle: state.windowTitle, actionsEnabled: actionsEnabled,
+                    diff: useDiff ? diff : nil)
                 if let diff, diff.budgetExceeded {
                     head +=
                         "\n⚠️ 差异超过 \(ElementTable.defaultMaxDiffLines) 行（\(diff.lineCount) 行变化），已回退完整表；需要更小范围时用 window/focus。"
@@ -117,7 +123,7 @@ extension ScuTool {
                 let shot = try session.captureScreenshot(token: token)
                 let overlaid = ScreenshotOverlay.render(capture: shot.capture, labels: shot.labels) ?? shot.capture.png
                 let text = """
-                    screenshot_id=\(shot.id) 图像 \(shot.capture.width)x\(shot.capture.height) scale=\(String(format: "%.3f", shot.capture.scale)) window=(\(Int(shot.capture.windowFrame.x)),\(Int(shot.capture.windowFrame.y)),\(Int(shot.capture.windowFrame.width)),\(Int(shot.capture.windowFrame.height))) title="\(shot.capture.windowTitle ?? "-")"
+                    screenshot_id=\(shot.id) 图像 \(shot.capture.width)x\(shot.capture.height) scale=\(String(format: "%.3f", shot.capture.scale)) window=(\(Int(shot.capture.windowFrame.x)),\(Int(shot.capture.windowFrame.y)),\(Int(shot.capture.windowFrame.width)),\(Int(shot.capture.windowFrame.height))) window_id=\(shot.capture.windowID.map(String.init) ?? "-") title="\(shot.capture.windowTitle ?? "-")"
                     图上 [a] 是快照标签；文本表可能因 max_elements/focus 只显示一部分，未在文本表出现的标签也仍可用。\n标签只对本次令牌有效；截图绑定窗口位置与缩放，窗口移动后需要重新截。
                     """
                 return Outcome(

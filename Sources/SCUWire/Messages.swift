@@ -2,7 +2,7 @@ import Foundation
 
 /// 协议层 ↔ 原生层的协议版本。单调递增整数，两侧必须完全相等（ADR-0012）。
 /// 编译期常量：不是运行时可变状态。
-public let scuNativeProtocolVersion = 11
+public let scuNativeProtocolVersion = 12
 
 /// `dumpTree` 允许的最大深度。超出时原生层拒绝，不做静默截断。
 public let scuMaxTreeDepth = 64
@@ -136,6 +136,13 @@ public struct WireError: Error, Codable, Sendable, Equatable {
             message: "进程 \(pid) 找不到标题为“\(title)”的窗口；请重新读取界面并选择仍存在的窗口。")
     }
 
+    /// 找不到指定 ID 的目标窗口。
+    public static func windowNotFound(pid: Int32, windowID: UInt32) -> WireError {
+        WireError(
+            code: "window_not_found", layer: "protocol", retry: "after_refresh",
+            message: "进程 \(pid) 找不到窗口 ID \(windowID)；窗口可能已关闭或重建，请重新读取界面。")
+    }
+
     /// 找不到要启动/解析的应用。
     public static func appNotFound(_ identifier: String) -> WireError {
         WireError(
@@ -165,26 +172,53 @@ public struct AppInfo: Codable, Sendable, Equatable {
     }
 }
 
+// @project-doc docs/decisions/adr_0031_window_identity.md#window_identity
+/// 一个窗口目标：进程 + 可选的 CGWindowID + 可选标题。
+///
+/// `windowID` 是窗口生命周期内的稳定标识；标题只是可读线索，可能重复或变化。
+/// 两者都为空表示“应用默认窗口”（由原生层按最大非最小化窗口选择）。
+public struct Target: Codable, Sendable, Equatable, Hashable {
+    public var pid: Int32
+    public var windowID: UInt32?
+    public var windowTitle: String?
+
+    public init(pid: Int32, windowID: UInt32? = nil, windowTitle: String? = nil) {
+        self.pid = pid
+        self.windowID = windowID
+        self.windowTitle = windowTitle
+    }
+
+    /// 只按标题绑定窗口的旧式目标。
+    public init(pid: Int32, windowTitle: String?) {
+        self.init(pid: pid, windowID: nil, windowTitle: windowTitle)
+    }
+}
+
 public struct WindowInfo: Codable, Sendable, Equatable {
+    /// CGWindowID；窗口生命周期内稳定。无法从 CoreGraphics 匹配到时为 nil。
+    public var windowID: UInt32?
     /// 窗口标题；没有标题时为 nil。
     public var title: String?
     public var frame: Rect?
 
-    public init(title: String?, frame: Rect?) {
+    public init(windowID: UInt32? = nil, title: String?, frame: Rect?) {
+        self.windowID = windowID
         self.title = title
         self.frame = frame
     }
 
-    private enum Key: String, CodingKey { case title, frame }
+    private enum Key: String, CodingKey { case windowID, title, frame }
 
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: Key.self)
+        windowID = try c.decodeIfPresent(UInt32.self, forKey: .windowID)
         title = try c.decodeIfPresent(String.self, forKey: .title)
         frame = try c.decodeIfPresent(Rect.self, forKey: .frame)
     }
 
     public func encode(to encoder: any Encoder) throws {
         var c = encoder.container(keyedBy: Key.self)
+        try c.encodeIfPresent(windowID, forKey: .windowID)
         try c.encodeIfPresent(title, forKey: .title)
         try c.encodeIfPresent(frame, forKey: .frame)
     }
@@ -214,16 +248,20 @@ public struct WindowCapture: Codable, Sendable, Equatable {
     /// 图像像素 / 窗口点；Retina 或缩放后不一定等于 1。
     public var scale: Double
     public var windowFrame: Rect
+    /// 截图实际对应的 CGWindowID；无法取得时为 nil。
+    public var windowID: UInt32?
     public var windowTitle: String?
 
     public init(
-        png: Data, width: Int, height: Int, scale: Double, windowFrame: Rect, windowTitle: String? = nil
+        png: Data, width: Int, height: Int, scale: Double, windowFrame: Rect,
+        windowID: UInt32? = nil, windowTitle: String? = nil
     ) {
         self.png = png
         self.width = width
         self.height = height
         self.scale = scale
         self.windowFrame = windowFrame
+        self.windowID = windowID
         self.windowTitle = windowTitle
     }
 }
@@ -373,27 +411,25 @@ public enum Request: Sendable, Equatable {
     case listApps
     /// 列出某个应用的可枚举窗口（标题与 frame）。只读。
     case listWindows(pid: Int32)
-    /// 读取树；`windowTitle` 存在时以匹配的窗口为根。
-    case dumpTree(pid: Int32, windowTitle: String?, maxDepth: Int, budgetMs: Int)
-    case performAction(
-        pid: Int32, windowTitle: String?, locator: ElementLocator, action: ActionKind)
+    /// 读取树；`target.windowID`/`target.windowTitle` 存在时以匹配的窗口为根。
+    case dumpTree(target: Target, maxDepth: Int, budgetMs: Int)
+    case performAction(target: Target, locator: ElementLocator, action: ActionKind)
     /// 把文本逐字输入到目标元素（先聚焦）。
-    case typeText(pid: Int32, windowTitle: String?, locator: ElementLocator, text: String)
+    case typeText(target: Target, locator: ElementLocator, text: String)
     /// 向目标元素发送一个按键或组合键（先聚焦）。
-    case pressKey(pid: Int32, windowTitle: String?, locator: ElementLocator, key: String)
+    case pressKey(target: Target, locator: ElementLocator, key: String)
     /// 通过无障碍接口直接写元素的值（要求元素声明 AXValue 可写）。
-    case setValue(pid: Int32, windowTitle: String?, locator: ElementLocator, value: String)
+    case setValue(target: Target, locator: ElementLocator, value: String)
     /// 截取目标应用的一个窗口，返回 PNG 与坐标映射元数据。
-    /// `windowTitle` 为 nil 时使用默认窗口；非 nil 时必须精确匹配该标题的窗口。
-    case captureWindow(pid: Int32, windowTitle: String?)
+    /// `target.windowID`/`target.windowTitle` 都为空时使用默认窗口。
+    case captureWindow(target: Target)
     /// 在全局屏幕坐标 (x, y) 投递一次鼠标左键点击。坐标由协议层从截图换算。
-    case clickAt(pid: Int32, windowTitle: String?, x: Double, y: Double)
+    case clickAt(target: Target, x: Double, y: Double)
     /// 在全局坐标 (x, y) 投递滚轮事件，dx/dy 为像素增量。
-    case scrollAt(pid: Int32, windowTitle: String?, x: Double, y: Double, dx: Double, dy: Double)
+    case scrollAt(target: Target, x: Double, y: Double, dx: Double, dy: Double)
     /// 从全局坐标 (fromX, fromY) 拖到 (toX, toY)，持续 durationMs。
     case dragAt(
-        pid: Int32, windowTitle: String?, fromX: Double, fromY: Double, toX: Double, toY: Double,
-        durationMs: Int)
+        target: Target, fromX: Double, fromY: Double, toX: Double, toY: Double, durationMs: Int)
 }
 
 public enum Response: Sendable, Equatable {
@@ -415,8 +451,8 @@ public enum Response: Sendable, Equatable {
 
 extension Request: Codable {
     private enum Key: String, CodingKey {
-        case type, protocolVersion, pid, maxDepth, budgetMs, locator, action, text, key, value, x, y,
-            dx, dy, fromX, fromY, toX, toY, durationMs, windowTitle
+        case type, protocolVersion, pid, target, maxDepth, budgetMs, locator, action, text, key, value, x, y,
+            dx, dy, fromX, fromY, toX, toY, durationMs
     }
     private enum Kind: String, Codable {
         case hello, checkPermissions, listApps, listWindows, dumpTree, performAction, typeText, pressKey, setValue
@@ -433,56 +469,46 @@ extension Request: Codable {
             self = .listWindows(pid: try c.decode(Int32.self, forKey: .pid))
         case .dumpTree:
             self = .dumpTree(
-                pid: try c.decode(Int32.self, forKey: .pid),
-                windowTitle: try c.decodeIfPresent(String.self, forKey: .windowTitle),
+                target: try c.decode(Target.self, forKey: .target),
                 maxDepth: try c.decode(Int.self, forKey: .maxDepth),
                 budgetMs: try c.decode(Int.self, forKey: .budgetMs))
         case .performAction:
             self = .performAction(
-                pid: try c.decode(Int32.self, forKey: .pid),
-                windowTitle: try c.decodeIfPresent(String.self, forKey: .windowTitle),
+                target: try c.decode(Target.self, forKey: .target),
                 locator: try c.decode(ElementLocator.self, forKey: .locator),
                 action: try c.decode(ActionKind.self, forKey: .action))
         case .typeText:
             self = .typeText(
-                pid: try c.decode(Int32.self, forKey: .pid),
-                windowTitle: try c.decodeIfPresent(String.self, forKey: .windowTitle),
+                target: try c.decode(Target.self, forKey: .target),
                 locator: try c.decode(ElementLocator.self, forKey: .locator),
                 text: try c.decode(String.self, forKey: .text))
         case .pressKey:
             self = .pressKey(
-                pid: try c.decode(Int32.self, forKey: .pid),
-                windowTitle: try c.decodeIfPresent(String.self, forKey: .windowTitle),
+                target: try c.decode(Target.self, forKey: .target),
                 locator: try c.decode(ElementLocator.self, forKey: .locator),
                 key: try c.decode(String.self, forKey: .key))
         case .setValue:
             self = .setValue(
-                pid: try c.decode(Int32.self, forKey: .pid),
-                windowTitle: try c.decodeIfPresent(String.self, forKey: .windowTitle),
+                target: try c.decode(Target.self, forKey: .target),
                 locator: try c.decode(ElementLocator.self, forKey: .locator),
                 value: try c.decode(String.self, forKey: .value))
         case .captureWindow:
-            self = .captureWindow(
-                pid: try c.decode(Int32.self, forKey: .pid),
-                windowTitle: try c.decodeIfPresent(String.self, forKey: .windowTitle))
+            self = .captureWindow(target: try c.decode(Target.self, forKey: .target))
         case .clickAt:
             self = .clickAt(
-                pid: try c.decode(Int32.self, forKey: .pid),
-                windowTitle: try c.decodeIfPresent(String.self, forKey: .windowTitle),
+                target: try c.decode(Target.self, forKey: .target),
                 x: try c.decode(Double.self, forKey: .x),
                 y: try c.decode(Double.self, forKey: .y))
         case .scrollAt:
             self = .scrollAt(
-                pid: try c.decode(Int32.self, forKey: .pid),
-                windowTitle: try c.decodeIfPresent(String.self, forKey: .windowTitle),
+                target: try c.decode(Target.self, forKey: .target),
                 x: try c.decode(Double.self, forKey: .x),
                 y: try c.decode(Double.self, forKey: .y),
                 dx: try c.decode(Double.self, forKey: .dx),
                 dy: try c.decode(Double.self, forKey: .dy))
         case .dragAt:
             self = .dragAt(
-                pid: try c.decode(Int32.self, forKey: .pid),
-                windowTitle: try c.decodeIfPresent(String.self, forKey: .windowTitle),
+                target: try c.decode(Target.self, forKey: .target),
                 fromX: try c.decode(Double.self, forKey: .fromX),
                 fromY: try c.decode(Double.self, forKey: .fromY),
                 toX: try c.decode(Double.self, forKey: .toX),
@@ -502,58 +528,49 @@ extension Request: Codable {
         case .listWindows(let pid):
             try c.encode(Kind.listWindows, forKey: .type)
             try c.encode(pid, forKey: .pid)
-        case .dumpTree(let pid, let windowTitle, let depth, let budget):
+        case .dumpTree(let target, let depth, let budget):
             try c.encode(Kind.dumpTree, forKey: .type)
-            try c.encode(pid, forKey: .pid)
-            try c.encodeIfPresent(windowTitle, forKey: .windowTitle)
+            try c.encode(target, forKey: .target)
             try c.encode(depth, forKey: .maxDepth)
             try c.encode(budget, forKey: .budgetMs)
-        case .performAction(let pid, let windowTitle, let locator, let action):
+        case .performAction(let target, let locator, let action):
             try c.encode(Kind.performAction, forKey: .type)
-            try c.encode(pid, forKey: .pid)
-            try c.encodeIfPresent(windowTitle, forKey: .windowTitle)
+            try c.encode(target, forKey: .target)
             try c.encode(locator, forKey: .locator)
             try c.encode(action, forKey: .action)
-        case .typeText(let pid, let windowTitle, let locator, let text):
+        case .typeText(let target, let locator, let text):
             try c.encode(Kind.typeText, forKey: .type)
-            try c.encode(pid, forKey: .pid)
-            try c.encodeIfPresent(windowTitle, forKey: .windowTitle)
+            try c.encode(target, forKey: .target)
             try c.encode(locator, forKey: .locator)
             try c.encode(text, forKey: .text)
-        case .pressKey(let pid, let windowTitle, let locator, let key):
+        case .pressKey(let target, let locator, let key):
             try c.encode(Kind.pressKey, forKey: .type)
-            try c.encode(pid, forKey: .pid)
-            try c.encodeIfPresent(windowTitle, forKey: .windowTitle)
+            try c.encode(target, forKey: .target)
             try c.encode(locator, forKey: .locator)
             try c.encode(key, forKey: .key)
-        case .setValue(let pid, let windowTitle, let locator, let value):
+        case .setValue(let target, let locator, let value):
             try c.encode(Kind.setValue, forKey: .type)
-            try c.encode(pid, forKey: .pid)
-            try c.encodeIfPresent(windowTitle, forKey: .windowTitle)
+            try c.encode(target, forKey: .target)
             try c.encode(locator, forKey: .locator)
             try c.encode(value, forKey: .value)
-        case .captureWindow(let pid, let windowTitle):
+        case .captureWindow(let target):
             try c.encode(Kind.captureWindow, forKey: .type)
-            try c.encode(pid, forKey: .pid)
-            try c.encodeIfPresent(windowTitle, forKey: .windowTitle)
-        case .clickAt(let pid, let windowTitle, let x, let y):
+            try c.encode(target, forKey: .target)
+        case .clickAt(let target, let x, let y):
             try c.encode(Kind.clickAt, forKey: .type)
-            try c.encode(pid, forKey: .pid)
-            try c.encodeIfPresent(windowTitle, forKey: .windowTitle)
+            try c.encode(target, forKey: .target)
             try c.encode(x, forKey: .x)
             try c.encode(y, forKey: .y)
-        case .scrollAt(let pid, let windowTitle, let x, let y, let dx, let dy):
+        case .scrollAt(let target, let x, let y, let dx, let dy):
             try c.encode(Kind.scrollAt, forKey: .type)
-            try c.encode(pid, forKey: .pid)
-            try c.encodeIfPresent(windowTitle, forKey: .windowTitle)
+            try c.encode(target, forKey: .target)
             try c.encode(x, forKey: .x)
             try c.encode(y, forKey: .y)
             try c.encode(dx, forKey: .dx)
             try c.encode(dy, forKey: .dy)
-        case .dragAt(let pid, let windowTitle, let fromX, let fromY, let toX, let toY, let durationMs):
+        case .dragAt(let target, let fromX, let fromY, let toX, let toY, let durationMs):
             try c.encode(Kind.dragAt, forKey: .type)
-            try c.encode(pid, forKey: .pid)
-            try c.encodeIfPresent(windowTitle, forKey: .windowTitle)
+            try c.encode(target, forKey: .target)
             try c.encode(fromX, forKey: .fromX)
             try c.encode(fromY, forKey: .fromY)
             try c.encode(toX, forKey: .toX)

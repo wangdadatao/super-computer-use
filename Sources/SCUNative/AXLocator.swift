@@ -55,18 +55,18 @@ extension AXBackend {
 
     /// 应用内的真实定位：从进程/窗口根开始，沿路径下行并核对目标键。
     static func locateInApp(
-        pid: Int32, windowTitle: String?, locator: ElementLocator
+        target: Target, locator: ElementLocator
     ) throws -> LocateResult<AXUIElement> {
-        let root = try rootElement(pid: pid, windowTitle: windowTitle)
+        let root = try rootElement(target: target)
         return locate(
             root: root, locator: locator, children: readChildren,
             key: { element in TargetKey(readNode(element, wantChildren: false).node) })
     }
 
     public static func performAction(
-        pid: Int32, windowTitle: String? = nil, locator: ElementLocator, action: ActionKind
+        target: Target, locator: ElementLocator, action: ActionKind
     ) throws -> ActionResult {
-        let result = try locateInApp(pid: pid, windowTitle: windowTitle, locator: locator)
+        let result = try locateInApp(target: target, locator: locator)
         switch result {
         case .stale(let detail):
             return .stale(detail)

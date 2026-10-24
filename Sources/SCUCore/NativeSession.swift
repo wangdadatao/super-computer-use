@@ -19,73 +19,114 @@ public protocol DesktopReader {
     func checkPermissions() throws -> Bool
     func listApps() throws -> [AppInfo]
     func listWindows(pid: Int32) throws -> [WindowInfo]
-    func readTree(
-        pid: Int32, windowTitle: String?, maxDepth: Int, budgetMs: Int
-    ) throws -> TreeReading
+    func readTree(target: Target, maxDepth: Int, budgetMs: Int) throws -> TreeReading
     func performAction(
-        pid: Int32, windowTitle: String?, locator: ElementLocator, action: ActionKind
+        target: Target, locator: ElementLocator, action: ActionKind
     ) throws -> ActionOutcome
-    func typeText(
-        pid: Int32, windowTitle: String?, locator: ElementLocator, text: String
-    ) throws -> ActionOutcome
-    func pressKey(
-        pid: Int32, windowTitle: String?, locator: ElementLocator, key: String
-    ) throws -> ActionOutcome
-    func setValue(
-        pid: Int32, windowTitle: String?, locator: ElementLocator, value: String
-    ) throws -> ActionOutcome
-    func captureWindow(pid: Int32, windowTitle: String?) throws -> WindowCapture
-    func clickAt(pid: Int32, windowTitle: String?, x: Double, y: Double) throws -> ActionOutcome
-    func scrollAt(
-        pid: Int32, windowTitle: String?, x: Double, y: Double, dx: Double, dy: Double
-    ) throws -> ActionOutcome
+    func typeText(target: Target, locator: ElementLocator, text: String) throws -> ActionOutcome
+    func pressKey(target: Target, locator: ElementLocator, key: String) throws -> ActionOutcome
+    func setValue(target: Target, locator: ElementLocator, value: String) throws -> ActionOutcome
+    func captureWindow(target: Target) throws -> WindowCapture
+    func clickAt(target: Target, x: Double, y: Double) throws -> ActionOutcome
+    func scrollAt(target: Target, x: Double, y: Double, dx: Double, dy: Double) throws -> ActionOutcome
     func dragAt(
-        pid: Int32, windowTitle: String?, fromX: Double, fromY: Double, toX: Double, toY: Double,
+        target: Target, fromX: Double, fromY: Double, toX: Double, toY: Double,
         durationMs: Int
     ) throws -> ActionOutcome
 }
 
 extension DesktopReader {
+    /// 只按标题的便捷入口；新代码应传 `Target`，窗口 ID 才能贯穿到原生层。
+    public func readTree(
+        pid: Int32, windowTitle: String?, maxDepth: Int, budgetMs: Int
+    ) throws -> TreeReading {
+        try readTree(
+            target: Target(pid: pid, windowTitle: windowTitle), maxDepth: maxDepth, budgetMs: budgetMs)
+    }
+
+    public func performAction(
+        pid: Int32, windowTitle: String?, locator: ElementLocator, action: ActionKind
+    ) throws -> ActionOutcome {
+        try performAction(
+            target: Target(pid: pid, windowTitle: windowTitle), locator: locator, action: action)
+    }
+
+    public func typeText(
+        pid: Int32, windowTitle: String?, locator: ElementLocator, text: String
+    ) throws -> ActionOutcome {
+        try typeText(target: Target(pid: pid, windowTitle: windowTitle), locator: locator, text: text)
+    }
+
+    public func pressKey(
+        pid: Int32, windowTitle: String?, locator: ElementLocator, key: String
+    ) throws -> ActionOutcome {
+        try pressKey(target: Target(pid: pid, windowTitle: windowTitle), locator: locator, key: key)
+    }
+
+    public func setValue(
+        pid: Int32, windowTitle: String?, locator: ElementLocator, value: String
+    ) throws -> ActionOutcome {
+        try setValue(target: Target(pid: pid, windowTitle: windowTitle), locator: locator, value: value)
+    }
+
+    public func captureWindow(pid: Int32, windowTitle: String?) throws -> WindowCapture {
+        try captureWindow(target: Target(pid: pid, windowTitle: windowTitle))
+    }
+
+    public func clickAt(pid: Int32, windowTitle: String?, x: Double, y: Double) throws -> ActionOutcome {
+        try clickAt(target: Target(pid: pid, windowTitle: windowTitle), x: x, y: y)
+    }
+
+    public func scrollAt(
+        pid: Int32, windowTitle: String?, x: Double, y: Double, dx: Double, dy: Double
+    ) throws -> ActionOutcome {
+        try scrollAt(
+            target: Target(pid: pid, windowTitle: windowTitle), x: x, y: y, dx: dx, dy: dy)
+    }
+
+    public func dragAt(
+        pid: Int32, windowTitle: String?, fromX: Double, fromY: Double, toX: Double, toY: Double,
+        durationMs: Int
+    ) throws -> ActionOutcome {
+        try dragAt(
+            target: Target(pid: pid, windowTitle: windowTitle),
+            fromX: fromX, fromY: fromY, toX: toX, toY: toY, durationMs: durationMs)
+    }
+
     /// 测试替身默认不支持窗口列表；真实读取器实现它。
     public func listWindows(pid: Int32) throws -> [WindowInfo] {
         throw WireError.unsupportedOperation("这个读取器不支持窗口列表")
     }
 
     /// 测试替身默认不支持输入；真实读取器实现它。
-    public func typeText(
-        pid: Int32, windowTitle: String?, locator: ElementLocator, text: String
-    ) throws -> ActionOutcome {
+    public func typeText(target: Target, locator: ElementLocator, text: String) throws -> ActionOutcome {
         throw WireError.unsupportedOperation("这个读取器不支持逐字输入")
     }
 
-    public func pressKey(
-        pid: Int32, windowTitle: String?, locator: ElementLocator, key: String
-    ) throws -> ActionOutcome {
+    public func pressKey(target: Target, locator: ElementLocator, key: String) throws -> ActionOutcome {
         throw WireError.unsupportedOperation("这个读取器不支持按键")
     }
 
-    public func setValue(
-        pid: Int32, windowTitle: String?, locator: ElementLocator, value: String
-    ) throws -> ActionOutcome {
+    public func setValue(target: Target, locator: ElementLocator, value: String) throws -> ActionOutcome {
         throw WireError.unsupportedOperation("这个读取器不支持设值")
     }
 
-    public func captureWindow(pid: Int32, windowTitle: String?) throws -> WindowCapture {
+    public func captureWindow(target: Target) throws -> WindowCapture {
         throw WireError.unsupportedOperation("这个读取器不支持窗口截图")
     }
 
-    public func clickAt(pid: Int32, windowTitle: String?, x: Double, y: Double) throws -> ActionOutcome {
+    public func clickAt(target: Target, x: Double, y: Double) throws -> ActionOutcome {
         throw WireError.unsupportedOperation("这个读取器不支持坐标点击")
     }
 
     public func scrollAt(
-        pid: Int32, windowTitle: String?, x: Double, y: Double, dx: Double, dy: Double
+        target: Target, x: Double, y: Double, dx: Double, dy: Double
     ) throws -> ActionOutcome {
         throw WireError.unsupportedOperation("这个读取器不支持滚动")
     }
 
     public func dragAt(
-        pid: Int32, windowTitle: String?, fromX: Double, fromY: Double, toX: Double, toY: Double,
+        target: Target, fromX: Double, fromY: Double, toX: Double, toY: Double,
         durationMs: Int
     ) throws -> ActionOutcome {
         throw WireError.unsupportedOperation("这个读取器不支持拖拽")
@@ -177,13 +218,13 @@ public final class NativeSession: DesktopReader {
     }
 
     public func readTree(
-        pid: Int32, windowTitle: String?, maxDepth: Int, budgetMs: Int
+        target: Target, maxDepth: Int, budgetMs: Int
     ) throws -> TreeReading {
         try withClient { c in
             // 客户端等待上限 = 时间预算 + 余量（单次 AX 调用最多再耗 2 秒，加上编码与传输）。
             guard
                 case .tree(let root, let truncated) = try c.call(
-                    .dumpTree(pid: pid, windowTitle: windowTitle, maxDepth: maxDepth, budgetMs: budgetMs),
+                    .dumpTree(target: target, maxDepth: maxDepth, budgetMs: budgetMs),
                     timeoutMs: Int32(budgetMs + 10_000))
             else {
                 throw WireError.internalError("读树的应答类型错误")
@@ -193,11 +234,11 @@ public final class NativeSession: DesktopReader {
     }
 
     public func performAction(
-        pid: Int32, windowTitle: String?, locator: ElementLocator, action: ActionKind
+        target: Target, locator: ElementLocator, action: ActionKind
     ) throws -> ActionOutcome {
         try withClient { c in
             switch try c.call(
-                .performAction(pid: pid, windowTitle: windowTitle, locator: locator, action: action),
+                .performAction(target: target, locator: locator, action: action),
                 timeoutMs: 30_000, actionMayHaveStarted: true)
             {
             case .acted: return .acted
@@ -209,11 +250,11 @@ public final class NativeSession: DesktopReader {
     }
 
     public func typeText(
-        pid: Int32, windowTitle: String?, locator: ElementLocator, text: String
+        target: Target, locator: ElementLocator, text: String
     ) throws -> ActionOutcome {
         try withClient { c in
             switch try c.call(
-                .typeText(pid: pid, windowTitle: windowTitle, locator: locator, text: text),
+                .typeText(target: target, locator: locator, text: text),
                 timeoutMs: scuTypeTextTimeoutMs(characterCount: text.count),
                 actionMayHaveStarted: true)
             {
@@ -225,11 +266,11 @@ public final class NativeSession: DesktopReader {
     }
 
     public func pressKey(
-        pid: Int32, windowTitle: String?, locator: ElementLocator, key: String
+        target: Target, locator: ElementLocator, key: String
     ) throws -> ActionOutcome {
         try withClient { c in
             switch try c.call(
-                .pressKey(pid: pid, windowTitle: windowTitle, locator: locator, key: key),
+                .pressKey(target: target, locator: locator, key: key),
                 timeoutMs: 30_000, actionMayHaveStarted: true)
             {
             case .acted: return .acted
@@ -240,11 +281,11 @@ public final class NativeSession: DesktopReader {
     }
 
     public func setValue(
-        pid: Int32, windowTitle: String?, locator: ElementLocator, value: String
+        target: Target, locator: ElementLocator, value: String
     ) throws -> ActionOutcome {
         try withClient { c in
             switch try c.call(
-                .setValue(pid: pid, windowTitle: windowTitle, locator: locator, value: value),
+                .setValue(target: target, locator: locator, value: value),
                 timeoutMs: 30_000, actionMayHaveStarted: true)
             {
             case .acted: return .acted
@@ -254,11 +295,11 @@ public final class NativeSession: DesktopReader {
         }
     }
 
-    public func captureWindow(pid: Int32, windowTitle: String?) throws -> WindowCapture {
+    public func captureWindow(target: Target) throws -> WindowCapture {
         try withClient { c in
             guard
                 case .windowCapture(let capture) = try c.call(
-                    .captureWindow(pid: pid, windowTitle: windowTitle), timeoutMs: 35_000)
+                    .captureWindow(target: target), timeoutMs: 35_000)
             else {
                 throw WireError.internalError("截图的应答类型错误")
             }
@@ -266,10 +307,10 @@ public final class NativeSession: DesktopReader {
         }
     }
 
-    public func clickAt(pid: Int32, windowTitle: String?, x: Double, y: Double) throws -> ActionOutcome {
+    public func clickAt(target: Target, x: Double, y: Double) throws -> ActionOutcome {
         try withClient { c in
             switch try c.call(
-                .clickAt(pid: pid, windowTitle: windowTitle, x: x, y: y), timeoutMs: 10_000,
+                .clickAt(target: target, x: x, y: y), timeoutMs: 10_000,
                 actionMayHaveStarted: true)
             {
             case .acted: return .acted
@@ -280,11 +321,11 @@ public final class NativeSession: DesktopReader {
     }
 
     public func scrollAt(
-        pid: Int32, windowTitle: String?, x: Double, y: Double, dx: Double, dy: Double
+        target: Target, x: Double, y: Double, dx: Double, dy: Double
     ) throws -> ActionOutcome {
         try withClient { c in
             switch try c.call(
-                .scrollAt(pid: pid, windowTitle: windowTitle, x: x, y: y, dx: dx, dy: dy),
+                .scrollAt(target: target, x: x, y: y, dx: dx, dy: dy),
                 timeoutMs: 10_000, actionMayHaveStarted: true)
             {
             case .acted: return .acted
@@ -295,13 +336,13 @@ public final class NativeSession: DesktopReader {
     }
 
     public func dragAt(
-        pid: Int32, windowTitle: String?, fromX: Double, fromY: Double, toX: Double, toY: Double,
+        target: Target, fromX: Double, fromY: Double, toX: Double, toY: Double,
         durationMs: Int
     ) throws -> ActionOutcome {
         try withClient { c in
             switch try c.call(
                 .dragAt(
-                    pid: pid, windowTitle: windowTitle, fromX: fromX, fromY: fromY, toX: toX, toY: toY,
+                    target: target, fromX: fromX, fromY: fromY, toX: toX, toY: toY,
                     durationMs: durationMs),
                 timeoutMs: 15_000, actionMayHaveStarted: true)
             {

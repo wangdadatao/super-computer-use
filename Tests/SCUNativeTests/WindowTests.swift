@@ -22,6 +22,40 @@ import Testing
         #expect(WindowActivation.largestIndex(frames) == 0)
     }
 
+    @Test func windowIDMatchingPrefersFrameAndTitle() {
+        let candidates: [AXBackend.CGWindowEntry] = [
+            AXBackend.CGWindowEntry(
+                windowID: 1, title: "同名",
+                frame: Rect(x: 0, y: 0, width: 100, height: 100)),
+            AXBackend.CGWindowEntry(
+                windowID: 2, title: "同名",
+                frame: Rect(x: 200, y: 0, width: 100, height: 100)),
+        ]
+        #expect(
+            AXBackend.matchWindowID(
+                title: "同名", frame: Rect(x: 201, y: 1, width: 100, height: 100),
+                candidates: candidates) == 2)
+        #expect(
+            AXBackend.matchWindowID(
+                title: "同名", frame: Rect(x: 400, y: 0, width: 100, height: 100),
+                candidates: candidates) == nil)
+    }
+
+    @Test func windowIDMatchingRefusesAmbiguousCandidates() {
+        let candidates: [AXBackend.CGWindowEntry] = [
+            AXBackend.CGWindowEntry(
+                windowID: 1, title: "同名",
+                frame: Rect(x: 0, y: 0, width: 100, height: 100)),
+            AXBackend.CGWindowEntry(
+                windowID: 2, title: "同名",
+                frame: Rect(x: 0, y: 0, width: 100, height: 100)),
+        ]
+        #expect(
+            AXBackend.matchWindowID(
+                title: "同名", frame: Rect(x: 0, y: 0, width: 100, height: 100),
+                candidates: candidates) == nil)
+    }
+
     @Test func largestIndexTreatsMissingFramesAsZeroAndFallsBackToFirst() {
         #expect(WindowActivation.largestIndex([]) == nil)
         #expect(WindowActivation.largestIndex([nil, nil]) == 0)

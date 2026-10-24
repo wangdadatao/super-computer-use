@@ -62,9 +62,9 @@ scu mcp --actions --allow-app-file ~/.config/scu/pi-apps.json
 | --- | --- | --- |
 | `check_permissions` | 无 | 报告启动本服务的宿主是否有辅助功能权限。权限未授予不算工具错误，是对状态的如实报告 |
 | `list_apps` | 无 | 每行 `pid<TAB>名称<TAB>bundle id`（无 bundle id 时为 `-`） |
-| `list_windows` | `pid`（必填） | 每行 `"标题"<TAB>(x,y,w,h)`；标题缺失为 `-`。只枚举窗口，不激活、不截图 |
-| `get_ax_state` | `pid`（必填）、`max_depth`、`budget_ms`、`max_elements`、`focus`、`focus_role`、`window`、`full` | 读取无障碍树，返回带标签与 `frame` 的文本化元素表；默认只返回与上次读取的差异，`full=true` 返回完整表；`window` 存在时以该窗口为根，截图与坐标动作也绑定它 |
-| `get_screenshot` | `token` | 截取令牌对应的目标窗口，叠加标签，返回 PNG、`screenshot_id`、窗口 frame 与 title；需要屏幕录制权限。不改内容，但会激活并 raise 目标窗口 |
+| `list_windows` | `pid`（必填） | 每行 `#窗口ID<TAB>"标题"<TAB>(x,y,w,h)`（无 ID 时省略 ID 列）；标题缺失为 `-`。只枚举窗口，不激活、不截图 |
+| `get_ax_state` | `pid`（必填）、`max_depth`、`budget_ms`、`max_elements`、`focus`、`focus_role`、`window_id`、`window`、`full` | 读取无障碍树，返回带标签与 `frame` 的文本化元素表；默认只返回与上次读取的差异，`full=true` 返回完整表；`window_id` 优先于 `window` 标题；绑定的窗口同时用于截图与坐标动作 |
+| `get_screenshot` | `token` | 截取令牌对应的目标窗口，叠加标签，返回 PNG、`screenshot_id`、窗口 frame、`window_id` 与 title；需要屏幕录制权限。不改内容，但会激活并 raise 目标窗口 |
 | `launch_app`（仅 `--actions`） | `app` | 启动/激活应用（bundle id、名称或 `.app` 路径）；见下 |
 | `click`（仅 `--actions`） | `token`、`handle` 或 `label`（二选一） | 对目标执行 `AXPress`；见下 |
 | `click_at`（仅 `--actions`） | `token`、`screenshot_id`、`x`、`y` | 在截图坐标投递真实鼠标点击；见下 |
@@ -78,18 +78,21 @@ scu mcp --actions --allow-app-file ~/.config/scu/pi-apps.json
 
 ### 多窗口选择
 
-截图与坐标动作使用**同一个目标窗口**：原生层在激活应用时选择面积最大的非最小化 AX 窗口，
-截图再按该窗口的 frame 匹配 ScreenCaptureKit 候选；匹配不上就拒绝截图，不会退回可能不匹配的窗口。
-`get_screenshot` 的元数据带 `title`，便于确认截的是哪个窗口。
+截图与坐标动作使用**同一个目标窗口**：原生层在激活应用时按 `windowID` 精确选择；
+没有 ID 时按标题，或选择面积最大的非最小化 AX 窗口。截图再按同一个 `CGWindowID` 匹配
+ScreenCaptureKit 候选；匹配不上就拒绝截图，不会退回可能不匹配的窗口。
+`get_screenshot` 的元数据带 `window_id` 与 `title`，便于确认截的是哪个窗口。
 
-先用只读的 `list_windows` 取得窗口标题。`get_ax_state` 可以传 `window`（精确标题）：
-此时**元素表从该窗口子树开始读取**，句柄路径、标签都以窗口为根；之后 `get_screenshot` /
-`click_at` / `scroll_at` / `drag` 也使用该窗口，`click` / `type_text` / `press_key` / `set_value`
-同样用令牌上的窗口标题定位。窗口改名或消失后，旧令牌的动作在开始前返回 `window_not_found`，
-不会退回应用根去点别的窗口。
+先用只读的 `list_windows` 取得窗口 ID 与标题。`get_ax_state` 应优先传 `window_id`，也可传
+`window`（精确标题）：此时**元素表从该窗口子树开始读取**，句柄路径、标签都以窗口为根；
+之后 `get_screenshot` / `click_at` / `scroll_at` / `drag` 也使用该窗口，`click` / `type_text` /
+`press_key` / `set_value` 同样用令牌上的窗口 ID 定位。窗口关闭或重建后，旧令牌的动作在开始前返回
+`window_not_found`，不会退回应用根去点别的窗口。
 
-同名窗口只取第一个精确匹配；没有稳定窗口 ID。见 [ADR-0025](../decisions/adr_0025_window_target.md)、
-[ADR-0026](../decisions/adr_0026_window_selection.md)、[ADR-0027](../decisions/adr_0027_window_root_locator.md)。
+窗口 ID 是 `CGWindowID`，在窗口生命周期内稳定；标题只是可读线索，同名窗口仍可能重复。
+无标题窗口、同名窗口应优先用 `window_id`。见 [ADR-0025](../decisions/adr_0025_window_target.md)、
+[ADR-0026](../decisions/adr_0026_window_selection.md)、[ADR-0027](../decisions/adr_0027_window_root_locator.md)、
+[ADR-0031](../decisions/adr_0031_window_identity.md)。
 
 ### `launch_app`
 
@@ -143,8 +146,9 @@ effect: delivered=true observed=true converged=true treeChanged=false targetChan
 
 1. 坐标以 `get_screenshot` 的图像左上角为原点，单位是图像像素；越界返回 `invalid_coordinates`。
 2. `screenshot_id` 必须属于当前令牌，否则 `stale_geometry`。动作前会重新取绑定窗口的几何；
-   位置/缩放/尺寸变化时返回 `stale_geometry`，不投递事件。窗口标题仍是唯一跨进程标识，
-   同名窗口可能被选中；完整修复需要窗口 ID。动作后仍以 `geometryChanged` 报告事后变化。
+   位置/缩放/尺寸变化时返回 `stale_geometry`，不投递事件。绑定使用截图实际对应的
+   `window_id`（取不到时退回标题/frame），不再重新按标题选一次；动作后仍以
+   `geometryChanged` 报告事后变化。
 3. 点击前会激活并 raise 目标窗口，确认它成为 frontmost；失败则**不点击**，避免点到别的应用。
    随后在目标位置显示约 120ms 的蓝色指示环（不在截图里），再投递事件。
 4. 用真实鼠标事件（会移动光标），不是 `CGEvent.postToPid`。
@@ -218,20 +222,19 @@ effect: delivered=true observed=true converged=true treeChanged=false targetChan
 它不修改应用内容，但截图前会激活并 raise 目标窗口（复用坐标动作的窗口语义），所以带可见副作用：
 
 ```text
-screenshot_id=g1abc.1 图像 1600x1138 scale=1.514 window=(353,199,1057,752)
+screenshot_id=g1abc.1 图像 1600x1138 scale=1.514 window=(353,199,1057,752) window_id=550918 title="主窗口"
 图上 [a] 是 get_ax_state 的标签；标签只对本次令牌有效。
 ```
 
 - **权限**：需要屏幕录制，与辅助功能是两项独立授权，按宿主进程归属；未授予时为
   `system_permission_missing`，文案指向“屏幕录制”。
 - **坐标**：图像像素 = `(element.frame - windowFrame) * scale`；`windowFrame` 可为负（副屏）。
-- **绑定**：`screenshot_id` 绑定 `token + 实际截图窗口标题 + windowFrame + scale`。令牌没有指定窗口时，
-  原生层会选最大非最小化窗口；会话把**实际截到的窗口标题**存进绑定，坐标动作不再重新选一次。
-  动作前会重新取绑定窗口的几何，位置/缩放/尺寸变化返回 `stale_geometry`；动作后如果几何变了
-  仍会报 `geometryChanged=true`。动作后的 AX 观察使用绑定的实际窗口，而不是令牌上的窗口。
-  窗口标题仍是跨进程的唯一标识：标题来源（SCWindow 与 AX）可能不一致，同名窗口也可能选错；
-  无标题窗口则退化为“按最大窗口重选”。完整修复需要把窗口 ID 带进线协议，
-  当前把这些残余风险如实列为已知限制。
+- **绑定**：`screenshot_id` 绑定 `token + 实际截图窗口的 windowID/标题 + windowFrame + scale`。
+  令牌没有指定窗口时，原生层会选最大非最小化窗口；会话把**实际截到的窗口**存进绑定，
+  坐标动作不再重新选一次。动作前会重新取绑定窗口的几何，位置/缩放/尺寸变化返回
+  `stale_geometry`；动作后如果几何变了仍会报 `geometryChanged=true`。动作后的 AX 观察
+  使用绑定的实际窗口，而不是令牌上的窗口。取不到 `CGWindowID` 时退回标题/frame，
+  同名无 ID 窗口仍有残余风险；这是已知回退，不是首选路径。
 - **权威**：文本元素表仍为准。徽标太小、重叠或被裁掉时，按 `get_ax_state` 的标签选，不靠图猜。\n  图上可能标出文本表因 `max_elements`/`focus` 未显示的元素；这些标签仍然可用，但优先使用文本表里的。
 - **隐私**：截图只返回给调用方，不写日志、不落盘；可能包含敏感内容，不要把它当作可长期保存的证据。
 
@@ -306,7 +309,7 @@ Removed element IDs: 12-15, 20（旧快照句柄，不可用于动作）
 
 ### 完整性标注
 
-标题行 `# pid=<pid> 令牌 <令牌> 元素 <总数>` 之后是标签、句柄与令牌的配对说明（动作档写"可交互元素前的 [a] 是本次快照的标签，动作工具可用 label 代替 handle"与"用 click(token, handle) 点击"；默认档写"目前没有工具接受句柄（动作档未开启）。"），
+标题行 `# pid=<pid> 令牌 <令牌> 元素 <总数> window_id=<id>`（没有窗口 ID 时省略 `window_id`）之后是标签、句柄与令牌的配对说明（动作档写"可交互元素前的 [a] 是本次快照的标签，动作工具可用 label 代替 handle"与"用 click(token, handle) 点击"；默认档写"目前没有工具接受句柄（动作档未开启）。"），
 再之后可能跟这些**警告行**，调用方据此判断输出是否完整：
 
 | 情形 | 标注 |
@@ -341,7 +344,7 @@ Removed element IDs: 12-15, 20（旧快照句柄，不可用于动作）
 | `stale_geometry`、`invalid_coordinates` | 重新 `get_screenshot`，使用截图内的坐标 |
 | `app_not_found` | 用 bundle id、显示名或完整 `.app` 路径重试 |
 | `app_not_authorized` | 让用户把应用加入 `--allow-app` / `--allow-app-file` 并重启服务；不要换相近应用重试 |
-| `window_not_found` | 重新 `get_ax_state` 查看当前窗口标题，绑定仍存在的窗口 |
+| `window_not_found` | 重新 `list_windows`，用仍存在的 `window_id` 绑定；没有 ID 时才用标题 |
 | `click_at` 的 `noOpSuspected` | 树与图都没变；不要重复点，必要时让用户核实 |
 | `target_switched` | 令牌属于之前读取的另一个应用，对要操作的应用重新读取 |
 | `unsupported_operation` | 该元素不支持这个动作（不能点击、不接受焦点、或不认识键名）；可尝试父元素、子元素或改换方式 |
@@ -421,7 +424,8 @@ socket 目录建在 `TMPDIR`（若设置且存在）或系统临时目录下。
   滚动已在网易云验证（推荐页上下滚动，diff 约 0.387）；TextEdit 拖拽选区实测
   `screenshotChanged=true`、`diffRatio=0.0036`，但未读回选区语义。
   其他应用、区域级 diff 未验证；窗口移动后的过期判断已在动作前复核绑定窗口几何并返回
-  `stale_geometry`（见上文 `click_at` 第 2 点）；同名窗口仍可能因标题相同而选错；TextEdit 两窗口已复测元素动作不串窗；
+  `stale_geometry`（见上文 `click_at` 第 2 点）；窗口 ID 已在 Edge 上实测，同名窗口尚未真实验证；
+  TextEdit 两窗口已复测元素动作不串窗；
   多窗口目标一致性与窗口标题绑定有单元/MCP 测试；窗口列表与窗口根已在 TextEdit 两个文档窗口上实测
   （`list_windows` 返回两个标题，`get_ax_state`/`dump --window` 的根是目标 `AXWindow`）。
 - **应用允许列表**：已做单元与 MCP 测试；已在网易云/访达上验证“列表外应用读取前被拒”。

@@ -19,9 +19,10 @@ extension DesktopSession {
         }
         guard let snap = r.snapshot else { throw WireError.internalError("当前令牌缺少快照") }
         try authorizer.authorizeRead(try identity(for: r), pid: r.pid)
-        let capture = try reader.captureWindow(pid: r.pid, windowTitle: r.windowTitle)
+        let capture = try reader.captureWindow(target: r.target)
         // 绑定**实际被截到的窗口**。令牌没有指定窗口时，原生层会选最大窗口；
         // 若这里仍存令牌的 nil，后续坐标动作会重新选一次，可能落到另一个窗口。
+        let boundWindowID = capture.windowID ?? r.windowID
         let boundWindowTitle = capture.windowTitle ?? r.windowTitle
         let labels = snap.entries.enumerated().compactMap { index, entry -> ElementTable.Label? in
             guard let text = entry.label, let frame = entry.node.frame else { return nil }
@@ -40,8 +41,9 @@ extension DesktopSession {
         screenshotCounter += 1
         let id = "g\(nonce).\(screenshotCounter)"
         screenshotBindings[id] = ScreenshotBinding(
-            token: token, windowTitle: boundWindowTitle, windowFrame: capture.windowFrame,
-            scale: capture.scale, width: capture.width, height: capture.height, png: capture.png)
+            token: token, windowID: boundWindowID, windowTitle: boundWindowTitle,
+            windowFrame: capture.windowFrame, scale: capture.scale, width: capture.width,
+            height: capture.height, png: capture.png)
         screenshotOrder.append(id)
         while screenshotOrder.count > 16 {
             screenshotBindings[screenshotOrder.removeFirst()] = nil
@@ -79,9 +81,11 @@ extension DesktopSession {
     /// 动作前再取一次当前窗口几何：截图后窗口可能移动/缩放，或同名窗口换了一个。
     /// 只按标题投递会把旧截图的坐标算到新位置上；先拒绝，要求重新截图。
     func validateCoordinateWindow(_ binding: ScreenshotBinding, pid: Int32) throws {
-        let current = try reader.captureWindow(pid: pid, windowTitle: binding.windowTitle)
+        let target = Target(pid: pid, windowID: binding.windowID, windowTitle: binding.windowTitle)
+        let current = try reader.captureWindow(target: target)
         guard current.windowFrame == binding.windowFrame, current.scale == binding.scale,
-            current.width == binding.width, current.height == binding.height
+            current.width == binding.width, current.height == binding.height,
+            binding.windowID == nil || current.windowID == binding.windowID
         else {
             throw WireError.staleGeometry("截图后窗口位置/缩放已变化，请重新 get_screenshot。")
         }
@@ -127,6 +131,8 @@ extension DesktopSession {
     static func windowScopedDigest(
         _ entries: [ElementTable.Entry], binding: ScreenshotBinding
     ) -> Int? {
+        // AXNode 没有窗口号；优先用截图 frame，标题兜底。窗口 ID 已保证截图/动作
+        // 选的是同一个窗口，这里只负责把效果比较限定到它的子树。
         let windows = entries.enumerated().filter { $0.element.node.role == "AXWindow" }
         let chosen =
             windows.first { $0.element.node.frame == binding.windowFrame }
@@ -154,7 +160,7 @@ extension DesktopSession {
             // 变化比较则限定到截图绑定的窗口子树，避免其他窗口的变化算到这次动作上。
             let after = try readState(
                 pid: r.pid, maxDepth: snap.maxDepth, budgetMs: snap.budgetMs,
-                windowTitle: r.windowTitle)
+                windowID: r.windowID, windowTitle: r.windowTitle)
             observed = true
             invalidated = after.token != SnapshotToken(token)
             let afterEntries = ElementTable.flatten(after.reading.root)
@@ -174,9 +180,11 @@ extension DesktopSession {
         var screenshotChanged: Bool?
         var diffRatio: Double?
         var geometryChanged = false
-        if let after = try? reader.captureWindow(pid: r.pid, windowTitle: binding.windowTitle) {
+        let boundTarget = Target(pid: r.pid, windowID: binding.windowID, windowTitle: binding.windowTitle)
+        if let after = try? reader.captureWindow(target: boundTarget) {
             if after.width != binding.width || after.height != binding.height
                 || after.windowFrame != binding.windowFrame || after.scale != binding.scale
+                || (binding.windowID != nil && after.windowID != binding.windowID)
             {
                 geometryChanged = true
             } else if let ratio = ScreenshotDiff.changedRatio(before: binding.png, after: after.png) {
@@ -200,8 +208,9 @@ extension DesktopSession {
         try validateCoordinateWindow(binding, pid: r.pid)
         let start = Date()
         let point = globalPoint(x: x, y: y, binding: binding)
+        let boundTarget = Target(pid: r.pid, windowID: binding.windowID, windowTitle: binding.windowTitle)
         try performCoordinate(token: token) {
-            _ = try reader.clickAt(pid: r.pid, windowTitle: binding.windowTitle, x: point.x, y: point.y)
+            _ = try reader.clickAt(target: boundTarget, x: point.x, y: point.y)
         }
         return observeCoordinate(token: token, r: r, snap: snap, binding: binding, start: start)
     }
@@ -218,9 +227,10 @@ extension DesktopSession {
         try validateCoordinateWindow(binding, pid: r.pid)
         let start = Date()
         let point = globalPoint(x: x, y: y, binding: binding)
+        let boundTarget = Target(pid: r.pid, windowID: binding.windowID, windowTitle: binding.windowTitle)
         try performCoordinate(token: token) {
             _ = try reader.scrollAt(
-                pid: r.pid, windowTitle: binding.windowTitle, x: point.x, y: point.y, dx: dx, dy: dy)
+                target: boundTarget, x: point.x, y: point.y, dx: dx, dy: dy)
         }
         return observeCoordinate(token: token, r: r, snap: snap, binding: binding, start: start)
     }
@@ -240,10 +250,10 @@ extension DesktopSession {
         let start = Date()
         let from = globalPoint(x: fromX, y: fromY, binding: binding)
         let to = globalPoint(x: toX, y: toY, binding: binding)
+        let boundTarget = Target(pid: r.pid, windowID: binding.windowID, windowTitle: binding.windowTitle)
         try performCoordinate(token: token) {
             _ = try reader.dragAt(
-                pid: r.pid, windowTitle: binding.windowTitle,
-                fromX: from.x, fromY: from.y, toX: to.x, toY: to.y,
+                target: boundTarget, fromX: from.x, fromY: from.y, toX: to.x, toY: to.y,
                 durationMs: max(100, min(2_000, durationMs)))
         }
         return observeCoordinate(token: token, r: r, snap: snap, binding: binding, start: start)

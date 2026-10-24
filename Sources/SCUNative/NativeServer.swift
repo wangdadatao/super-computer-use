@@ -83,7 +83,7 @@ public struct NativeServer: Sendable {
             } catch {
                 return .failure(.internalError("\(error)"))
             }
-        case .dumpTree(let pid, let windowTitle, let maxDepth, let budgetMs):
+        case .dumpTree(let target, let maxDepth, let budgetMs):
             guard (0...scuMaxTreeDepth).contains(maxDepth) else {
                 return .failure(.internalError("maxDepth 必须在 0...\(scuMaxTreeDepth)，收到 \(maxDepth)"))
             }
@@ -92,67 +92,67 @@ public struct NativeServer: Sendable {
             }
             do {
                 let r = try AXBackend.dumpTree(
-                    pid: pid, windowTitle: windowTitle, maxDepth: maxDepth, budgetMs: budgetMs)
+                    target: target, maxDepth: maxDepth, budgetMs: budgetMs)
                 return .tree(r.root, truncated: r.truncated)
             } catch let e as WireError {
                 return .failure(e)
             } catch {
                 return .failure(.internalError("\(error)"))
             }
-        case .performAction(let pid, let windowTitle, let locator, let action):
+        case .performAction(let target, let locator, let action):
             if let problem = validate(locator) { return .failure(.internalError(problem)) }
             return actionResponse {
                 try AXBackend.performAction(
-                    pid: pid, windowTitle: windowTitle, locator: locator, action: action)
+                    target: target, locator: locator, action: action)
             }
-        case .typeText(let pid, let windowTitle, let locator, let text):
+        case .typeText(let target, let locator, let text):
             if let problem = validate(locator) { return .failure(.internalError(problem)) }
             return actionResponse {
                 try AXBackend.typeText(
-                    pid: pid, windowTitle: windowTitle, locator: locator, text: text)
+                    target: target, locator: locator, text: text)
             }
-        case .pressKey(let pid, let windowTitle, let locator, let key):
+        case .pressKey(let target, let locator, let key):
             if let problem = validate(locator) { return .failure(.internalError(problem)) }
             return actionResponse {
                 try AXBackend.pressKey(
-                    pid: pid, windowTitle: windowTitle, locator: locator, key: key)
+                    target: target, locator: locator, key: key)
             }
-        case .setValue(let pid, let windowTitle, let locator, let value):
+        case .setValue(let target, let locator, let value):
             if let problem = validate(locator) { return .failure(.internalError(problem)) }
             return actionResponse {
                 try AXBackend.setValue(
-                    pid: pid, windowTitle: windowTitle, locator: locator, value: value)
+                    target: target, locator: locator, value: value)
             }
-        case .captureWindow(let pid, let windowTitle):
+        case .captureWindow(let target):
             do {
-                return .windowCapture(try ScreenCapture.captureWindow(pid: pid, windowTitle: windowTitle))
+                return .windowCapture(try ScreenCapture.captureWindow(target: target))
             } catch let e as WireError {
                 return .failure(e)
             } catch {
                 return .failure(.platformUnavailable("截图失败：\(error)"))
             }
-        case .clickAt(let pid, let windowTitle, let x, let y):
+        case .clickAt(let target, let x, let y):
             do {
-                try Mouse.clickAt(pid: pid, windowTitle: windowTitle, x: x, y: y)
+                try Mouse.clickAt(target: target, x: x, y: y)
                 return .acted
             } catch let e as WireError {
                 return .failure(e)
             } catch {
                 return .failure(.actionFailed("坐标点击失败：\(error)"))
             }
-        case .scrollAt(let pid, let windowTitle, let x, let y, let dx, let dy):
+        case .scrollAt(let target, let x, let y, let dx, let dy):
             do {
-                try Mouse.scrollAt(pid: pid, windowTitle: windowTitle, x: x, y: y, dx: dx, dy: dy)
+                try Mouse.scrollAt(target: target, x: x, y: y, dx: dx, dy: dy)
                 return .acted
             } catch let e as WireError {
                 return .failure(e)
             } catch {
                 return .failure(.actionFailed("滚动失败：\(error)"))
             }
-        case .dragAt(let pid, let windowTitle, let fromX, let fromY, let toX, let toY, let durationMs):
+        case .dragAt(let target, let fromX, let fromY, let toX, let toY, let durationMs):
             do {
                 try Mouse.dragAt(
-                    pid: pid, windowTitle: windowTitle, fromX: fromX, fromY: fromY, toX: toX, toY: toY,
+                    target: target, fromX: fromX, fromY: fromY, toX: toX, toY: toY,
                     durationMs: durationMs)
                 return .acted
             } catch let e as WireError {

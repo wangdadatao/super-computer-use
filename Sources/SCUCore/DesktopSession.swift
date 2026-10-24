@@ -63,6 +63,8 @@ public struct SessionState: Sendable {
     public var policy: PolicyGate.Decision
     /// 应用显示名；身份查询失败或没有该进程时为 nil。
     public var appName: String?
+    /// 绑定的窗口 ID；nil 表示没有显式窗口。
+    public var windowID: UInt32?
     /// 绑定的窗口标题；nil 表示默认窗口（原生层选最大非最小化窗口）。
     public var windowTitle: String?
     /// 与上一次同一窗口读取的差异；首次读取、切换目标、树被截断或读取参数变化时为 nil。
@@ -83,16 +85,26 @@ public final class DesktopSession {
         /// nil 表示身份查询**失败**（不是"没有 bundle id"）；动作时必须重查，查不到就不执行。
         var identity: Identity?
         var status: Status
+        /// 这个令牌绑定的窗口 ID；nil 表示没有显式窗口。
+        let windowID: UInt32?
         /// 这个令牌绑定的窗口标题；nil 表示默认窗口。
         let windowTitle: String?
         /// 只有当前令牌保留整棵树；失效后释放，避免长期持有大树。
         var snapshot: Snapshot?
-        init(pid: Int32, identity: Identity?, status: Status, windowTitle: String?, snapshot: Snapshot?) {
+        init(
+            pid: Int32, identity: Identity?, status: Status, windowID: UInt32?,
+            windowTitle: String?, snapshot: Snapshot?
+        ) {
             self.pid = pid
             self.identity = identity
             self.status = status
+            self.windowID = windowID
             self.windowTitle = windowTitle
             self.snapshot = snapshot
+        }
+
+        var target: Target {
+            Target(pid: pid, windowID: windowID, windowTitle: windowTitle)
         }
     }
 
@@ -110,6 +122,7 @@ public final class DesktopSession {
     /// 只保留一份，切换目标或参数变化时自然失配，读取后替换。
     struct Baseline {
         var pid: Int32
+        var windowID: UInt32?
         var windowTitle: String?
         var maxDepth: Int
         var budgetMs: Int
@@ -119,6 +132,7 @@ public final class DesktopSession {
     /// 截图的坐标绑定：窗口位置/缩放变化后，旧截图不能用于坐标动作。
     struct ScreenshotBinding {
         var token: String
+        var windowID: UInt32?
         var windowTitle: String?
         var windowFrame: Rect
         var scale: Double

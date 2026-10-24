@@ -8,7 +8,7 @@ import Testing
         let frame = RequestFrame(
             id: 7,
             request: .dumpTree(
-                pid: 123, windowTitle: "收件箱", maxDepth: 4, budgetMs: 5000))
+                target: Target(pid: 123, windowTitle: "收件箱"), maxDepth: 4, budgetMs: 5000))
         let data = try Frame.encode(frame)
         // 前 4 字节是大端长度
         let len = data.prefix(4).reduce(0) { ($0 << 8) | Int($1) }
@@ -26,7 +26,7 @@ import Testing
         let response = ResponseFrame(
             id: 8,
             response: .windows([
-                WindowInfo(title: "收件箱", frame: Rect(x: 10, y: 20, width: 800, height: 600)),
+                WindowInfo(windowID: 77, title: "收件箱", frame: Rect(x: 10, y: 20, width: 800, height: 600)),
                 WindowInfo(title: nil, frame: nil),
             ]))
         let rdata = try Frame.encode(response)
@@ -49,11 +49,12 @@ import Testing
 
     @Test func windowCaptureRequestAndResponseRoundTrip() throws {
         let requestFrame = try WireFormatTests.json(
-            RequestFrame(id: 8, request: .captureWindow(pid: 42, windowTitle: nil)))
+            RequestFrame(id: 8, request: .captureWindow(target: Target(pid: 42))))
         let request = requestFrame["request"] as! [String: Any]
         #expect(request["type"] as? String == "captureWindow")
-        #expect(request["pid"] as? Int == 42)
-        #expect(request["windowTitle"] == nil)
+        let target = request["target"] as! [String: Any]
+        #expect(target["pid"] as? Int == 42)
+        #expect(target["windowTitle"] == nil)
 
         let capture = WindowCapture(
             png: Data([0x89, 0x50, 0x4E, 0x47]), width: 1600, height: 1138, scale: 1.514,
@@ -66,10 +67,10 @@ import Testing
 
     @Test func clickAtRequestShape() throws {
         let frame = try WireFormatTests.json(
-            RequestFrame(id: 9, request: .clickAt(pid: 7, windowTitle: nil, x: 12.5, y: 34.0)))
+            RequestFrame(id: 9, request: .clickAt(target: Target(pid: 7), x: 12.5, y: 34.0)))
         let request = frame["request"] as! [String: Any]
         #expect(request["type"] as? String == "clickAt")
-        #expect(request["pid"] as? Int == 7)
+        #expect((request["target"] as! [String: Any])["pid"] as? Int == 7)
         #expect(request["x"] as? Double == 12.5)
         #expect(request["y"] as? Double == 34.0)
     }
@@ -78,17 +79,17 @@ import Testing
         let scrollFrame = try WireFormatTests.json(
             RequestFrame(
                 id: 10,
-                request: .scrollAt(pid: 7, windowTitle: nil, x: 1.5, y: 2.5, dx: 0, dy: 120)))
+                request: .scrollAt(target: Target(pid: 7), x: 1.5, y: 2.5, dx: 0, dy: 120)))
         let scroll = scrollFrame["request"] as! [String: Any]
         #expect(scroll["type"] as? String == "scrollAt")
-        #expect(scroll["pid"] as? Int == 7)
+        #expect((scroll["target"] as! [String: Any])["pid"] as? Int == 7)
         #expect(scroll["dy"] as? Double == 120)
 
         let dragFrame = try WireFormatTests.json(
             RequestFrame(
                 id: 11,
                 request: .dragAt(
-                    pid: 7, windowTitle: nil, fromX: 1, fromY: 2, toX: 3, toY: 4, durationMs: 400)))
+                    target: Target(pid: 7), fromX: 1, fromY: 2, toX: 3, toY: 4, durationMs: 400)))
         let drag = dragFrame["request"] as! [String: Any]
         #expect(drag["type"] as? String == "dragAt")
         #expect(drag["fromX"] as? Double == 1)
@@ -98,18 +99,46 @@ import Testing
 
     @Test func windowTitleIsOptionalButEncodedWhenPresent() throws {
         let withTitle = try WireFormatTests.json(
-            RequestFrame(id: 12, request: .captureWindow(pid: 42, windowTitle: "主窗口")))
+            RequestFrame(id: 12, request: .captureWindow(target: Target(pid: 42, windowTitle: "主窗口"))))
         let w = withTitle["request"] as! [String: Any]
-        #expect(w["windowTitle"] as? String == "主窗口")
+        #expect((w["target"] as! [String: Any])["windowTitle"] as? String == "主窗口")
 
         let withoutTitle = try WireFormatTests.json(
-            RequestFrame(id: 13, request: .captureWindow(pid: 42, windowTitle: nil)))
+            RequestFrame(id: 13, request: .captureWindow(target: Target(pid: 42))))
         let o = withoutTitle["request"] as! [String: Any]
-        #expect(o["windowTitle"] == nil)
+        #expect((o["target"] as! [String: Any])["windowTitle"] == nil)
 
         let click = try WireFormatTests.json(
-            RequestFrame(id: 14, request: .clickAt(pid: 7, windowTitle: "主窗口", x: 1, y: 2)))
-        #expect((click["request"] as! [String: Any])["windowTitle"] as? String == "主窗口")
+            RequestFrame(id: 14, request: .clickAt(target: Target(pid: 7, windowTitle: "主窗口"), x: 1, y: 2)))
+        let clickTarget = (click["request"] as! [String: Any])["target"] as! [String: Any]
+        #expect(clickTarget["windowTitle"] as? String == "主窗口")
+    }
+
+    @Test func targetCarriesWindowIDThroughTheWire() throws {
+        let frame = try WireFormatTests.json(
+            RequestFrame(
+                id: 15,
+                request: .dumpTree(
+                    target: Target(pid: 42, windowID: 0xDEAD_BEEF, windowTitle: "同名"),
+                    maxDepth: 3, budgetMs: 1000)))
+        let request = frame["request"] as! [String: Any]
+        let target = request["target"] as! [String: Any]
+        #expect(target["pid"] as? Int == 42)
+        #expect(target["windowID"] as? Int == 0xDEAD_BEEF)
+        #expect(target["windowTitle"] as? String == "同名")
+
+        let body = try JSONEncoder().encode(
+            RequestFrame(
+                id: 15,
+                request: .dumpTree(
+                    target: Target(pid: 42, windowID: 0xDEAD_BEEF, windowTitle: "同名"),
+                    maxDepth: 3, budgetMs: 1000)))
+        let back = try Frame.decode(RequestFrame.self, body: body)
+        guard case .dumpTree(let decoded, _, _) = back.request else {
+            Issue.record("应为 dumpTree")
+            return
+        }
+        #expect(decoded.windowID == 0xDEAD_BEEF)
     }
 
     @Test func failureCarriesStructuredError() throws {
@@ -201,10 +230,10 @@ import Testing
         #expect(req["protocolVersion"] as? Int == 1)
 
         let dump = try Self.json(
-            RequestFrame(id: 2, request: .dumpTree(pid: 9, windowTitle: nil, maxDepth: 3, budgetMs: 700)))
+            RequestFrame(id: 2, request: .dumpTree(target: Target(pid: 9), maxDepth: 3, budgetMs: 700)))
         let d = dump["request"] as! [String: Any]
         #expect(d["type"] as? String == "dumpTree")
-        #expect(d["pid"] as? Int == 9)
+        #expect((d["target"] as! [String: Any])["pid"] as? Int == 9)
         #expect(d["maxDepth"] as? Int == 3)
         #expect(d["budgetMs"] as? Int == 700)
     }
@@ -253,10 +282,10 @@ import Testing
     @Test func performActionShape() throws {
         let f = try Self.json(
             RequestFrame(
-                id: 3, request: .performAction(pid: 7, windowTitle: nil, locator: Self.locator, action: .press)))
+                id: 3, request: .performAction(target: Target(pid: 7), locator: Self.locator, action: .press)))
         let r = f["request"] as! [String: Any]
         #expect(r["type"] as? String == "performAction")
-        #expect(r["pid"] as? Int == 7)
+        #expect((r["target"] as! [String: Any])["pid"] as? Int == 7)
         #expect(r["action"] as? String == "press")
         let l = r["locator"] as! [String: Any]
         let path = l["path"] as! [[String: Any]]
@@ -268,28 +297,28 @@ import Testing
 
     @Test func inputRequestShapes() throws {
         let typed = try Self.json(
-            RequestFrame(id: 4, request: .typeText(pid: 7, windowTitle: nil, locator: Self.locator, text: "hello")))
+            RequestFrame(id: 4, request: .typeText(target: Target(pid: 7), locator: Self.locator, text: "hello")))
         let t = typed["request"] as! [String: Any]
         #expect(t["type"] as? String == "typeText")
-        #expect(t["pid"] as? Int == 7)
+        #expect((t["target"] as! [String: Any])["pid"] as? Int == 7)
         #expect(t["text"] as? String == "hello")
 
         let pressed = try Self.json(
-            RequestFrame(id: 5, request: .pressKey(pid: 7, windowTitle: nil, locator: Self.locator, key: "cmd+t")))
+            RequestFrame(id: 5, request: .pressKey(target: Target(pid: 7), locator: Self.locator, key: "cmd+t")))
         let p = pressed["request"] as! [String: Any]
         #expect(p["type"] as? String == "pressKey")
         #expect(p["key"] as? String == "cmd+t")
 
         let written = try Self.json(
-            RequestFrame(id: 6, request: .setValue(pid: 7, windowTitle: nil, locator: Self.locator, value: "名称")))
+            RequestFrame(id: 6, request: .setValue(target: Target(pid: 7), locator: Self.locator, value: "名称")))
         let w = written["request"] as! [String: Any]
         #expect(w["type"] as? String == "setValue")
         #expect(w["value"] as? String == "名称")
 
         for request in [
-            Request.typeText(pid: 7, windowTitle: nil, locator: Self.locator, text: "多行\n文本"),
-            Request.pressKey(pid: 7, windowTitle: nil, locator: Self.locator, key: "shift+tab"),
-            Request.setValue(pid: 7, windowTitle: nil, locator: Self.locator, value: ""),
+            Request.typeText(target: Target(pid: 7), locator: Self.locator, text: "多行\n文本"),
+            Request.pressKey(target: Target(pid: 7), locator: Self.locator, key: "shift+tab"),
+            Request.setValue(target: Target(pid: 7), locator: Self.locator, value: ""),
         ] {
             let body = try JSONEncoder().encode(RequestFrame(id: 1, request: request))
             #expect(try Frame.decode(RequestFrame.self, body: body).request == request)

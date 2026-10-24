@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import CoreGraphics
 import SCUWire
 
 /// 平台后端：把 macOS 无障碍 API 归一化为协议层需要的事实。
@@ -29,6 +30,15 @@ public enum AXBackend {
         return app
     }
 
+    /// 一个 AX 窗口，以及从 CoreGraphics 窗口列表匹配到的 CGWindowID。
+    struct NativeWindow {
+        var element: AXUIElement
+        var windowID: UInt32?
+        var title: String?
+        var frame: Rect?
+        var minimized: Bool
+    }
+
     /// 按标题精确查找窗口元素。找不到时返回 `window_not_found`，不退回其他窗口。
     static func windowElement(pid: Int32, title: String) throws -> AXUIElement {
         let app = try appElement(pid: pid)
@@ -41,21 +51,100 @@ public enum AXBackend {
         return match
     }
 
-    /// 元素定位的根：默认应用根；有窗口标题时以该窗口为根。
+    /// 按 CGWindowID 精确查找窗口元素。ID 是窗口生命周期内的稳定标识。
+    static func windowElement(pid: Int32, windowID: UInt32) throws -> AXUIElement {
+        let windows = try nativeWindows(pid: pid)
+        guard let match = windows.first(where: { $0.windowID == windowID }) else {
+            throw WireError.windowNotFound(pid: pid, windowID: windowID)
+        }
+        AXUIElementSetMessagingTimeout(match.element, messagingTimeout)
+        return match.element
+    }
+
+    /// 元素定位的根：默认应用根；指定窗口时以该窗口为根。
+    /// 窗口 ID 优先于标题；两者都没有时使用应用根。
     // @project-doc docs/decisions/adr_0027_window_root_locator.md#window_root_locator
-    static func rootElement(pid: Int32, windowTitle: String?) throws -> AXUIElement {
-        if let windowTitle { return try windowElement(pid: pid, title: windowTitle) }
-        return try appElement(pid: pid)
+    static func rootElement(target: Target) throws -> AXUIElement {
+        if let windowID = target.windowID {
+            return try windowElement(pid: target.pid, windowID: windowID)
+        }
+        if let windowTitle = target.windowTitle {
+            return try windowElement(pid: target.pid, title: windowTitle)
+        }
+        return try appElement(pid: target.pid)
     }
 
     /// 列出应用可枚举的窗口（只读）。标题可能为 nil。
     public static func listWindows(pid: Int32) throws -> [WindowInfo] {
-        let app = try appElement(pid: pid)
-        let windows = elements(app, kAXWindowsAttribute) ?? []
-        return windows.map { element in
-            AXUIElementSetMessagingTimeout(element, messagingTimeout)
-            return WindowInfo(title: string(element, kAXTitleAttribute), frame: frame(element))
+        try nativeWindows(pid: pid).map {
+            WindowInfo(windowID: $0.windowID, title: $0.title, frame: $0.frame)
         }
+    }
+
+    /// AX 窗口列表与 CGWindowID 的匹配。AX 没有公开窗口号，因此用 CoreGraphics
+    /// 的窗口列表按 owner pid、frame 与标题匹配；匹配不唯一时宁可返回 nil，不猜测。
+    // @project-doc docs/decisions/adr_0031_window_identity.md#window_identity
+    static func nativeWindows(pid: Int32) throws -> [NativeWindow] {
+        let app = try appElement(pid: pid)
+        let axWindows = elements(app, kAXWindowsAttribute) ?? []
+        let cgWindows = coreGraphicsWindows(pid: pid)
+        return axWindows.map { element in
+            AXUIElementSetMessagingTimeout(element, messagingTimeout)
+            let title = string(element, kAXTitleAttribute)
+            let frame = frame(element)
+            let minimized = bool(element, kAXMinimizedAttribute) ?? false
+            let windowID = matchWindowID(title: title, frame: frame, candidates: cgWindows)
+            return NativeWindow(
+                element: element, windowID: windowID, title: title, frame: frame,
+                minimized: minimized)
+        }
+    }
+
+    struct CGWindowEntry {
+        var windowID: UInt32
+        var title: String?
+        var frame: Rect
+    }
+
+    static func coreGraphicsWindows(pid: Int32) -> [CGWindowEntry] {
+        guard
+            let list = CGWindowListCopyWindowInfo(
+                [.optionAll, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]
+        else { return [] }
+        return list.compactMap { info in
+            guard (info[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value == pid,
+                (info[kCGWindowLayer as String] as? NSNumber)?.intValue == 0,
+                let number = (info[kCGWindowNumber as String] as? NSNumber)?.uint32Value,
+                let bounds = info[kCGWindowBounds as String] as? NSDictionary,
+                let rect = CGRect(dictionaryRepresentation: bounds as CFDictionary)
+            else { return nil }
+            return CGWindowEntry(
+                windowID: number,
+                title: info[kCGWindowName as String] as? String,
+                frame: Rect(
+                    x: Double(rect.origin.x), y: Double(rect.origin.y),
+                    width: Double(rect.size.width), height: Double(rect.size.height)))
+        }
+    }
+
+    /// 有 frame 时按 frame（容差 2 点）筛选，再用标题消歧；仍不唯一时返回 nil。
+    static func matchWindowID(
+        title: String?, frame: Rect?, candidates: [CGWindowEntry]
+    ) -> UInt32? {
+        var matches = candidates
+        if let frame {
+            matches = matches.filter { candidate in
+                abs(candidate.frame.x - frame.x) <= 2
+                    && abs(candidate.frame.y - frame.y) <= 2
+                    && abs(candidate.frame.width - frame.width) <= 2
+                    && abs(candidate.frame.height - frame.height) <= 2
+            }
+        }
+        if let title, !title.isEmpty {
+            let titled = matches.filter { $0.title == title }
+            if !titled.isEmpty { matches = titled }
+        }
+        return matches.count == 1 ? matches[0].windowID : nil
     }
 
     public static func listApps() -> [AppInfo] {
@@ -86,12 +175,12 @@ public enum AXBackend {
 
     /// 读取某个进程的无障碍树。`budgetMs` 是整棵树的总时限；单次 AX 调用另有 `messagingTimeout`。
     public static func dumpTree(
-        pid: Int32, windowTitle: String? = nil, maxDepth: Int, budgetMs: Int
+        target: Target, maxDepth: Int, budgetMs: Int
     ) throws -> TreeResult {
-        let rootElement = try rootElement(pid: pid, windowTitle: windowTitle)
+        let rootElement = try rootElement(target: target)
         // 探测：连 role 都读不到，说明应用/窗口不暴露无障碍树。
         guard string(rootElement, kAXRoleAttribute) != nil else {
-            throw WireError.targetMissing(pid: pid)
+            throw WireError.targetMissing(pid: target.pid)
         }
         let budget = TraversalBudget(milliseconds: budgetMs)
         let (root, truncated) = traverse(

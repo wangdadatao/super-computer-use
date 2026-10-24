@@ -30,6 +30,7 @@ the server, and every action returns a machine-checkable effect summary that ask
 | Launch and activate apps; enumerate and target windows | Right-click, long press, IME input (unverified) |
 | Click elements (`AXPress`), type text, send keys, set values | Per-action approval, leases, audit log |
 | Screenshot a target window with element labels; coordinate click / scroll / drag | Code mode (`js` tools) |
+| Select same-title/untitled windows by `window_id` | |
 | Effect summaries: did the UI change, was the action a probable no-op | Linux / Windows |
 
 **Read-only by default.** `scu mcp` exposes only read tools; actions require `scu mcp --actions`.
@@ -67,7 +68,7 @@ Add it to an MCP host (Cursor, Claude Desktop, …):
 
 ## How it behaves
 
-- **Accessibility first, coordinates as fallback.** Coordinate actions stay bound to the window that
+- **Accessibility first, coordinates as fallback.** Coordinate actions stay bound to the CGWindowID of the window that
   was captured.
 - **Positional handles + snapshot tokens.** Element handles are valid only within one read; a
   cross-snapshot handle registry is intentionally not implemented (the verification did not hold).
@@ -76,22 +77,23 @@ Add it to an MCP host (Cursor, Claude Desktop, …):
 - **Two processes.** `scu` (MCP/protocol) launches `scu-native` (AX, capture, input) and talks to it
   over a local socket.
 
-Thirty ADRs record the trade-offs in [docs/decisions/index.md](docs/decisions/index.md). Observations
+Thirty-one ADRs record the trade-offs in [docs/decisions/index.md](docs/decisions/index.md). Observations
 about reference implementations are registered with sources in
 [verification/external-sources.md](verification/external-sources.md).
 
 ## Status
 
-Version 0.4.0 (2026-10-21). Verified so far:
+Version 0.4.0 (2026-10-21); window identity is an unreleased change. Verified so far:
 
-- 153 automated tests, plus docs structure/link/anchor checks and mermaid rendering;
+- 155 automated tests, plus docs structure/link/anchor checks and mermaid rendering;
 - snapshot tokens and effect summaries hold on a controlled fixture (0/8 false rejections);
 - real-app runs on NetEase Cloud Music (CEF), TextEdit multi-window, Calculator and Edge;
 - 6 real tasks: 5 passed, 1 partially passed.
 
-Known gaps: no browser surface, heuristic action convergence can miss changes after two seconds, no
-code mode, no per-action approvals, and actions invoked through a host (Cursor/Claude) are not yet
-verified end to end.
+Known gaps: window IDs are implemented (wire v12) but same-title real-world regression is limited;
+no browser surface; heuristic action convergence can miss changes after two seconds; no code mode;
+no per-action approvals; and actions invoked through a host (Cursor/Claude) are not yet verified
+end to end.
 
 See [the current stage in docs/index.md](docs/index.md) and [verification/](verification/README.md).
 Anything not listed as implemented is design intent, not verified behavior.

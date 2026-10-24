@@ -65,25 +65,29 @@ extension DesktopSession {
 
     /// 策略检查 + 令牌解析。策略先于令牌：被拒绝的动作不消耗令牌，
     /// 也不因令牌状态而改变结论（ADR-0015 §5）。
-    func authorizedTarget(token: String, handle: Int) throws -> (pid: Int32, locator: ElementLocator) {
+    func authorizedTarget(token: String, handle: Int) throws -> (target: Target, locator: ElementLocator) {
         if let r = records[token] {
             // 读取时身份查询失败：这里重查；仍然失败就不执行（无法确认策略，不放行）。
             try authorizer.authorizeAction(try identity(for: r), pid: r.pid)
         }
-        return try resolve(token: token, handle: handle)
+        let (pid, locator) = try resolve(token: token, handle: handle)
+        guard let record = records[token] else {
+            throw WireError.staleSnapshot("令牌 \(token) 未签发或已被丢弃，请重新读取界面。")
+        }
+        guard record.pid == pid else { throw WireError.internalError("令牌记录与解析结果不一致") }
+        return (record.target, locator)
     }
 
     /// 动作的统一投递路径：策略/令牌解析（`authorizedTarget`）→ 原生层核对 → 投递 → 失效映射。
     /// `act` 与 `perform` 都走这里，避免两条路径在失效语义上分叉。
     func deliver(
         token: String, handle: Int,
-        action: (Int32, String?, ElementLocator) throws -> ActionOutcome
-    ) throws -> (pid: Int32, locator: ElementLocator, outcome: ActionOutcome) {
-        let windowTitle = records[token]?.windowTitle
-        let (pid, locator) = try authorizedTarget(token: token, handle: handle)
+        action: (Target, ElementLocator) throws -> ActionOutcome
+    ) throws -> (target: Target, locator: ElementLocator, outcome: ActionOutcome) {
+        let (target, locator) = try authorizedTarget(token: token, handle: handle)
         let outcome: ActionOutcome
         do {
-            outcome = try action(pid, windowTitle, locator)
+            outcome = try action(target, locator)
         } catch {
             discardAfterUnknownOutcome(error, token: token)
             throw error
@@ -93,7 +97,7 @@ extension DesktopSession {
             removeScreenshots(for: token)
             throw WireError.staleSnapshot("句柄 #\(handle) 已失效：\(Self.describe(d))。请重新读取界面。")
         }
-        return (pid, locator, outcome)
+        return (target, locator, outcome)
     }
 
     /// 动作请求已经写出但结果未知时，旧令牌和旧截图绑定都不能再用于重试。
@@ -108,9 +112,8 @@ extension DesktopSession {
 
     /// 对令牌里的句柄执行动作。会话已知失效的令牌不会联系原生层。
     public func act(token: String, handle: Int, action: ActionKind) throws -> ActionOutcome {
-        try deliver(token: token, handle: handle) { pid, windowTitle, locator in
-            try reader.performAction(
-                pid: pid, windowTitle: windowTitle, locator: locator, action: action)
+        try deliver(token: token, handle: handle) { target, locator in
+            try reader.performAction(target: target, locator: locator, action: action)
         }.outcome
     }
 }

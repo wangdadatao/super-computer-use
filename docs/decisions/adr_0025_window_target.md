@@ -50,7 +50,8 @@ ScreenCaptureKit 的候选窗口里按 frame（容差 2 点）匹配，找不到
 这会让少数应用截图失败，但避免坐标动作落到错误窗口。
 
 **没有改变 click/scroll/drag 的 API。** 它们仍然只接收 pid；
-窗口选择发生在原生层的激活路径里，对上层透明。
+窗口选择发生在原生层的激活路径里，对上层透明。后续 [ADR-0026](adr_0026_window_selection.md)
+增加了显式窗口选择，[ADR-0031](adr_0031_window_identity.md) 又把 CGWindowID 带进绑定。
 
 ## 后果
 

@@ -11,8 +11,8 @@ import SCUWire
 //   scu permissions
 //   scu apps
 //   scu windows --pid <pid>
-//   scu dump --pid <pid> [--window <title>] [--depth <n>] [--json]
-//   scu identity --pid <pid> [--window <title>] [--depth <n>] [--show-k4] [--by-role]
+//   scu dump --pid <pid> [--window <title> | --window-id <id>] [--depth <n>] [--json]
+//   scu identity --pid <pid> [--window <title> | --window-id <id>] [--depth <n>] [--show-k4] [--by-role]
 //   scu --help | --version
 //
 // 退出码：0 成功；1 失败；2 缺系统权限；64 用法错误。
@@ -30,8 +30,8 @@ let scuUsage = """
       scu permissions
       scu apps
       scu windows --pid <pid>
-      scu dump --pid <pid> [--window <title>] [--depth <n>] [--budget-ms <n>] [--json]
-      scu identity --pid <pid> [--window <title>] [--depth <n>] [--show-k4] [--by-role]
+      scu dump --pid <pid> [--window <title> | --window-id <id>] [--depth <n>] [--budget-ms <n>] [--json]
+      scu identity --pid <pid> [--window <title> | --window-id <id>] [--depth <n>] [--show-k4] [--by-role]
       scu --help | --version
 
     scu mcp 默认只读；加 --actions 才暴露 click / click_at / scroll_at / drag / type_text /
@@ -185,6 +185,7 @@ func run(command: String, args: [String]) throws {
     var pid: Int32 = 0
     var depth = scuDefaultTreeDepth
     var budgetMs = scuDefaultTreeBudgetMs
+    var windowID: UInt32?
     var windowTitle: String?
     if command == "dump" || command == "identity" {
         guard let pidText = option("--pid", in: args), let p = Int32(pidText) else {
@@ -199,6 +200,10 @@ func run(command: String, args: [String]) throws {
             depth = n
         }
         budgetMs = try parseBudget(args)
+        if let idText = option("--window-id", in: args) {
+            guard let id = UInt32(idText), id > 0 else { throw usage("--window-id 必须是正整数") }
+            windowID = id
+        }
         if let window = option("--window", in: args) {
             guard !window.isEmpty else { throw usage("--window 不能为空") }
             windowTitle = window
@@ -240,16 +245,18 @@ func run(command: String, args: [String]) throws {
             throw CLIExit(code: 1, message: "应答类型错误")
         }
         for w in windows {
+            let id = w.windowID.map { "#\($0)\t" } ?? ""
             let title = w.title.map { "\"\($0)\"" } ?? "-"
             let frame = w.frame.map { "(\(Int($0.x)),\(Int($0.y)),\(Int($0.width)),\(Int($0.height)))" } ?? "-"
-            print("\(title)\t\(frame)")
+            print("\(id)\(title)\t\(frame)")
         }
 
     case "identity":
         guard
             case .tree(let root, let truncated) = try client.call(
                 .dumpTree(
-                    pid: pid, windowTitle: windowTitle, maxDepth: depth, budgetMs: budgetMs),
+                    target: Target(pid: pid, windowID: windowID, windowTitle: windowTitle),
+                    maxDepth: depth, budgetMs: budgetMs),
                 timeoutMs: treeTimeoutMs(budgetMs))
         else {
             throw CLIExit(code: 1, message: "应答类型错误")
@@ -283,7 +290,8 @@ func run(command: String, args: [String]) throws {
         guard
             case .tree(let root, let truncated) = try client.call(
                 .dumpTree(
-                    pid: pid, windowTitle: windowTitle, maxDepth: depth, budgetMs: budgetMs),
+                    target: Target(pid: pid, windowID: windowID, windowTitle: windowTitle),
+                    maxDepth: depth, budgetMs: budgetMs),
                 timeoutMs: treeTimeoutMs(budgetMs))
         else {
             throw CLIExit(code: 1, message: "应答类型错误")

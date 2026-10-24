@@ -27,7 +27,8 @@ ADR-0018 让元素有了快照内短标签和 `frame`，但模型仍然只能读
 WindowCapture {
   png, width, height, scale,
   windowFrame: {x, y, width, height},  // 全局屏幕点，可为负（副屏）
-  windowTitle
+  windowID?,                            // CGWindowID；ADR-0031 加入
+  windowTitle?
 }
 ```
 
@@ -94,6 +95,9 @@ WindowCapture {
 但树变化的比较范围限定在绑定窗口的子树：其他窗口的变化只可能作废令牌，不算这次动作的效果。
 无标题窗口仍退化为按最大窗口重选，且窗口身份仍只靠标题；
 该残余风险记录在 [MCP 接入面](../interfaces/mcp_surface.md#get_screenshot)。
+
+2026-10-22 后续：[ADR-0031](adr_0031_window_identity.md) 把 `CGWindowID` 加入 `WindowCapture`
+与截图绑定，坐标动作优先按 ID 选窗口；只有匹配不到 ID 时才回退标题/frame。
 
 ### 只读档与截图的前台副作用（2026-10-22）
 

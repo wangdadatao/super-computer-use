@@ -165,6 +165,10 @@ extension ScuTool {
                         "type": "string",
                         "description": "窗口标题；元素表以该窗口为根读取，截图与坐标动作也绑定该窗口",
                     ],
+                    "window_id": [
+                        "type": "integer", "minimum": 1,
+                        "description": "窗口 ID（list_windows 返回，优先于 window 标题）；用于同名/无标题窗口",
+                    ],
                     "full": [
                         "type": "boolean",
                         "description": "返回完整元素表，而不是与上次读取的差异；差异过大时也会自动回退完整表",

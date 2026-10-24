@@ -11,6 +11,7 @@ final class ScriptedReader: DesktopReader {
     var script: [Result<TreeReading, WireError>] = []
     private(set) var readCount = 0
     private(set) var readWindowTitles: [String?] = []
+    private(set) var readWindowIDs: [UInt32?] = []
     func readCountReset() { readCount = 0 }
     var apps: Result<[AppInfo], WireError> = .success([AppInfo(pid: 10, name: "演示", bundleId: "com.example.demo")])
     private(set) var listAppsCalls = 0
@@ -19,11 +20,14 @@ final class ScriptedReader: DesktopReader {
     ])
     private(set) var listWindowsCalls: [Int32] = []
     private(set) var captureTitles: [String?] = []
+    private(set) var captureWindowIDs: [UInt32?] = []
     var capture: Result<WindowCapture, WireError> = .failure(.unsupportedOperation("没有配置截图"))
     var action: Result<ActionOutcome, WireError> = .success(.acted)
     private(set) var actionCalls: [(pid: Int32, locator: ElementLocator, action: ActionKind)] = []
     private(set) var actionWindowTitles: [String?] = []
-    private(set) var coordinateClicks: [(pid: Int32, windowTitle: String?, x: Double, y: Double)] = []
+    private(set) var actionWindowIDs: [UInt32?] = []
+    private(set) var coordinateClicks: [(pid: Int32, windowID: UInt32?, windowTitle: String?, x: Double, y: Double)] =
+        []
     /// 非 nil 时坐标动作直接抛出，用来模拟“请求已写出但结果未知”。
     var coordinateError: WireError?
     private(set) var typed: [(pid: Int32, locator: ElementLocator, text: String)] = []
@@ -42,58 +46,65 @@ final class ScriptedReader: DesktopReader {
         return try windows.get()
     }
     func readTree(
-        pid: Int32, windowTitle: String?, maxDepth: Int, budgetMs: Int
+        target: Target, maxDepth: Int, budgetMs: Int
     ) throws -> TreeReading {
-        readWindowTitles.append(windowTitle)
+        readWindowIDs.append(target.windowID)
+        readWindowTitles.append(target.windowTitle)
         defer { readCount += 1 }
         guard !script.isEmpty else { return tree }
         return try script[min(readCount, script.count - 1)].get()
     }
-    func captureWindow(pid: Int32, windowTitle: String?) throws -> WindowCapture {
-        captureTitles.append(windowTitle)
+    func captureWindow(target: Target) throws -> WindowCapture {
+        captureWindowIDs.append(target.windowID)
+        captureTitles.append(target.windowTitle)
         return try capture.get()
     }
 
-    func clickAt(pid: Int32, windowTitle: String?, x: Double, y: Double) throws -> ActionOutcome {
-        coordinateClicks.append((pid, windowTitle, x, y))
+    func clickAt(target: Target, x: Double, y: Double) throws -> ActionOutcome {
+        coordinateClicks.append((target.pid, target.windowID, target.windowTitle, x, y))
         if let coordinateError { throw coordinateError }
         return .acted
     }
     func performAction(
-        pid: Int32, windowTitle: String?, locator: ElementLocator, action kind: ActionKind
+        target: Target, locator: ElementLocator, action kind: ActionKind
     ) throws -> ActionOutcome {
-        actionCalls.append((pid, locator, kind))
-        actionWindowTitles.append(windowTitle)
+        actionCalls.append((target.pid, locator, kind))
+        actionWindowTitles.append(target.windowTitle)
+        actionWindowIDs.append(target.windowID)
         onAction?()
         return try action.get()
     }
 
     func typeText(
-        pid: Int32, windowTitle: String?, locator: ElementLocator, text: String
+        target: Target, locator: ElementLocator, text: String
     ) throws -> ActionOutcome {
-        typed.append((pid, locator, text))
-        actionWindowTitles.append(windowTitle)
+        typed.append((target.pid, locator, text))
+        actionWindowTitles.append(target.windowTitle)
+        actionWindowIDs.append(target.windowID)
         onAction?()
         return try action.get()
     }
 
     func pressKey(
-        pid: Int32, windowTitle: String?, locator: ElementLocator, key: String
+        target: Target, locator: ElementLocator, key: String
     ) throws -> ActionOutcome {
-        pressed.append((pid, locator, key))
-        actionWindowTitles.append(windowTitle)
+        pressed.append((target.pid, locator, key))
+        actionWindowTitles.append(target.windowTitle)
+        actionWindowIDs.append(target.windowID)
         onAction?()
         return try action.get()
     }
 
     func setValue(
-        pid: Int32, windowTitle: String?, locator: ElementLocator, value: String
+        target: Target, locator: ElementLocator, value: String
     ) throws -> ActionOutcome {
-        written.append((pid, locator, value))
-        actionWindowTitles.append(windowTitle)
+        written.append((target.pid, locator, value))
+        actionWindowTitles.append(target.windowTitle)
+        actionWindowIDs.append(target.windowID)
         onAction?()
         return try action.get()
     }
+
 }
 
 final class FakeLauncher: AppLauncher, @unchecked Sendable {
@@ -486,6 +497,30 @@ final class FakeLauncher: AppLauncher, @unchecked Sendable {
             _ = try s.readState(pid: 10, maxDepth: 12, budgetMs: 1000)
         }
         #expect(r.readCount == 0)
+    }
+
+    @Test func readStateAndElementActionCarryWindowID() throws {
+        let (s, r) = session()
+        let st = try s.readState(
+            pid: 10, maxDepth: 12, budgetMs: 1000, windowID: 0xAB, windowTitle: "主")
+        #expect(st.windowID == 0xAB)
+        #expect(r.readWindowIDs == [0xAB])
+        _ = try s.click(token: st.token.value, handle: 1)
+        #expect(r.actionWindowIDs == [0xAB])
+    }
+
+    @Test func screenshotBindingUsesCapturedWindowIDForCoordinates() throws {
+        let (s, r) = session()
+        r.capture = .success(
+            WindowCapture(
+                png: Data([0x89, 0x50]), width: 200, height: 100, scale: 1,
+                windowFrame: Rect(x: 0, y: 0, width: 200, height: 100),
+                windowID: 0x77, windowTitle: "副"))
+        let st = try s.readState(pid: 10, maxDepth: 12, budgetMs: 1000)
+        let shot = try s.captureScreenshot(token: st.token.value)
+        #expect(shot.capture.windowID == 0x77)
+        _ = try s.clickAt(token: st.token.value, screenshotID: shot.id, x: 10, y: 20)
+        #expect(r.coordinateClicks.last?.windowID == 0x77)
     }
 
     @Test func listWindowsRespectsTheAllowlistBeforeEnumerating() throws {

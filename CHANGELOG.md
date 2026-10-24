@@ -8,12 +8,17 @@
 
 ### 新增
 
+- 窗口身份：`Target`（pid + CGWindowID + title）贯通线协议 v12；`list_windows` 与 `get_screenshot`
+  返回 `windowID`，`get_ax_state` 新增 `window_id`；截图坐标动作绑定实际截图的窗口 ID。
+  见 [ADR-0031](docs/decisions/adr_0031_window_identity.md)。
+
 - `scu --help` / `scu help` 与 `scu --version`；未知命令现在会提示查看帮助。
 - 英文 README（`README.en.md`）；`CONTRIBUTING.md`、`SECURITY.md`、本变更记录。
 - `scripts/check.sh` 增加格式检查与帮助命令冒烟，共 5 步；CI 改为直接运行同一入口。
 
 ### 变更
 
+- 线协议升到 v12：窗口相关请求使用 `Target`，新增 `windowID`。
 - 全树按 `.swift-format` 统一格式化，格式检查进入提交前入口与 CI。
 - README 重写：明确"桌面应用"范围，补快速开始、MCP 配置与已实现/未实现边界。
 - 文档中不再出现构建机的证书身份信息（历史记录同步清理）。

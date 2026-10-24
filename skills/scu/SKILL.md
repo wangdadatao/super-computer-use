@@ -49,12 +49,12 @@ SCU 当前**没有**浏览器 adapter/扩展，也没有 `list_tabs` / `get_tab`
    未授予时让用户给宿主（Cursor、终端等）授权，然后重启该宿主。
 2. `list_apps` 取 `pid`。它只列出已在运行、激活策略为 regular 的应用。
    目标没在运行就先 `launch_app`；解析不到会返回 `app_not_found`。
-3. `get_ax_state(pid)` 读界面。多窗口应用先用 `list_windows(pid)` 看标题，再决定是否 `window=`。
+3. `get_ax_state(pid)` 读界面。多窗口应用先用 `list_windows(pid)` 看窗口 ID 与标题；优先 `window_id=`，标题只作回退。
 
 ## 核心循环
 
 ```
-list_apps → get_ax_state(pid) → 多窗口时 list_windows(pid) → get_ax_state(pid, window=标题) → 需要时 get_screenshot(token) → 用令牌与标签/句柄执行一个动作 → 重新 get_ax_state
+list_apps → get_ax_state(pid) → 多窗口时 list_windows(pid) → get_ax_state(pid, window_id=ID 或 window=标题) → 需要时 get_screenshot(token) → 用令牌与标签/句柄执行一个动作 → 重新 get_ax_state
 ```
 
 **每次会改变界面的动作之后都要重读。** 令牌、标签与句柄只对一次读取有效；
@@ -107,12 +107,13 @@ Removed element IDs: 12-15, 20（旧快照句柄，不可用于动作）
 
 ## 多窗口
 
-先调用 `list_windows(pid)`，每行是 `"标题"<TAB>(x,y,w,h)`；没有标题显示 `-`。
+先调用 `list_windows(pid)`，每行是 `#窗口ID<TAB>"标题"<TAB>(x,y,w,h)`（没有 ID 时省略 ID 列）；没有标题显示 `-`。
+优先把 `window_id` 传给 `get_ax_state`，这样同名窗口、无标题窗口不会选错；只有拿不到 ID 时才用标题。
 把标题传给 `get_ax_state(pid, window="…")` 后，**元素表从该窗口开始读取**（根是 `AXWindow`），
 句柄与标签都只在这个窗口的树里；`get_screenshot`、`click_at`、`scroll_at`、`drag` 也用这个窗口，
 `click` / `type_text` / `press_key` / `set_value` 同样用令牌上的窗口标题定位。
 
-窗口标题不存在、已改名或已关闭时返回 `window_not_found`：重新 `list_windows` 并选仍存在的窗口，
+窗口 ID 不存在（窗口关闭/重建）或标题不存在时返回 `window_not_found`：重新 `list_windows` 并选仍存在的窗口，
 不要退回不带 `window` 的读取去猜。标题要精确匹配；多个同名窗口当前只选第一个，这是已知限制。
 默认不传 `window` 时读取应用根，截图/坐标动作使用面积最大的非最小化窗口。
 

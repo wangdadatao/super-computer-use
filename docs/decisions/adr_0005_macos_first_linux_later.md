@@ -61,9 +61,12 @@ Linux 侧的特殊困难：X11 与 Wayland 的注入机制不同，
 - `PolicyGate`：Darwin `proc_pidinfo` 读取 SCU 自身的宿主祖先链；
 - `ScreenshotDiff`：CoreGraphics/ImageIO 做截图像素 diff。
 
-另外，代码里尚无文中所说的平台无关 `Target` 协议；`DesktopSession` 仍直接绑定 `pid` / `windowTitle` / `AXNode`。
+另外，当时代码里尚无文中所说的平台无关 `Target` 协议；`DesktopSession` 仍直接绑定 `pid` / `windowTitle` / `AXNode`。
 后果是“移植 Linux 只需替换原生进程”目前不成立。移植前需要先把上述三处移到平台侧（或改走线协议请求），
 并在浏览器适配器之前抽出令牌/效果/授权接缝。此次只修文档与代码不一致，不移动这些实现。
+
+2026-10-22 后续：窗口身份迭代引入了 `Target`（`pid + windowID? + windowTitle?`）并贯通线协议，
+但上述三处 macOS 依赖仍未移动；`Target` 目前是协议类型，不是完整的平台抽象。
 
 ## 相关文档
 

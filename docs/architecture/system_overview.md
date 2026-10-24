@@ -119,9 +119,9 @@ macOS（AXUIElement / CGEvent / ScreenCaptureKit）
 两者共享同一套操作面的设计目标，这样"点击编号 42"这个语义对应用和网页是同构的，
 agent 不需要为两者写不同的代码路径。
 
-**当前只实现了应用目标，而且代码里还没有这个 `Target` 协议。** `DesktopSession` 直接绑定
-`pid` / `windowTitle` / `AXNode`；页面目标是设计，不是现有行为。接入浏览器适配器前，
-需要先把令牌、效果观察与授权抽成面无关的接缝，否则 `BrowserSession` 会复制桌面会话的逻辑。
+**当前只实现了应用目标。** `Target` 已作为线协议类型存在（`pid + windowID? + windowTitle?`），
+但 `DesktopSession` 仍持有这些字段，平台无关的目标协议尚未完全抽离；页面目标是设计，不是现有行为。
+接入浏览器适配器前，需要先把令牌、效果观察与授权抽成面无关的接缝，否则 `BrowserSession` 会复制桌面会话的逻辑。
 浏览器接入的边界与顺序见[操作面模型](surface_model.md)。网页内容不应通过 macOS AX 模拟成页面目标。
 
 平台差异被隔离在原生层。已知的差异点（待实现时验证）：

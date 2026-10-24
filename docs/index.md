@@ -22,6 +22,7 @@ v2 功能点：`get_screenshot` 截取目标窗口并叠加标签；`launch_app`
 动作档可选连接级应用允许列表（`--allow-app`）；`list_windows` 枚举窗口，`get_ax_state(window=...)` 以指定窗口为根读树，元素动作也绑定该窗口。
 0.3.0：`get_ax_state` 默认输出与上次读取的差异，`full=true` 取完整表（[ADR-0028](decisions/adr_0028_incremental_tree_rendering.md)）。
 0.4.0：通用二进制 zip、ad-hoc/Developer ID 签名流水线、`install.sh` 与 `verify_dist.sh`（[ADR-0029](decisions/adr_0029_distribution.md)、[分发](operations/distribution.md)）。
+0.5 候选（未发布）：窗口身份已实现（`Target`、CGWindowID、线协议 v12）；见 [ADR-0031](decisions/adr_0031_window_identity.md)。
 2026-10-22：架构修复轮，无新功能；输入超时、截图只读语义、坐标窗口绑定、动作超时、策略授权集中化、
 工具/会话文件拆分、CI 与 MIT 许可证。结果见[验证记录](../verification/2026-10-22-architecture-fixes.md)。
 2026-10-22 开源准备：README 中英双语、`scu --help`、CONTRIBUTING/SECURITY/CODE_OF_CONDUCT/CHANGELOG、
@@ -29,7 +30,7 @@ CI 与本地统一走 `scripts/check.sh`（含格式检查）、历史作者与�
 仓库暂不提供预编译二进制；见[验证记录](../verification/2026-10-22-open-source-prep.md)。
 下一阶段规划：浏览器操作面通过适配器接入；不把浏览器当 AX 应用，也不先自研扩展（[ADR-0030](decisions/adr_0030_browser_surface.md)）。
 已在网易云（CEF）与 TextEdit 多窗口上验证；真实任务集 6 个，5 个通过、1 个部分通过（访达内联重命名）。
-见 [ADR-0018](decisions/adr_0018_label_addressing.md)、[ADR-0019](decisions/adr_0019_window_screenshot.md)、[ADR-0020](decisions/adr_0020_coordinate_click.md)、[ADR-0021](decisions/adr_0021_scroll_and_drag.md)、[ADR-0022](decisions/adr_0022_app_launch.md)、[ADR-0023](decisions/adr_0023_indicator.md)、[ADR-0024](decisions/adr_0024_app_authorization.md)、[ADR-0025](decisions/adr_0025_window_target.md)、[ADR-0026](decisions/adr_0026_window_selection.md)、[ADR-0027](decisions/adr_0027_window_root_locator.md)、[ADR-0028](decisions/adr_0028_incremental_tree_rendering.md)、[ADR-0029](decisions/adr_0029_distribution.md)、[ADR-0030](decisions/adr_0030_browser_surface.md)。
+见 [ADR-0018](decisions/adr_0018_label_addressing.md)、[ADR-0019](decisions/adr_0019_window_screenshot.md)、[ADR-0020](decisions/adr_0020_coordinate_click.md)、[ADR-0021](decisions/adr_0021_scroll_and_drag.md)、[ADR-0022](decisions/adr_0022_app_launch.md)、[ADR-0023](decisions/adr_0023_indicator.md)、[ADR-0024](decisions/adr_0024_app_authorization.md)、[ADR-0025](decisions/adr_0025_window_target.md)、[ADR-0026](decisions/adr_0026_window_selection.md)、[ADR-0027](decisions/adr_0027_window_root_locator.md)、[ADR-0028](decisions/adr_0028_incremental_tree_rendering.md)、[ADR-0029](decisions/adr_0029_distribution.md)、[ADR-0030](decisions/adr_0030_browser_surface.md)、[ADR-0031](decisions/adr_0031_window_identity.md)。
 
 仓库有一个 Swift package，
 实现了两进程通信、版本协商、权限检测、无障碍树读取、快照令牌与按路径定位句柄、`AXPress` 点击与最小效果摘要、
@@ -63,4 +64,4 @@ v2 已收口；未进入 v2 的逐次审批、`batch`/受限 code mode 等见
 - [领域](domains/index.md)：核心术语与失效模型。读取时机：确认某个概念在 SCU 里的确切含义时。
 - [接口](interfaces/index.md)：协议面、目标发现与绑定、元素寻址格式、编辑类操作语义。读取时机：增删接口、写 agent 集成或客户端时。
 - [运维](operations/index.md)：本地开发环境、macOS 权限、测试策略。读取时机：搭建环境、排障、处理权限问题时。
-- [决策](decisions/index.md)：30 条 ADR，含对外部实现取舍的分析结论。读取时机：质疑「为什么这样设计」或要推翻某个既有选择时。
+- [决策](decisions/index.md)：31 条 ADR，含对外部实现取舍的分析结论。读取时机：质疑「为什么这样设计」或要推翻某个既有选择时。

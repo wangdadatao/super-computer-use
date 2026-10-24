@@ -84,9 +84,9 @@
 再取一次 `WindowCapture`，比较 `windowFrame`、`scale`、`width`、`height`；不一致就返回 `stale_geometry`，
 不投递事件。这不需要改线协议，代价是每次坐标动作多一次截图与窗口激活。
 
-仍未闭合的是**窗口身份**：SCWindow 标题与 AX 窗口标题可能不一致，同名窗口也可能选错；
-完整修复需要把 `CGWindowID` 或 AX 窗口引用带进截图绑定与线协议。当前把这项列为已知限制，
-不声称只用标题能可靠区分窗口。
+窗口身份已在同日的 [ADR-0031](adr_0031_window_identity.md) 补齐：`CGWindowID` 进入
+`Target`、`list_windows`、`WindowCapture` 与截图绑定；线协议升到 v12。坐标动作优先用
+截图绑定的窗口 ID，取不到时才回退标题/frame。同名且都取不到 ID 的窗口仍是已知回退。
 
 ## 相关文档
 
