@@ -98,7 +98,7 @@ extension DesktopSession {
                 let digest = Self.structuralDigest(ElementTable.flatten(reading.root))
                 settled = reading
                 settledDigest = digest
-                if !pre.truncated, digest != pre.digest { sawChange = true }
+                if !pre.truncated, !reading.truncated, digest != pre.digest { sawChange = true }
                 if let p = previous, p == digest, !reading.truncated {
                     quietStreak += 1
                     let needed =
