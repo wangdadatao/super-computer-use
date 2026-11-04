@@ -5,17 +5,19 @@
 # 本脚本随仓库版本控制；~/aiwork/bin/scu-mini 是指向它的符号链接。
 #
 # 用法：
-#   scu-mini status           两端提交号、工作树是否干净、授权状态
+#   scu-mini status           两端提交号、工作树是否干净、授权状态、是否锁屏
 #   scu-mini push             把本机已提交的 main 推到 macmini 工作树（updateInstead），并断言落点正确
 #   scu-mini pull             把 macmini 上的提交拉回本机
 #   scu-mini sync             push + 团队目录镜像（团队目录以本机为准）
 #   scu-mini build            在 macmini 编译
-#   scu-mini test             在 macmini 跑全量 swift test
-#   scu-mini check            在 macmini 跑 scripts/check.sh（5/5）
+#   scu-mini test             在 macmini 跑全量 swift test（要求解锁）
+#   scu-mini check            在 macmini 跑 scripts/check.sh（5/5，要求解锁）
 #   scu-mini dist             在 macmini 出 universal 安装包到 ~/scu-dist/<版本>
 #   scu-mini sh '<命令>'      在 macmini 仓库根直接执行任意命令
 #
 # 注意：check / test 各需 60~120 秒，调用方要给足超时（本机 Bash 至少 300000 毫秒）。
+# 前提：macmini 必须处于解锁状态。锁屏时夹具窗口不会出现，21 个 GUI 用例各自等到 30 秒超时，
+# 整段十分钟后报一堆假红；所以执行前先查锁屏，锁着就立即失败。
 #
 # 不提供 --force：强推会覆盖 mini 上的本地提交，被覆盖的提交只在 reflog 里留一条，
 # 而 reflog 会随 gc 消失。要纠正 mini 的状态就显式登录上去处理（scu-mini sh '<命令>'）。
@@ -39,6 +41,54 @@ TEAM_REMOTE='~/aiwork/team'
 
 r() { ssh "$HOST" "cd $REPO_REMOTE && $*"; }
 hr() { printf '━%.0s' {1..56}; echo; }
+
+# 远端输出只留末尾 N 行，退出码必须来自远端命令本身。
+# 不能写成 `... | tail -N; exit ${PIPESTATUS[0]}`：远端登录 shell 是 zsh，zsh 没有 PIPESTATUS，
+# 展开成空串后 `exit` 不带参数，退出码变成 tail 的 0——检查失败会被报成成功。
+r_tail() {
+  local n=$1 out rc
+  shift
+  out=$(r "$*" 2>&1); rc=$?
+  printf '%s\n' "$out" | tail -n "$n"
+  return "$rc"
+}
+
+# 只从内核读锁屏状态，不截图：锁屏时 screencapture 照样出画面，判断不了界面能否操作。
+# macOS 26 把标志放在根节点的 IOConsoleLocked，更早的系统放在 IOConsoleUsers[].kCGSSessionScreenIsLocked，
+# 两个都看，任一为真即锁屏。输出 locked / unlocked / unknown；unknown 由调用方按失败处理。
+remote_lock_state() {
+  local xml
+  xml=$(ssh "$HOST" '/usr/sbin/ioreg -n Root -d1 -a' 2>/dev/null) || { echo unknown; return 1; }
+  printf '%s' "$xml" | /usr/bin/python3 -c '
+import plistlib, sys
+try:
+    d = plistlib.loads(sys.stdin.buffer.read())
+except Exception:
+    print("unknown"); raise SystemExit(1)
+flags = [d.get("IOConsoleLocked")]
+flags += [u.get("kCGSSessionScreenIsLocked") for u in d.get("IOConsoleUsers") or []]
+flags = [f for f in flags if isinstance(f, bool)]
+if not flags:
+    print("unknown"); raise SystemExit(1)
+print("locked" if any(flags) else "unlocked")
+'
+}
+
+require_unlocked() {
+  local lock
+  lock=$(remote_lock_state)
+  case $lock in
+    unlocked) return 0 ;;
+    locked)
+      echo "❌ macmini 处于锁屏，GUI 用例无法执行；请解锁后重试" >&2
+      echo "   锁屏时夹具窗口不会出现：21 个 FixtureTests 会各自等到 30 秒超时（12:19 实测测试段 635 秒），不是代码回归。" >&2
+      echo "   解锁后重跑；只想看非 GUI 部分用 SCU_SKIP_LIVE=1 scripts/check.sh（在 mini 上跑）。" >&2
+      exit 1 ;;
+    *)
+      echo "❌ 读不到 macmini 的锁屏状态，未执行；先确认 ssh $HOST 可用。" >&2
+      exit 1 ;;
+  esac
+}
 
 # push / sync 的成功不能只看 git push 的退出码。mini 停在别的分支时，推 main 只更新
 # refs/heads/main、不动工作树，推送照样返回 0，而 check 跑的是那个分支，报告却是绿的。
@@ -98,6 +148,11 @@ case "$cmd" in
     hr; echo "macmini  $HOST:$REPO_REMOTE"
     r 'git log --oneline -1; printf "工作树改动：%s 项\n" "$(git status --porcelain | wc -l | tr -d " ")"'
     r 'BIN=$(swift build --show-bin-path 2>/dev/null)/scu; if [ -x "$BIN" ]; then printf "辅助功能："; "$BIN" permissions >/dev/null 2>&1 && echo 已授予 || echo 未授予; else echo "辅助功能：未编译"; fi'
+    case $(remote_lock_state) in
+      locked)   echo "锁屏状态：已锁屏（GUI 用例此时无法执行）" ;;
+      unlocked) echo "锁屏状态：已解锁" ;;
+      *)        echo "锁屏状态：读取失败" ;;
+    esac
     hr
     ;;
   push)
@@ -116,16 +171,19 @@ case "$cmd" in
     echo "同步完成"
     ;;
   build)
-    r 'swift build 2>&1 | tail -5; exit ${PIPESTATUS[0]}'
+    r_tail 5 'swift build'
     ;;
   test)
-    r 'swift test 2>&1 | tail -25; exit ${PIPESTATUS[0]}'
+    require_unlocked
+    # caffeinate：全量测试要跑 1~2 分钟，屏幕睡眠会重新锁屏，跑到一半锁上就白跑。
+    r_tail 25 'caffeinate -dimsu swift test'
     ;;
   check)
-    r 'scripts/check.sh 2>&1 | tail -40; exit ${PIPESTATUS[0]}'
+    require_unlocked
+    r_tail 40 'caffeinate -dimsu scripts/check.sh'
     ;;
   dist)
-    r 'scripts/build_dist.sh 2>&1 | tail -20; exit ${PIPESTATUS[0]}'
+    r_tail 20 'scripts/build_dist.sh'
     ;;
   sh)
     shift

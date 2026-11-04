@@ -45,6 +45,18 @@ CI 走 `macos-15` runner，135 个实际执行（`.github/workflows/check.yml:24
 退出码上看成功是不够的：mini 停在别的分支时 `main` 的 ref 仍会被更新，推送返回 0，而
 `check` 跑的是那个分支，报告却是绿的。
 
+### check / test 的前提：macmini 解锁
+
+`check` 与 `test` 都要求 macmini 的控制台处于**解锁**状态。锁屏时夹具窗口不会出现，21 个
+FixtureTests 各自等到 30 秒超时后才失败（2026-11-04 12:19 实测：测试段 635 秒，21 个假红），
+这不是代码回归。脚本在远端执行前先读内核里的锁屏标志（`ioreg -n Root -d1 -a` 的根节点
+`IOConsoleLocked`，以及更早系统的 `IOConsoleUsers[].kCGSSessionScreenIsLocked`；不靠截图——
+锁屏时 `screencapture` 照样出画面），锁着就立即非 0 退出并打印
+「macmini 处于锁屏，GUI 用例无法执行；请解锁后重试」，不会进入那十分钟。读不到状态同样
+立即失败，不赌。执行期间包在 `caffeinate -dimsu` 里，避免跑到一半屏幕睡眠重新锁屏；
+`scu-mini status` 会显示当前是已锁屏还是已解锁。子命令的退出码取自远端命令本身，
+不经过本地管道（远端登录 shell 是 zsh，没有 `PIPESTATUS`，管道取码会让失败报成 0）。
+
 脚本不提供 `--force`：强推会覆盖 mini 上的本地提交，被覆盖的提交只在 reflog 里留一条，
 reflog 会随 gc 消失。真需要纠正时在 mini 上显式处理（`scu-mini sh '<命令>'`）。
 
