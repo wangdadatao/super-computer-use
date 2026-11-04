@@ -162,9 +162,9 @@ HTTP 清单。
 - **2026-07-28 的草案传输页删掉了 GET 长连接和协议级 session（含 `Mcp-Session-Id`）。** 将来做（b）
   不能把这两样当必备能力设计；2025-03-26 / 2025-06-18 / 2025-11-25 仍是旧形状。
 - **没有官方规范支持「computer-use MCP over HTTP 操作另一台 Mac」。** 同类产品要么同机 stdio
-  （Claude Code computer-use、Playwright MCP 默认），要么明确要求服务只绑 localhost 再用 `ssh -L`
-  （Playwright 的远程文档）；Claude Desktop 的 SSH 远程会话也是「在远端机器上跑 stdio」。这三条都把
-  （a）当默认，把 HTTP 当例外。
+  （Claude Code computer-use、Playwright MCP 默认），要么要求服务只绑 localhost 再用 `ssh -L`
+  （Playwright MCP 的官方选项 `--host` 默认就是 localhost；写明 `ssh -L` 的是第三方远程文档）；
+  Claude Desktop 的 SSH 远程会话也是「在远端机器上跑 stdio」。这三条都把（a）当默认，把 HTTP 当例外。
 
 #### （c）本机桥接/隧道：不作为 v1
 
