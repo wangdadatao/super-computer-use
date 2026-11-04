@@ -11,7 +11,8 @@ SuperComputerUse（SCU）是一个开源桌面自动化服务，macOS 优先，�
 **阶段、已实现内容与验证状态只在 `docs/index.md` 的「当前阶段」记录，本文件不复制清单**：
 清单会随收口过期，而这里的指令不会随每次提交被复查。动手前读 `docs/index.md`，以那里的说法为准。
 
-构建与测试：`swift build && swift test`。
+构建与测试：**在 macmini 上执行**，用 `~/aiwork/bin/scu-mini check`；本机只负责编辑与提交。
+两台机器的分工与同步方式见 `docs/operations/local_setup.md#两台机器分工2026-11-04-起`。
 
 ## 文档协作规则
 

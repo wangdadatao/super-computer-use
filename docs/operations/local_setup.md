@@ -15,6 +15,32 @@ macOS       arm64, macOS 26.x
 
 仓库是一个 Swift package（`Package.swift`），不需要额外的包管理器或虚拟环境。
 
+### 两台机器分工（2026-11-04 起）
+
+代码在笔记本上编辑与提交，**构建、全量测试、出包一律在 macmini 上跑**：那台机器的
+`sshd-keygen-wrapper` 同时拿到了辅助功能和屏幕录制授权，缺权限而失败的 22 个 GUI 测试只在它上面能真正执行。
+
+| 机器 | 角色 | 2026-11-04 实测 |
+|---|---|---|
+| 笔记本 | 编辑、提交、团队文档 | `8e035d6`，领先 `origin/main` 7 个提交，工作树干净 |
+| macmini（`dagermac-mini`） | 构建、全量测试、universal 出包 | 构建 7 秒；`swift test` 157/157、12 suite、64.7 秒；`screencapture` 输出 1920×1080 |
+
+同步与执行只走一个入口，避免两边各改各的：
+
+```bash
+~/aiwork/bin/scu-mini status   # 两端提交号、工作树改动数、macmini 权限
+~/aiwork/bin/scu-mini sync     # 推送本机 main 到 macmini 工作树，并镜像团队目录
+~/aiwork/bin/scu-mini check    # 在 macmini 跑 scripts/check.sh
+~/aiwork/bin/scu-mini test     # 只跑全量 swift test
+```
+
+推送走本地远程 `mini`（ssh 指向 macmini 的工作树，已设 `receive.denyCurrentBranch=updateInstead`），
+**不碰 `origin`**：远端仍是 `https://github.com/wangdadatao/super-computer-use.git`，
+本地领先的提交按既有约定等人工授权再推。`pull` 方向用 `scu-mini pull`。
+
+两项系统授权记在 `/usr/libexec/sshd-keygen-wrapper` 上，因此 macmini 上**任意** SSH 会话都能控制界面与截屏；
+撤销时把这一项从辅助功能和屏幕录制两个列表里都移出。这是有意选择的便利，不是最小权限配置。
+
 ## 构建与测试
 
 ```bash
