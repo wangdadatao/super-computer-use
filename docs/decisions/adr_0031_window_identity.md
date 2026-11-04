@@ -78,7 +78,7 @@ CoreGraphics 的窗口号是公开契约。
 - 真实验证：Edge 窗口列表返回 `#550918`，`get_ax_state(window_id=550918)` 与
   `get_screenshot` 均返回同一个 ID；两条同标题 TextEdit 窗口（`#3134009`/`#3134010`）上
   `scu windows`、`dump --window-id`、`get_screenshot.window_id`、标记不串窗四项全部通过，
-  见 [同名窗口回归](../../verification/2026-11-05-window-identity-same-title.md)；
+  见 [同名窗口回归](../../verification/2026-11-04-window-identity-same-title.md)；
   无标题窗口的真实回归仍未做。
 
 ## 相关文档
@@ -91,4 +91,4 @@ CoreGraphics 的窗口号是公开契约。
 - [ADR-0026 窗口选择](adr_0026_window_selection.md)
 - [ADR-0027 窗口根定位](adr_0027_window_root_locator.md)
 - [验证记录](../../verification/2026-10-22-window-identity.md)
-- [同名窗口回归](../../verification/2026-11-05-window-identity-same-title.md)
+- [同名窗口回归](../../verification/2026-11-04-window-identity-same-title.md)

@@ -39,7 +39,7 @@ verification/
 | `2026-10-22-architecture-fixes.md` | 架构修复轮：输入超时、截图标注、坐标绑定、动作超时、策略集中化、文件拆分、CI/许可证；构建与测试证据 |
 | `2026-10-22-open-source-prep.md` | 开源准备：git 历史脱敏、中英 README 与社区文件、`--help`、5 步检查入口与 CI、一次性产物清理 |
 | `2026-10-22-window-identity.md` | `Target`、CGWindowID、窗口 ID 选择与截图绑定（线协议 v12） |
-| `2026-11-05-window-identity-same-title.md` | 两条同标题 TextEdit 窗口的身份回归：4 项判定全过，标题选择仍歧义 |
+| `2026-11-04-window-identity-same-title.md` | 两条同标题 TextEdit 窗口的身份回归：4 项判定全过，标题选择仍歧义 |
 
 ## 结论文件格式
 
@@ -49,7 +49,7 @@ verification/
 ## 当前状态
 
 **v2 已收口（0.2.0，2026-10-20）；0.3.0（默认差异）；0.4.0（分发）；当前 0.5.0（窗口身份）；P0 的出口门槛全部满足或判定不适用。** 同名窗口的真实回归已执行并通过
-（[2026-11-05](2026-11-05-window-identity-same-title.md)），无标题窗口回归仍待做（见 README「已知缺口」）。 十四份记录：元素身份基线
+（[2026-11-04](2026-11-04-window-identity-same-title.md)），无标题窗口回归仍待做（见 README「已知缺口」）。 十四份记录：元素身份基线
 （[2026-10-16](2026-10-16-baseline-identity.md)，不是结论）、读树耗时
 （[2026-10-17](2026-10-17-read-latency.md)）、夹具验证（[2026-10-18](2026-10-18-fixture-validation.md)）、
 K4 正式验证（[2026-10-18](2026-10-18-identity-k4.md)，不成立）、令牌误拒与重读成本
