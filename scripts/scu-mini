@@ -1,0 +1,136 @@
+#!/usr/bin/env bash
+# SCU 在 macmini 上的构建 / 测试 / 出包入口。
+# 代码编辑仍在本机，构建与验证一律在 macmini 执行（那是唯一有两项系统授权、能跑全量 GUI 测试的地方）。
+#
+# 本脚本随仓库版本控制；~/aiwork/bin/scu-mini 是指向它的符号链接。
+#
+# 用法：
+#   scu-mini status           两端提交号、工作树是否干净、授权状态
+#   scu-mini push             把本机已提交的 main 推到 macmini 工作树（updateInstead），并断言落点正确
+#   scu-mini pull             把 macmini 上的提交拉回本机
+#   scu-mini sync             push + 团队目录镜像（团队目录以本机为准）
+#   scu-mini build            在 macmini 编译
+#   scu-mini test             在 macmini 跑全量 swift test
+#   scu-mini check            在 macmini 跑 scripts/check.sh（5/5）
+#   scu-mini dist             在 macmini 出 universal 安装包到 ~/scu-dist/<版本>
+#   scu-mini sh '<命令>'      在 macmini 仓库根直接执行任意命令
+#
+# 注意：check / test 各需 60~120 秒，调用方要给足超时（本机 Bash 至少 300000 毫秒）。
+#
+# 不提供 --force：强推会覆盖 mini 上的本地提交，被覆盖的提交只在 reflog 里留一条，
+# 而 reflog 会随 gc 消失。要纠正 mini 的状态就显式登录上去处理（scu-mini sh '<命令>'）。
+
+set -uo pipefail
+HOST=dagermac-mini
+
+# 经符号链接调用时 $0 是链接路径，先解析到仓库里的真实文件，再取仓库根。
+self=$0
+if [ -L "$self" ]; then
+  target=$(/usr/bin/stat -f '%Y' "$self") || exit 1
+  case $target in
+    /*) self=$target ;;
+    *) self="$(dirname "$self")/$target" ;;
+  esac
+fi
+REPO_LOCAL=$(cd "$(dirname "$self")/.." && pwd -P) || exit 1
+REPO_REMOTE='~/aiwork/SuperComputerUse'
+TEAM_LOCAL=$(cd "$(dirname "$REPO_LOCAL")" && pwd -P)/team
+TEAM_REMOTE='~/aiwork/team'
+
+r() { ssh "$HOST" "cd $REPO_REMOTE && $*"; }
+hr() { printf '━%.0s' {1..56}; echo; }
+
+# push / sync 的成功不能只看 git push 的退出码。mini 停在别的分支时，推 main 只更新
+# refs/heads/main、不动工作树，推送照样返回 0，而 check 跑的是那个分支，报告却是绿的。
+# 所以推完必须核对 mini 的实际状态，三条同时成立才算成功：
+#   1. 当前分支是 main
+#   2. HEAD 等于刚推上去的提交
+#   3. 工作树干净
+assert_remote_head() {
+  local want br head dirty rc_br rc_head rc_dirty dirty_n
+
+  want=$(cd "$REPO_LOCAL" && git rev-parse main) || {
+    echo "❌ 读不到本机 main 的提交号" >&2
+    return 1
+  }
+
+  br=$(r 'git symbolic-ref --short HEAD' 2>/dev/null); rc_br=$?
+  head=$(r 'git rev-parse HEAD' 2>/dev/null); rc_head=$?
+  dirty=$(r 'git status --porcelain' 2>/dev/null); rc_dirty=$?
+
+  dirty_n=0
+  [ -n "$dirty" ] && dirty_n=$(printf '%s\n' "$dirty" | wc -l | tr -d ' ')
+
+  if [ "$rc_br" -ne 0 ] || [ "$br" != "main" ] ||
+     [ "$rc_head" -ne 0 ] || [ "$head" != "$want" ] ||
+     [ "$rc_dirty" -ne 0 ] || [ "$dirty_n" -ne 0 ]; then
+    echo "❌ macmini 状态与预期不符，本次推送不算成功：" >&2
+    echo "   期望：分支 main / HEAD $want / 工作树干净" >&2
+    if [ "$rc_br" -ne 0 ]; then
+      echo "   实际：分支 读取失败（ssh 退出码 ${rc_br}）" >&2
+    else
+      echo "   实际：分支 ${br:-（空）}" >&2
+    fi
+    if [ "$rc_head" -ne 0 ]; then
+      echo "          HEAD 读取失败（ssh 退出码 ${rc_head}）" >&2
+    else
+      echo "          HEAD ${head:-（空）}" >&2
+    fi
+    if [ "$rc_dirty" -ne 0 ]; then
+      echo "          工作树 读取失败（ssh 退出码 ${rc_dirty}）" >&2
+    else
+      echo "          工作树 ${dirty_n} 项改动" >&2
+      [ -n "$dirty" ] && printf '%s\n' "$dirty" | head -3 | sed 's/^/            /' >&2
+    fi
+    echo "   处理：登录 mini 把它切回 main（git switch main）后重试；不要强推。" >&2
+    return 1
+  fi
+
+  echo "✅ macmini：main @ ${head:0:8}，工作树干净"
+}
+
+cmd=${1:-status}
+
+case "$cmd" in
+  status)
+    hr; echo "本机  $REPO_LOCAL"
+    ( cd "$REPO_LOCAL" && git log --oneline -1 && printf '工作树改动：%s 项\n' "$(git status --porcelain | wc -l | tr -d ' ')" )
+    hr; echo "macmini  $HOST:$REPO_REMOTE"
+    r 'git log --oneline -1; printf "工作树改动：%s 项\n" "$(git status --porcelain | wc -l | tr -d " ")"'
+    r 'BIN=$(swift build --show-bin-path 2>/dev/null)/scu; if [ -x "$BIN" ]; then printf "辅助功能："; "$BIN" permissions >/dev/null 2>&1 && echo 已授予 || echo 未授予; else echo "辅助功能：未编译"; fi'
+    hr
+    ;;
+  push)
+    ( cd "$REPO_LOCAL" && git push mini main ) || exit 1
+    assert_remote_head || exit 1
+    r 'git log --oneline -1'
+    ;;
+  pull)
+    ( cd "$REPO_LOCAL" && git pull --ff-only mini main ) || exit 1
+    ;;
+  sync)
+    ( cd "$REPO_LOCAL" && git push mini main ) || exit 1
+    assert_remote_head || exit 1
+    hr; echo "团队目录 → macmini"
+    rsync -a --delete --exclude '.git/' "$TEAM_LOCAL/" "$HOST:$TEAM_REMOTE/" || exit 1
+    echo "同步完成"
+    ;;
+  build)
+    r 'swift build 2>&1 | tail -5; exit ${PIPESTATUS[0]}'
+    ;;
+  test)
+    r 'swift test 2>&1 | tail -25; exit ${PIPESTATUS[0]}'
+    ;;
+  check)
+    r 'scripts/check.sh 2>&1 | tail -40; exit ${PIPESTATUS[0]}'
+    ;;
+  dist)
+    r 'scripts/build_dist.sh 2>&1 | tail -20; exit ${PIPESTATUS[0]}'
+    ;;
+  sh)
+    shift
+    r "$*"
+    ;;
+  *)
+    sed -n '7,20p' "$self"; exit 64 ;;
+esac

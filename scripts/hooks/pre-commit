@@ -1,3 +1,9 @@
 #!/usr/bin/env bash
 # 启用：git config core.hooksPath scripts/hooks
+#
+# 本机（笔记本）只负责编辑与提交，两项系统授权都在 macmini 上。在这里跑 live 用例会用
+# 真实鼠标事件抢焦点，并因缺权限失败，把提交整体挡住。所以 pre-commit 固定跳过 live 用例；
+# 含 live 的全量门禁在 macmini 上跑：
+#   ~/aiwork/bin/scu-mini check
+export SCU_SKIP_LIVE=1
 exec "$(git rev-parse --show-toplevel)/scripts/check.sh"

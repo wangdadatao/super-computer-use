@@ -25,7 +25,8 @@ macOS       arm64, macOS 26.x
 | 笔记本 | 编辑、提交、团队文档 | `8e035d6`，领先 `origin/main` 7 个提交，工作树干净 |
 | macmini（`dagermac-mini`） | 构建、全量测试、universal 出包 | 构建 7 秒；`swift test` 157/157、12 suite、64.7 秒；`screencapture` 输出 1920×1080 |
 
-同步与执行只走一个入口，避免两边各改各的：
+同步与执行只走一个入口，避免两边各改各的。脚本随仓库版本控制（`scripts/scu-mini`），
+`~/aiwork/bin/scu-mini` 是指向它的符号链接：
 
 ```bash
 ~/aiwork/bin/scu-mini status   # 两端提交号、工作树改动数、macmini 权限
@@ -33,6 +34,14 @@ macOS       arm64, macOS 26.x
 ~/aiwork/bin/scu-mini check    # 在 macmini 跑 scripts/check.sh
 ~/aiwork/bin/scu-mini test     # 只跑全量 swift test
 ```
+
+`push` / `sync` 在推完之后断言 macmini 的实际状态：当前分支必须是 `main`、`HEAD` 必须等于
+刚推的提交、工作树必须干净。任一条不符就非 0 退出并打印三项的实际值。只在 `git push`
+退出码上看成功是不够的：mini 停在别的分支时 `main` 的 ref 仍会被更新，推送返回 0，而
+`check` 跑的是那个分支，报告却是绿的。
+
+脚本不提供 `--force`：强推会覆盖 mini 上的本地提交，被覆盖的提交只在 reflog 里留一条，
+reflog 会随 gc 消失。真需要纠正时在 mini 上显式处理（`scu-mini sh '<命令>'`）。
 
 推送走本地远程 `mini`（ssh 指向 macmini 的工作树，已设 `receive.denyCurrentBranch=updateInstead`），
 **不碰 `origin`**：远端仍是 `https://github.com/wangdadatao/super-computer-use.git`，
@@ -56,6 +65,10 @@ scripts/measure_token_reject.py  # 令牌误拒与重读成本的测量（需辅
 ```bash
 git config core.hooksPath scripts/hooks
 ```
+
+本机的 pre-commit 固定导出 `SCU_SKIP_LIVE=1`：23 个 live 用例标为 skipped、134 个实际执行，
+不会抢鼠标，也不需要辅助功能权限（摘要行仍打印 157，Swift Testing 把 skipped 计入总数）。
+带 live 用例的全量门禁在 macmini 上跑：`~/aiwork/bin/scu-mini check`（157 个全执行，5/5）。
 
 ### 格式化
 

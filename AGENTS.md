@@ -31,6 +31,9 @@ SuperComputerUse（SCU）是一个开源桌面自动化服务，macOS 优先，�
   人和 agent 都能直接读。
 - **提交前运行 `scripts/check.sh`**：文档检查 + 格式检查 + `swift build` + `swift test` + 命令行与 MCP 冒烟（含 SIGKILL 回收），
   是唯一的提交前入口。启用 pre-commit：`git config core.hooksPath scripts/hooks`。
+  本机的 pre-commit 固定带 `SCU_SKIP_LIVE=1`：23 个 live 用例标为 skipped、134 个实际执行，
+  不碰桌面也不需要辅助功能权限（摘要行仍打印 157，Swift Testing 把 skipped 计入总数）；
+  **含 live 用例的全量门禁在 macmini**：`~/aiwork/bin/scu-mini check`（157 个全执行，5/5）。
   其中的 `scripts/check_docs.sh` 检查 `docs/` 下文件命名、H1 唯一性、链接可达性（含锚点）、
   分类路由（含根目录路由各分类）、ADR 字段、废弃术语、显式 `<a id>` 唯一与格式、mermaid 语法与代码侧 `@project-doc` 锚点
   （根目录 `docs_audit_*.md` 历史审计报告只查链接）；
