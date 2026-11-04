@@ -2,7 +2,7 @@ import Foundation
 
 /// 协议层 ↔ 原生层的协议版本。单调递增整数，两侧必须完全相等（ADR-0012）。
 /// 编译期常量：不是运行时可变状态。
-public let scuNativeProtocolVersion = 12
+public let scuNativeProtocolVersion = 13
 
 /// `dumpTree` 允许的最大深度。超出时原生层拒绝，不做静默截断。
 public let scuMaxTreeDepth = 64
@@ -12,6 +12,18 @@ public let scuDefaultTreeDepth = 12
 /// `dumpTree` 总时间预算的允许范围（毫秒）。超出范围被拒绝。
 public let scuTreeBudgetMsRange = 100...120_000
 public let scuDefaultTreeBudgetMs = 15_000
+
+/// 文本类无障碍角色。坐标点击的落点落在这些角色上时，可以看插入光标形态的像素变化。
+/// 原生层与协议层共用这一份，避免两处漂移。
+public let scuTextRoles: Set<String> = [
+    "AXTextArea", "AXTextField", "AXComboBox", "AXSearchField", "AXWebArea",
+]
+
+/// 可以用 `AXSelectedTextRange` 判定“点击生效”的文本控件角色。
+/// 不含 `AXWebArea`：整页的选区不是某一次点击的直接效果，拿它当判据会把页面刷新算成命中。
+public let scuSelectionTextRoles: Set<String> = [
+    "AXTextArea", "AXTextField", "AXComboBox", "AXSearchField",
+]
 
 /// 单次 `type_text` / `set_value` 允许的字符上限。
 /// `type_text` 逐字投递，每字符之间有固定间隔；客户端等待上限必须按这个上限算，
@@ -266,6 +278,67 @@ public struct WindowCapture: Codable, Sendable, Equatable {
     }
 }
 
+/// 一次坐标点击的落点探针。
+///
+/// 点击前在落点 hit-test 一次，记下元素与它的 `AXSelectedTextRange`；点击后**只读同一个
+/// AXUIElement**，不重新 hit-test。元素被重建时引用失效，`elementValid` 为 false——那是
+/// “未知”，不能退回“全窗口任意选区变化”或像素判据。探针只在一次调用内存在，不跨调用保存。
+public struct ClickProbe: Codable, Sendable, Equatable {
+    /// 落点元素的 role；hit-test 失败或元素不属于目标进程时为 nil。
+    public var role: String?
+    /// 落点元素是否属于目标进程。跨进程的选区变化与这次点击无关。
+    public var inTarget: Bool
+    /// 点击前同一元素的 `AXSelectedTextRange`（"location,length"）。
+    /// 为 nil 表示读不到这个属性：调用方不得进入选区判据。
+    public var rangeBefore: String?
+    /// 点击后同一元素的 `AXSelectedTextRange`；元素失效或读不到时为 nil。
+    public var rangeAfter: String?
+    /// 点击后同一个 AX 引用是否仍可读（没有 invalidUIElement）。
+    public var elementValid: Bool
+    /// 本次投递的点击次数（`mouseEventClickState`）。
+    public var clickCount: Int
+    /// 未进入或未能判定时的人类可读原因；正常为 nil。
+    public var note: String?
+
+    public init(
+        role: String?, inTarget: Bool, rangeBefore: String?, rangeAfter: String?,
+        elementValid: Bool, clickCount: Int = 1, note: String? = nil
+    ) {
+        self.role = role
+        self.inTarget = inTarget
+        self.rangeBefore = rangeBefore
+        self.rangeAfter = rangeAfter
+        self.elementValid = elementValid
+        self.clickCount = clickCount
+        self.note = note
+    }
+}
+
+/// 窗口截图与全局屏幕坐标之间的换算。这是坐标契约的唯一一份实现：
+/// 图像坐标以截图左上角为原点、单位是图像像素；全局坐标以主屏左上角为原点、单位是点。
+/// `scale` 必须是**实际图像**的像素 / 窗口点，不是请求的缓冲区比例。
+public struct ScreenshotMapping: Sendable, Equatable {
+    public var windowFrame: Rect
+    public var scale: Double
+
+    public init(windowFrame: Rect, scale: Double) {
+        self.windowFrame = windowFrame
+        self.scale = scale
+    }
+
+    /// 截图像素 → 全局点。
+    public func globalPoint(imageX: Double, imageY: Double) -> (x: Double, y: Double) {
+        let step = scale > 0 ? scale : 1
+        return (windowFrame.x + imageX / step, windowFrame.y + imageY / step)
+    }
+
+    /// 全局点 → 截图像素（坐标点击投递前的换算）。
+    public func imagePoint(globalX: Double, globalY: Double) -> (x: Double, y: Double) {
+        let step = scale > 0 ? scale : 1
+        return ((globalX - windowFrame.x) * step, (globalY - windowFrame.y) * step)
+    }
+}
+
 /// 原生层如实返回的一个无障碍节点。
 /// 原生层只返回平台事实，不判断“是不是同一个元素”（system_overview.md 职责边界）。
 public struct AXNode: Codable, Sendable, Equatable {
@@ -424,6 +497,7 @@ public enum Request: Sendable, Equatable {
     /// `target.windowID`/`target.windowTitle` 都为空时使用默认窗口。
     case captureWindow(target: Target)
     /// 在全局屏幕坐标 (x, y) 投递一次鼠标左键点击。坐标由协议层从截图换算。
+    /// 应答是 `clickProbe`：附带落点元素在点击前后的选区快照。
     case clickAt(target: Target, x: Double, y: Double)
     /// 在全局坐标 (x, y) 投递滚轮事件，dx/dy 为像素增量。
     case scrollAt(target: Target, x: Double, y: Double, dx: Double, dy: Double)
@@ -446,6 +520,8 @@ public enum Response: Sendable, Equatable {
     case stale(StaleDetail)
     /// 窗口截图。
     case windowCapture(WindowCapture)
+    /// 坐标点击已投递，并带回落点探针（点前/点后的同一元素选区快照）。
+    case clickProbe(ClickProbe)
     case failure(WireError)
 }
 
@@ -582,10 +658,10 @@ extension Request: Codable {
 
 extension Response: Codable {
     private enum Key: String, CodingKey {
-        case type, protocolVersion, accessibility, apps, windows, tree, truncated, error, stale, capture
+        case type, protocolVersion, accessibility, apps, windows, tree, truncated, error, stale, capture, probe
     }
     private enum Kind: String, Codable {
-        case hello, permissions, apps, windows, tree, acted, located, stale, windowCapture, failure
+        case hello, permissions, apps, windows, tree, acted, located, stale, windowCapture, clickProbe, failure
     }
 
     public init(from decoder: any Decoder) throws {
@@ -602,6 +678,7 @@ extension Response: Codable {
         case .located: self = .located
         case .stale: self = .stale(try c.decode(StaleDetail.self, forKey: .stale))
         case .windowCapture: self = .windowCapture(try c.decode(WindowCapture.self, forKey: .capture))
+        case .clickProbe: self = .clickProbe(try c.decode(ClickProbe.self, forKey: .probe))
         case .failure: self = .failure(try c.decode(WireError.self, forKey: .error))
         }
     }
@@ -633,6 +710,9 @@ extension Response: Codable {
         case .windowCapture(let capture):
             try c.encode(Kind.windowCapture, forKey: .type)
             try c.encode(capture, forKey: .capture)
+        case .clickProbe(let probe):
+            try c.encode(Kind.clickProbe, forKey: .type)
+            try c.encode(probe, forKey: .probe)
         case .failure(let e):
             try c.encode(Kind.failure, forKey: .type)
             try c.encode(e, forKey: .error)

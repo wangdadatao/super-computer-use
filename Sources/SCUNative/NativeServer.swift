@@ -133,8 +133,7 @@ public struct NativeServer: Sendable {
             }
         case .clickAt(let target, let x, let y):
             do {
-                try Mouse.clickAt(target: target, x: x, y: y)
-                return .acted
+                return .clickProbe(try Mouse.clickAt(target: target, x: x, y: y))
             } catch let e as WireError {
                 return .failure(e)
             } catch {

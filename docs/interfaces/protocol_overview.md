@@ -148,9 +148,11 @@ type Coordinates = { x: number; y: number; geometryToken: string };
 >
 > **`delivered` 与 `verified` 是两个事实。** `delivered=true` 只表示事件已投递给平台，
 > 不代表界面响应、更不代表命中。`verified=true` 只在观察到具体后置条件时为真：
-> 元素动作看目标自身（`target_changed` / `target_state`），坐标点击只看落点所在文本行
-> 出现插入光标形态的像素变化（`caret_pixels`，启发式）；其余情形 `verified=false`，
-> 报告明写“是否命中未验证”。`treeChanged` / `screenshotChanged` **不参与**这个判断。
+> 元素动作看目标自身（`target_changed` / `target_state`）；坐标点击按落点类型二选一——
+> 文本落点看同一元素 `AXSelectedTextRange` 的变化（`selection_changed`，直接证据），
+> 非文本落点才看落点所在文本行出现插入光标形态的像素变化（`caret_pixels`，启发式）；
+> 其余情形 `verified=false`，报告明写“是否命中未验证”。
+> `treeChanged` / `screenshotChanged` **不参与**这个判断。
 
 每个动作返回效果摘要，而不是空返回：
 
@@ -158,7 +160,7 @@ type Coordinates = { x: number; y: number; geometryToken: string };
 interface Effect {
   delivered: boolean;          // 事件是否成功投递（不代表命中）
   verified: boolean;           // 是否观察到具体的后置条件
-  verifiedBy: string | null;   // 后置条件的种类：target_changed / target_state / caret_pixels
+  verifiedBy: string | null;   // 后置条件的种类：target_changed / target_state / selection_changed / caret_pixels
   converged: boolean;          // 目标是否已进入稳定状态
   treeChanged: boolean;        // 树是否变化
   targetChanged: boolean;      // 目标元素的可观察属性是否变化

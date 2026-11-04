@@ -41,13 +41,14 @@ enum ScreenshotOverlay {
         return encodePNG(output)
     }
 
-    /// 全局屏幕点 → 窗口截图内的像素矩形（左上角原点）。
+    /// 全局屏幕点 → 窗口截图内的像素矩形（左上角原点）。换算只有一份实现，见 `ScreenshotMapping`。
     static func imageRect(_ frame: Rect, windowFrame: Rect, scale: Double) -> CGRect {
-        CGRect(
-            x: (frame.x - windowFrame.x) * scale,
-            y: (frame.y - windowFrame.y) * scale,
-            width: frame.width * scale,
-            height: frame.height * scale)
+        let mapping = ScreenshotMapping(windowFrame: windowFrame, scale: scale)
+        let origin = mapping.imagePoint(globalX: frame.x, globalY: frame.y)
+        let corner = mapping.imagePoint(
+            globalX: frame.x + frame.width, globalY: frame.y + frame.height)
+        return CGRect(
+            x: origin.x, y: origin.y, width: corner.x - origin.x, height: corner.y - origin.y)
     }
 
     static func drawBadge(

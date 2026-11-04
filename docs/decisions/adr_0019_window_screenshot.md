@@ -35,6 +35,15 @@ WindowCapture {
 元素 `frame` 是全局屏幕点；图像坐标 = `(frame - windowFrame) * scale`。
 负的原点、Retina 2x、窗口移动都按同一公式处理。
 
+**追加记录（T-019）：`scale` 必须来自实际图像，内容必须铺满缓冲区。**
+`SCStreamConfiguration.scalesToFit` 默认是 `false`，此时 ScreenCaptureKit **只缩不放**：
+请求 1600 像素宽、窗口只有 880 点时，内容按 1:1 画进缓冲区，右侧是黑边，
+而 `image.width / frame.width = 1.818` 并不是内容的真实比例——按它换算落点只走到预期的 55%。
+现在固定 `scalesToFit = true`，并让上报的 `scale` 由**实际图像宽 / 窗口点宽**得出；
+请求尺寸由纯函数 `CaptureGeometry.plan(frame:)` 规划，宽高用同一个取整后的比例，保持宽高比。
+回归见 `Tests/SCUNativeTests/CaptureGeometryTests.swift` 与 `Tests/SCUWireTests/FrameTests.swift`
+（1.0 / 1.818 / 2.0 三档、往返 ≤6 像素）。
+
 ### 3. `get_screenshot(token)` 绑定快照
 
 - 只接受 `get_ax_state` 签发的令牌；令牌失效则拒绝；

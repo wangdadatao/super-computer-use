@@ -72,13 +72,18 @@ enum Mouse {
         up.post(tap: .cghidEventTap)
     }
 
-    static func clickAt(target: Target, x: Double, y: Double) throws {
+    static func clickAt(target: Target, x: Double, y: Double) throws -> ClickProbe {
         try WindowActivation.activate(target: target)
 
         let point = CGPoint(x: x, y: y)
+        // 激活后再等一小会儿，让前台切换完成；探针要在窗口已经在前台时 hit-test，
+        // 否则落点会取到遮挡者的元素。指示环在探针之后才显示，免得点到自己的浮层。
+        usleep(120_000)
+        let probe = SelectionProbe(point: point, pid: target.pid, clickCount: 1)
         Indicator.show(points: [point])
         defer { Indicator.hide() }
-        usleep(120_000)
+        // 指示环先让人看见，再投递事件（与原来的观感一致）。
+        usleep(80_000)
         guard let source = CGEventSource(stateID: .hidSystemState),
             let move = CGEvent(
                 mouseEventSource: source, mouseType: .mouseMoved,
@@ -99,5 +104,8 @@ enum Mouse {
         down.post(tap: .cghidEventTap)
         usleep(50_000)
         up.post(tap: .cghidEventTap)
+        // 点击后只读同一个 AX 引用（不重新 hit-test），并给应用一点时间处理事件。
+        usleep(150_000)
+        return probe.afterClick()
     }
 }

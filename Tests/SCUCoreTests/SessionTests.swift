@@ -68,10 +68,14 @@ final class ScriptedReader: DesktopReader {
         return try captureScript[min(captureCount, captureScript.count - 1)].get()
     }
 
-    func clickAt(target: Target, x: Double, y: Double) throws -> ActionOutcome {
+    /// 坐标点击返回的落点探针；默认落在非文本元素上（rangeBefore 为 nil）。
+    var clickProbe = ClickProbe(
+        role: "AXWindow", inTarget: true, rangeBefore: nil, rangeAfter: nil,
+        elementValid: true, clickCount: 1)
+    func clickAt(target: Target, x: Double, y: Double) throws -> ClickProbe {
         coordinateClicks.append((target.pid, target.windowID, target.windowTitle, x, y))
         if let coordinateError { throw coordinateError }
-        return .acted
+        return clickProbe
     }
     func performAction(
         target: Target, locator: ElementLocator, action kind: ActionKind
@@ -512,6 +516,102 @@ final class FakeLauncher: AppLauncher, @unchecked Sendable {
         #expect(report.verified)
         #expect(report.verifiedBy == "caret_pixels")
         #expect(report.screenshotChanged == true)
+    }
+
+    /// 文本落点：同一元素在点击前后的 AXSelectedTextRange 变了 → 命中。
+    /// 直接证据优先于像素代理判据（caret_pixels）。
+    @Test func textLandingSelectionChangeIsVerified() throws {
+        let r = ScriptedReader()
+        let s = DesktopSession(reader: r, settle: Clock().settle)
+        r.tree = Self.textWindowTree()
+        let a = try read(s)
+        r.clickProbe = ClickProbe(
+            role: "AXTextArea", inTarget: true, rangeBefore: "1,0", rangeAfter: "27,26",
+            elementValid: true, clickCount: 1)
+        // 截图里没有光标形态：判定只能来自选区。
+        r.captureScript = [.success(Self.capture(Self.windowPNG()))]
+        let shot = try s.captureScreenshot(token: a.token.value)
+        let report = try s.clickAt(token: a.token.value, screenshotID: shot.id, x: 40, y: 20)
+        #expect(report.delivered)
+        #expect(report.verified)
+        #expect(report.verifiedBy == "selection_changed")
+        #expect(report.landingRole == "AXTextArea")
+        #expect(report.selectionBefore == "1,0")
+        #expect(report.selectionAfter == "27,26")
+    }
+
+    /// AXSelectedTextRange 读不到时不进选区判据：就算树变了也不得置真。
+    @Test func unreadableSelectionRangeDoesNotVerify() throws {
+        let r = ScriptedReader()
+        let s = DesktopSession(reader: r, settle: Clock().settle)
+        r.tree = Self.textWindowTree()
+        let a = try read(s)
+        r.clickProbe = ClickProbe(
+            role: "AXTextArea", inTarget: true, rangeBefore: nil, rangeAfter: nil,
+            elementValid: true, clickCount: 1,
+            note: "落点元素的 AXSelectedTextRange 读不到（attributeUnsupported），不进选区判据。")
+        // 事后树与基线不同：结构变化同样不证明命中。
+        // read(s) 已经消耗一次读取，之后是基线一次、观察一次。
+        r.script = [
+            .success(Self.textWindowTree()), .success(Self.textWindowTree()),
+            .success(Self.textWindowTreeWithExtraNode()),
+        ]
+        r.captureScript = [.success(Self.capture(Self.windowPNG()))]
+        let shot = try s.captureScreenshot(token: a.token.value)
+        let report = try s.clickAt(token: a.token.value, screenshotID: shot.id, x: 40, y: 20)
+        #expect(report.delivered)
+        #expect(report.treeChanged == true)
+        #expect(!report.verified)
+        #expect(report.verifiedBy == nil)
+        #expect(report.selectionBefore == nil)
+    }
+
+    /// 落点元素的 AX 引用在点击后失效 → unknown，不得回退到像素或“全窗口选区”。
+    @Test func invalidatedLandingElementDoesNotVerify() throws {
+        let r = ScriptedReader()
+        let s = DesktopSession(reader: r, settle: Clock().settle)
+        r.tree = Self.textWindowTree()
+        let a = try read(s)
+        r.clickProbe = ClickProbe(
+            role: "AXTextArea", inTarget: true, rangeBefore: "1,0", rangeAfter: nil,
+            elementValid: false, clickCount: 1,
+            note: "落点元素的 AX 引用在点击后失效（invalidUIElement），可能已被重建。")
+        let blank = Self.windowPNG()
+        // 事后截图里有光标形态：若代码回退到 caret_pixels，这条会变成 verified=true。
+        r.captureScript = [
+            .success(Self.capture(blank)), .success(Self.capture(blank)),
+            .success(Self.capture(Self.windowPNG(caret: (x: 40, top: 13, bottom: 27)))),
+        ]
+        let shot = try s.captureScreenshot(token: a.token.value)
+        let report = try s.clickAt(token: a.token.value, screenshotID: shot.id, x: 40, y: 20)
+        #expect(report.delivered)
+        #expect(!report.verified)
+        #expect(report.verifiedBy == nil)
+        #expect(report.landingElementValid == false)
+        #expect(report.verifiedNote?.contains("失效") == true)
+    }
+
+    /// 文本落点只看选区：选区没变时，截图里的光标形态不得把 verified 顶成 true
+    ///（两套判据不叠加）。
+    @Test func textLandingDoesNotFallBackToCaretPixels() throws {
+        let r = ScriptedReader()
+        let s = DesktopSession(reader: r, settle: Clock().settle)
+        r.tree = Self.textWindowTree()
+        let a = try read(s)
+        r.clickProbe = ClickProbe(
+            role: "AXTextArea", inTarget: true, rangeBefore: "1,0", rangeAfter: "1,0",
+            elementValid: true, clickCount: 1)
+        let blank = Self.windowPNG()
+        r.captureScript = [
+            .success(Self.capture(blank)), .success(Self.capture(blank)),
+            .success(Self.capture(Self.windowPNG(caret: (x: 40, top: 13, bottom: 27)))),
+        ]
+        let shot = try s.captureScreenshot(token: a.token.value)
+        let report = try s.clickAt(token: a.token.value, screenshotID: shot.id, x: 40, y: 20)
+        #expect(report.delivered)
+        #expect(!report.verified)
+        #expect(report.verifiedBy == nil)
+        #expect(report.verifiedNote?.contains("选区没有变化") == true)
     }
 
     /// A2：投递前重取的前置摘要把“激活造成的树变化”算进基线，不算成点击的效果。

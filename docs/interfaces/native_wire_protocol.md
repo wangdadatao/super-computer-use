@@ -53,7 +53,7 @@ agent 侧的会话 API 见[协议总览](protocol_overview.md)，两者是不同
 | `pressKey` | `target: Target`、`locator: ElementLocator`、`key: string` | 定位并核对目标，聚焦它，再发送按键或组合键（`cmd+shift+t`）。不认识的键名被拒绝。见 [ADR-0016](../decisions/adr_0016_input_and_keys.md)、[ADR-0027](../decisions/adr_0027_window_root_locator.md) |
 | `setValue` | `target: Target`、`locator: ElementLocator`、`value: string` | 定位并核对目标，通过无障碍接口直接写 `AXValue`。**元素必须声明该属性可写**，否则返回 `unsupported_operation`；空串是合法值。见 [ADR-0016](../decisions/adr_0016_input_and_keys.md)、[ADR-0027](../decisions/adr_0027_window_root_locator.md) |
 | `captureWindow` | `target: Target` | 截取目标窗口。`target.windowID` 优先，其次按 `windowTitle` 匹配；都为空时选 `windowLayer == 0`、on-screen、面积最大的窗口。需要屏幕录制权限，未授予时返回 `system_permission_missing`。见 [ADR-0019](../decisions/adr_0019_window_screenshot.md)、[ADR-0026](../decisions/adr_0026_window_selection.md)、[ADR-0031](../decisions/adr_0031_window_identity.md) |
-| `clickAt` | `target: Target`、`x: number`、`y: number` | 在全局屏幕坐标投递一次真实鼠标左键点击。坐标由协议层从截图换算；原生层会先激活并 raise 目标窗口（`windowID` 优先，其次标题），失败则不点击。见 [ADR-0020](../decisions/adr_0020_coordinate_click.md)、[ADR-0026](../decisions/adr_0026_window_selection.md) |
+| `clickAt` | `target: Target`、`x: number`、`y: number` | 在全局屏幕坐标投递一次真实鼠标左键点击。坐标由协议层从截图换算；原生层会先激活并 raise 目标窗口（`windowID` 优先，其次标题），失败则不点击。应答是 `clickProbe`：点击前在落点 hit-test 一次，记下元素与它的 `AXSelectedTextRange`；点击后**只读同一个 AXUIElement**（不重新 hit-test）。见 [ADR-0020](../decisions/adr_0020_coordinate_click.md)、[ADR-0026](../decisions/adr_0026_window_selection.md) |
 | `scrollAt` | `target: Target`、`x: number`、`y: number`、`dx: number`、`dy: number` | 在全局坐标投递滚轮事件；`dy > 0` 向下。见 [ADR-0021](../decisions/adr_0021_scroll_and_drag.md)、[ADR-0026](../decisions/adr_0026_window_selection.md) |
 | `dragAt` | `target: Target`、`fromX`、`fromY`、`toX`、`toY`、`durationMs: int` | 从起点拖到终点，拆成 12 段鼠标拖拽事件。见 [ADR-0021](../decisions/adr_0021_scroll_and_drag.md)、[ADR-0026](../decisions/adr_0026_window_selection.md) |
 
@@ -70,6 +70,7 @@ agent 侧的会话 API 见[协议总览](protocol_overview.md)，两者是不同
 | `located` | — | `performAction(verify)`：定位器与界面现状一致 |
 | `stale` | `stale: StaleDetail` | `performAction`：定位器与界面现状不符，**没有执行任何动作** |
 | `windowCapture` | `capture: WindowCapture` | `captureWindow`：PNG 与坐标映射元数据。见下 |
+| `clickProbe` | `probe: ClickProbe` | `clickAt`：点击已投递，附带落点探针，字段见下 |
 | `failure` | `error: WireError` | 任意请求 |
 
 `Target` 是 `{pid: int, windowID?: number, windowTitle?: string}`。`windowID` 是 CGWindowID，窗口生命周期内稳定；
@@ -82,6 +83,18 @@ agent 侧的会话 API 见[协议总览](protocol_overview.md)，两者是不同
 - `width/height` 是图像像素；`scale` 是图像像素 / 窗口点；
 - `windowFrame` 是窗口在全局屏幕坐标（点）中的位置，副屏可为负；
 - 元素 `frame` 与 `windowFrame` 同为全局点，换算：`图像坐标 = (frame - windowFrame) * scale`。
+
+`ClickProbe` 的字段：
+
+| 字段 | 类型 | 含义 |
+| --- | --- | --- |
+| `role` | string? | 落点所在的文本控件（沿祖先链找到的最近一个，见 `scuSelectionTextRoles`）的 role；不在文本控件内时为落点元素自身的 role；取不到时为 null |
+| `inTarget` | bool | 落点元素是否属于目标进程。跨进程的选区变化与这次点击无关 |
+| `rangeBefore` | string? | 点击前同一元素的 `AXSelectedTextRange`（`"location,length"`）；null 表示读不到，调用方不得进入选区判据 |
+| `rangeAfter` | string? | 点击后**同一个 AX 引用**的 `AXSelectedTextRange`；null 表示失效或读不到 |
+| `elementValid` | bool | 点击后同一个 AX 引用是否仍可读（不是 `invalidUIElement`） |
+| `clickCount` | int | 本次投递的点击次数（`mouseEventClickState`） |
+| `note` | string? | 未进入或未能判定时的人类可读原因；正常为 null |
 
 `AXNode` 是原生层如实返回的平台事实：`role`、`subrole?`、`title?`、`identifier?`、`value?`、
 `roleDescription?`、`description?`、`enabled?`、`actions?`、`frame?`、`childCount?`、`children`。可选字段缺失时**省略**，不填空串。
@@ -111,7 +124,7 @@ agent 侧的会话 API 见[协议总览](protocol_overview.md)，两者是不同
    消息中同时给出双方版本，然后关闭连接。不降级运行。
 4. 版本号是编译期常量，来源见实现中的 `scuNativeProtocolVersion`。
 
-当前版本 **12**。版本 1 → 2：`dumpTree` 增加 `budgetMs`，`tree` 应答增加 `truncated`，
+当前版本 **13**。版本 1 → 2：`dumpTree` 增加 `budgetMs`，`tree` 应答增加 `truncated`，
 `AXNode` 增加 `description`。版本 2 → 3：`AXNode` 增加 `childCount`；新增请求 `performAction`，
 新增应答 `acted`、`located`、`stale`（[ADR-0015](../decisions/adr_0015_handle_resolution_by_path.md)）。
 版本 3 → 4：新增 `typeText` / `pressKey`；4 → 5：新增 `setValue`（[ADR-0016](../decisions/adr_0016_input_and_keys.md)）；
@@ -122,6 +135,8 @@ agent 侧的会话 API 见[协议总览](protocol_overview.md)，两者是不同
 9 → 10：`captureWindow` / `clickAt` / `scrollAt` / `dragAt` 增加可选 `windowTitle`，用于显式窗口选择（[ADR-0026](../decisions/adr_0026_window_selection.md)）；
 10 → 11：新增 `listWindows` 请求与 `windows` 应答；`dumpTree` / `performAction` / `typeText` / `pressKey` / `setValue` 增加可选 `windowTitle`，元素表以窗口为根（[ADR-0027](../decisions/adr_0027_window_root_locator.md)）。
 11 → 12：所有窗口相关请求把 `pid + windowTitle` 收敛为 `target: Target`，增加 `windowID`；`listWindows`/`WindowCapture` 增加 `windowID`（[ADR-0031](../decisions/adr_0031_window_identity.md)）。
+12 → 13：`clickAt` 的应答从 `acted` 改为 `clickProbe`，附带落点元素与它点击前后的 `AXSelectedTextRange`；
+元素引用失效时如实报 `elementValid=false`，不回退到像素判据。其余请求的应答不变。
 
 线格式本身的任何不兼容变更（字段改名、`type` 增删、语义变化）都要提升版本号。
 
@@ -195,7 +210,8 @@ agent 侧的会话 API 见[协议总览](protocol_overview.md)，两者是不同
 `NativeClient.transportError` 与 `Tests/SCUCoreTests/NativeClientTimeoutTests.swift`。
 该测试覆盖映射函数，不覆盖真实子进程的关闭与回收；后者由握手/关闭类测试与 MCP 冒烟分别覆盖。
 
-当前协议版本为 **12**（P0 时为 3；v1 依次加入 `typeText` / `pressKey` 与 `setValue`；
-v2 加入 `captureWindow`、`AXNode.actions`、`clickAt`、`scrollAt` 与 `dragAt`，v3 收口窗口读取）。
+当前协议版本为 **13**（P0 时为 3；v1 依次加入 `typeText` / `pressKey` 与 `setValue`；
+v2 加入 `captureWindow`、`AXNode.actions`、`clickAt`、`scrollAt` 与 `dragAt`，v3 收口窗口读取；
+v4 把 `clickAt` 的应答换成带落点探针的 `clickProbe`）。
 消息目录覆盖当前需要的十三种请求；变更通知等随能力增加，
 每增加一种都要在此登记并视情况提升版本号。

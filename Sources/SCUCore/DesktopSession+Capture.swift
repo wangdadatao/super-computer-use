@@ -125,9 +125,7 @@ extension DesktopSession {
     }
 
     /// 落点是否落在文本类元素上。只用来决定“要不要看插入光标”，不参与“命中”判定。
-    static let textRoles: Set<String> = [
-        "AXTextArea", "AXTextField", "AXComboBox", "AXSearchField", "AXWebArea",
-    ]
+    static let textRoles = scuTextRoles
 
     static func pointIsInTextElement(
         _ entries: [ElementTable.Entry], x: Double, y: Double
@@ -149,11 +147,12 @@ extension DesktopSession {
     }
 
     /// 动作的统一收尾：结果未知时作废令牌与截图绑定，再把错误原样抛出。
-    func performCoordinate(
-        token: String, _ body: () throws -> Void
-    ) throws {
+    @discardableResult
+    func performCoordinate<T>(
+        token: String, _ body: () throws -> T
+    ) throws -> T {
         do {
-            try body()
+            return try body()
         } catch {
             discardAfterUnknownOutcome(error, token: token)
             throw error
@@ -168,7 +167,8 @@ extension DesktopSession {
     }
 
     func globalPoint(x: Double, y: Double, binding: ScreenshotBinding) -> (x: Double, y: Double) {
-        (binding.windowFrame.x + x / binding.scale, binding.windowFrame.y + y / binding.scale)
+        ScreenshotMapping(windowFrame: binding.windowFrame, scale: binding.scale)
+            .globalPoint(imageX: x, imageY: y)
     }
 
     /// 把结构摘要限定到截图绑定的窗口子树。
@@ -197,7 +197,8 @@ extension DesktopSession {
 
     func observeCoordinate(
         token: String, r: Record, snap: Snapshot, binding: ScreenshotBinding,
-        baseline: CoordinateBaseline, point: (x: Double, y: Double)?, start: Date
+        baseline: CoordinateBaseline, point: (x: Double, y: Double)?,
+        probe: ClickProbe? = nil, start: Date
     ) -> CoordinateReport {
         settle.sleep(settle.interval)
         var observed = false
@@ -233,6 +234,29 @@ extension DesktopSession {
         var geometryChanged = false
         var verified = false
         var verifiedBy: String?
+        var verifiedNote: String?
+        // 判据按落点类型二选一，不叠加：文本落点只看同一元素的 AXSelectedTextRange，
+        // 非文本落点才看像素。两条都跑再 OR，会让“文本上像素判据失效”被永久掩盖。
+        let landedOnText = probe?.rangeBefore != nil
+        if let probe, let before = probe.rangeBefore {
+            if !probe.elementValid {
+                verifiedNote =
+                    probe.note ?? "落点元素的 AX 引用在点击后失效，无法比较选区；不回退到像素判据。"
+            } else if let after = probe.rangeAfter {
+                if after != before {
+                    verified = true
+                    verifiedBy = "selection_changed"
+                } else {
+                    verifiedNote = "点击后同一元素的选区没有变化（\(before)）。"
+                }
+            } else {
+                verifiedNote =
+                    probe.note ?? "点击后读不到同一元素的 AXSelectedTextRange，无法确认选区变化。"
+            }
+        } else if let probe, let note = probe.note {
+            // 没进选区判据的原因照实报（例如“落点不在文本控件内”），好核对走了哪条判据。
+            verifiedNote = note
+        }
         let boundTarget = Target(pid: r.pid, windowID: binding.windowID, windowTitle: binding.windowTitle)
         if let after = try? reader.captureWindow(target: boundTarget) {
             if after.width != binding.width || after.height != binding.height
@@ -243,15 +267,17 @@ extension DesktopSession {
             } else if let ratio = ScreenshotDiff.changedRatio(before: baseline.png, after: after.png) {
                 diffRatio = ratio
                 screenshotChanged = ratio > 0.001
-                // 坐标点击唯一的可观察后置条件：落点所在行出现了插入光标形态的窄高像素变化。
-                // 只在落点确实落在文本类元素上时看，避免把按钮高亮/窗口外观当成光标。
+                // 非文本落点才看像素：落点所在行出现了插入光标形态的窄高像素变化。
+                // 文本落点已经由选区判定（上面）；这里必须跳过，避免两套判据叠加。
                 // 插入光标会闪烁；一次抓图可能正好落在“灭”的相位。落点在文本上时
                 // 最多再补拍两次（间隔 0.45 秒），看到任一帧有光标形态就算观察到。
-                if let point,
-                    Self.pointIsInTextElement(
-                        baseline.entries,
-                        x: binding.windowFrame.x + point.x / binding.scale,
-                        y: binding.windowFrame.y + point.y / binding.scale)
+                let global =
+                    point.map {
+                        ScreenshotMapping(windowFrame: binding.windowFrame, scale: binding.scale)
+                            .globalPoint(imageX: $0.x, imageY: $0.y)
+                    }
+                if !landedOnText, let point, let global,
+                    Self.pointIsInTextElement(baseline.entries, x: global.x, y: global.y)
                 {
                     var sawCaret =
                         ScreenshotDiff.caretAppeared(
@@ -283,6 +309,9 @@ extension DesktopSession {
         let noOp = observed && changed == false && (screenshotChanged == false || screenshotChanged == nil)
         return CoordinateReport(
             pid: r.pid, delivered: true, verified: verified, verifiedBy: verifiedBy,
+            landingRole: probe?.role, selectionBefore: probe?.rangeBefore,
+            selectionAfter: probe?.rangeAfter, landingElementValid: probe?.elementValid,
+            clickCount: probe?.clickCount, verifiedNote: verifiedNote,
             observed: observed, treeChanged: changed,
             screenshotChanged: screenshotChanged, diffRatio: diffRatio,
             geometryChanged: geometryChanged, tokenInvalidated: invalidated,
@@ -299,12 +328,12 @@ extension DesktopSession {
         let start = Date()
         let point = globalPoint(x: x, y: y, binding: binding)
         let boundTarget = Target(pid: r.pid, windowID: binding.windowID, windowTitle: binding.windowTitle)
-        try performCoordinate(token: token) {
-            _ = try reader.clickAt(target: boundTarget, x: point.x, y: point.y)
+        let probe = try performCoordinate(token: token) {
+            try reader.clickAt(target: boundTarget, x: point.x, y: point.y)
         }
         return observeCoordinate(
             token: token, r: r, snap: snap, binding: binding, baseline: baseline,
-            point: (x: x, y: y), start: start)
+            point: (x: x, y: y), probe: probe, start: start)
     }
 
     /// 在截图坐标 (x, y) 滚动。dy > 0 表示向下，dx > 0 表示向右。

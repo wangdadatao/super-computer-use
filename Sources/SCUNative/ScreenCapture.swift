@@ -101,14 +101,14 @@ enum ScreenCapture {
         }
 
         let frame = window.frame
-        // 上限 1600 像素宽：足够读文字，也不会让 MCP 单帧过大。
-        let scale = min(2.0, max(0.5, 1600.0 / max(1.0, frame.width)))
-        let width = max(1, Int((frame.width * scale).rounded()))
-        let height = max(1, Int((frame.height * scale).rounded()))
+        let geometry = CaptureGeometry.plan(frame: frame.size)
 
         let config = SCStreamConfiguration()
-        config.width = width
-        config.height = height
+        config.width = geometry.width
+        config.height = geometry.height
+        // 必须打开：默认 false 时 SCK **只缩不放**，请求得比窗口大就把内容 1:1 画进
+        // 缓冲区、其余留黑，`scale` 也就不是内容的真实比例（T-019）。打开后内容始终铺满。
+        config.scalesToFit = true
         config.ignoreShadowsSingleWindow = true
         // 不把鼠标指针画进截图：它会盖住落点处的插入光标（坐标点击的命中判据），
         // 也会让两次截图的 diff 里凭空多出指针形状的变化。
@@ -129,7 +129,8 @@ enum ScreenCapture {
             png: png,
             width: image.width,
             height: image.height,
-            scale: Double(image.width) / max(1.0, frame.width),
+            scale: CaptureGeometry.reportedScale(
+                imageWidth: image.width, frameWidth: frame.width),
             windowFrame: Rect(
                 x: Double(frame.origin.x), y: Double(frame.origin.y),
                 width: Double(frame.width), height: Double(frame.height)),

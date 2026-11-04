@@ -129,7 +129,7 @@ effect: delivered=true verified=false verifiedBy=- observed=true converged=true 
 | 字段 | 含义 | `unknown` 的情形 |
 | --- | --- | --- |
 | `delivered` | 平台没有报错。**不代表界面已经变化，也不代表命中** | 恒为 true（失败时抛错，不返回摘要） |
-| `verified` | 观察到**具体后置条件**。元素动作看目标自身（`target_changed` / `target_state`）；坐标为 `caret_pixels`（落点所在行出现插入光标形态的像素变化，启发式） | 没有观察到后置条件时恒为 false，报告会明写“是否命中未验证” |
+| `verified` | 观察到**具体后置条件**。元素动作看目标自身（`target_changed` / `target_state`）；坐标点击按落点类型二选一：文本落点看同一元素 `AXSelectedTextRange` 的变化（`selection_changed`），非文本落点看落点所在行的插入光标形态（`caret_pixels`，启发式） | 没有观察到后置条件时恒为 false，报告会明写“是否命中未验证” |
 | `verifiedBy` | 后置条件的种类；`-` 表示没有 | 同上 |
 | `observed` | 事后成功重读过界面 | 重读失败时为 false（动作已投递，不报失败，免得调用方重复点击） |
 | `converged` | 连续一致的重读已足够长（见上面第 5 步的两档次数），且这次读取未被截断 | 上限内一直在变化、或树被截断，则为 false；此时读到的是中间状态或不完整的树 |
@@ -165,9 +165,18 @@ effect: delivered=true verified=false verifiedBy=- observed=true converged=true 
 6. 点击后重读 AX 树，并再截一张图比较全图像素比例：
    结构变化 → 令牌作废；树没变但图变了 → `screenshotChanged=true`；
    树和图都没变 → `noOpSuspected=true`；窗口几何变了 → `geometryChanged=true`。
-7. `verified` 只在落点是文本类元素、且落点所在行出现插入光标形态的窄高像素变化时为 true
-   （`verifiedBy=caret_pixels`）。这是启发式判据，不读取焦点；其余情形一律 `verified=false`，
-   报告明写“是否命中未验证”。全图比例与 token 状态都不证明点中了目标；不要重复点。
+7. `verified` 按落点类型选**一个**判据，不叠加、不 OR：
+   - 落点在文本控件内（`AXTextArea` / `AXTextField` / `AXComboBox` / `AXSearchField`，或其子节点）
+     且 `AXSelectedTextRange` 读得到：点击前记录该控件的 AX 引用与选区快照，
+     点击后**只读同一个 AXUIElement**（不重新 hit-test，避免把重建后的另一个元素算成命中）。
+     选区变了 → `verified=true`、`verifiedBy=selection_changed`；元素引用在点击后失效、
+     或事后读不到该属性 → `verified=false`，`verifiedNote` 写明原因，**不回退**到像素或
+     “全窗口任意选区变化”。
+   - 其余落点才看像素：落点所在行出现插入光标形态的窄高变化 → `verifiedBy=caret_pixels`。
+     这是启发式判据，不读取焦点。
+   其余情形一律 `verified=false`，报告明写“是否命中未验证”。全图比例与 token 状态都不证明点中了目标；
+   不要重复点。坐标点击的摘要行还会带 `landingRole` / `selectionBefore` / `selectionAfter` /
+   `elementValid`（有探针时），用来核对它走了哪条判据。
 
 设计见 [ADR-0020](../decisions/adr_0020_coordinate_click.md)。
 
@@ -242,6 +251,7 @@ screenshot_id=g1abc.1 图像 1600x1138 scale=1.514 window=(353,199,1057,752) win
 - **权限**：需要屏幕录制，与辅助功能是两项独立授权，按宿主进程归属；未授予时为
   `system_permission_missing`，文案指向“屏幕录制”。
 - **坐标**：图像像素 = `(element.frame - windowFrame) * scale`；`windowFrame` 可为负（副屏）。
+  `scale` 由**实际图像**宽 / 窗口点宽得出，图像内容始终铺满缓冲区（`scalesToFit`），不会出现黑边。
 - **绑定**：`screenshot_id` 绑定 `token + 实际截图窗口的 windowID/标题 + windowFrame + scale`。
   令牌没有指定窗口时，原生层会选最大非最小化窗口；会话把**实际截到的窗口**存进绑定，
   坐标动作不再重新选一次。动作前会重新取绑定窗口的几何，位置/缩放/尺寸变化返回

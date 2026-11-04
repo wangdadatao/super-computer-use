@@ -343,6 +343,60 @@ import Testing
         #expect(acted["type"] as? String == "acted")
     }
 
+    /// 坐标点击的应答从 `acted` 换成 `clickProbe`（协议 13）：形状固定下来，
+    /// 免得重构把探针字段悄悄去掉，调用方却仍以为能判选区。
+    @Test func clickProbeResponseShape() throws {
+        let probe = ClickProbe(
+            role: "AXTextArea", inTarget: true, rangeBefore: "1,0", rangeAfter: "27,26",
+            elementValid: true, clickCount: 1, note: nil)
+        let frame = ResponseFrame(id: 9, response: .clickProbe(probe))
+        let json = try Self.json(frame)
+        let response = json["response"] as! [String: Any]
+        #expect(response["type"] as? String == "clickProbe")
+        let body = response["probe"] as! [String: Any]
+        #expect(body["role"] as? String == "AXTextArea")
+        #expect(body["inTarget"] as? Bool == true)
+        #expect(body["rangeBefore"] as? String == "1,0")
+        #expect(body["rangeAfter"] as? String == "27,26")
+        #expect(body["elementValid"] as? Bool == true)
+        #expect(body["clickCount"] as? Int == 1)
+        #expect(body["note"] == nil)
+
+        let data = try Frame.encode(frame)
+        #expect(try Frame.decode(ResponseFrame.self, body: data.dropFirst(4)) == frame)
+    }
+
+    /// T-019：坐标往返。三档比例（1.0 / 1.818 / 2.0）下，截图坐标取整后再换回来
+    /// 误差必须 ≤6 像素；中心点必须落在窗口中心，否则 `scale` 就是错的。
+    @Test(
+        arguments: [
+            (Rect(x: 0, y: 0, width: 1600, height: 1000), 1.0),
+            (Rect(x: -120, y: 40, width: 880, height: 640), 1600.0 / 880.0),
+            (Rect(x: 10, y: 20, width: 800, height: 600), 2.0),
+        ])
+    func screenshotMappingRoundTripsWithinSixPixels(frame: Rect, scale: Double) {
+        let mapping = ScreenshotMapping(windowFrame: frame, scale: scale)
+        let imageWidth = (frame.width * scale).rounded()
+        let imageHeight = (frame.height * scale).rounded()
+
+        // 中心点：图像中心 ↔ 窗口中心，误差只允许来自像素取整。
+        let center = mapping.globalPoint(imageX: imageWidth / 2, imageY: imageHeight / 2)
+        #expect(abs(center.x - (frame.x + frame.width / 2)) < 0.5)
+        #expect(abs(center.y - (frame.y + frame.height / 2)) < 0.5)
+
+        // 往返：截图坐标（点击时取整到像素）→ 全局 → 截图。
+        for x in stride(from: 0.0, through: imageWidth, by: 37.0) {
+            for y in [0.0, 11.0, 97.0] {
+                let px = (x).rounded()
+                let py = (y).rounded()
+                let global = mapping.globalPoint(imageX: px, imageY: py)
+                let back = mapping.imagePoint(globalX: global.x, globalY: global.y)
+                #expect(abs(back.x - x) <= 6.0)
+                #expect(abs(back.y - y) <= 6.0)
+            }
+        }
+    }
+
     @Test func childCountIsOptionalOnTheWire() throws {
         let withCount = try Self.json(AXNode(role: "AXList", childCount: 12))
         #expect(withCount["childCount"] as? Int == 12)

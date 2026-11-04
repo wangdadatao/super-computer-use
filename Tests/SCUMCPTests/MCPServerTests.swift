@@ -44,11 +44,15 @@ final class FakeReader: DesktopReader {
         captureWindowIDs.append(target.windowID)
         return try capture.get()
     }
-    func clickAt(target: Target, x: Double, y: Double) throws -> ActionOutcome {
+    /// 坐标点击的落点探针；默认落在非文本元素上（没有选区可看）。
+    var clickProbe = ClickProbe(
+        role: "AXWindow", inTarget: true, rangeBefore: nil, rangeAfter: nil,
+        elementValid: true, clickCount: 1)
+    func clickAt(target: Target, x: Double, y: Double) throws -> ClickProbe {
         coordinateClicks.append((target.pid, x, y))
         coordinateClickWindowTitles.append(target.windowTitle)
         coordinateClickWindowIDs.append(target.windowID)
-        return .acted
+        return clickProbe
     }
     func scrollAt(
         target: Target, x: Double, y: Double, dx: Double, dy: Double

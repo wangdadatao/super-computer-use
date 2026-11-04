@@ -27,7 +27,7 @@ public protocol DesktopReader {
     func pressKey(target: Target, locator: ElementLocator, key: String) throws -> ActionOutcome
     func setValue(target: Target, locator: ElementLocator, value: String) throws -> ActionOutcome
     func captureWindow(target: Target) throws -> WindowCapture
-    func clickAt(target: Target, x: Double, y: Double) throws -> ActionOutcome
+    func clickAt(target: Target, x: Double, y: Double) throws -> ClickProbe
     func scrollAt(target: Target, x: Double, y: Double, dx: Double, dy: Double) throws -> ActionOutcome
     func dragAt(
         target: Target, fromX: Double, fromY: Double, toX: Double, toY: Double,
@@ -73,7 +73,7 @@ extension DesktopReader {
         try captureWindow(target: Target(pid: pid, windowTitle: windowTitle))
     }
 
-    public func clickAt(pid: Int32, windowTitle: String?, x: Double, y: Double) throws -> ActionOutcome {
+    public func clickAt(pid: Int32, windowTitle: String?, x: Double, y: Double) throws -> ClickProbe {
         try clickAt(target: Target(pid: pid, windowTitle: windowTitle), x: x, y: y)
     }
 
@@ -115,7 +115,7 @@ extension DesktopReader {
         throw WireError.unsupportedOperation("这个读取器不支持窗口截图")
     }
 
-    public func clickAt(target: Target, x: Double, y: Double) throws -> ActionOutcome {
+    public func clickAt(target: Target, x: Double, y: Double) throws -> ClickProbe {
         throw WireError.unsupportedOperation("这个读取器不支持坐标点击")
     }
 
@@ -307,13 +307,13 @@ public final class NativeSession: DesktopReader {
         }
     }
 
-    public func clickAt(target: Target, x: Double, y: Double) throws -> ActionOutcome {
+    public func clickAt(target: Target, x: Double, y: Double) throws -> ClickProbe {
         try withClient { c in
             switch try c.call(
                 .clickAt(target: target, x: x, y: y), timeoutMs: 10_000,
                 actionMayHaveStarted: true)
             {
-            case .acted: return .acted
+            case .clickProbe(let probe): return probe
             case .failure(let e): throw e
             default: throw WireError.internalError("坐标点击的应答类型错误")
             }

@@ -10,16 +10,29 @@ public struct SnapshotToken: Hashable, Sendable, CustomStringConvertible {
 
 /// 一次窗口截图，连同签发它的令牌。标签只包含落在截图窗口内的可交互元素。
 /// 坐标点击的观察结果。坐标点击没有元素身份，只能报告观察到的外部事实：
-/// `delivered` 只说明事件已投递；`verified` 只在观察到具体后置条件（目前只有插入光标形态）时为 true。
-/// 像素级变化要等截图 diff。
+/// `delivered` 只说明事件已投递；`verified` 只在观察到具体后置条件时为 true。
+/// 判据按落点类型二选一：文本落点看同一元素的 `AXSelectedTextRange`（`selection_changed`），
+/// 非文本落点看插入光标形态的像素变化（`caret_pixels`，启发式）。
 public struct CoordinateReport: Sendable {
     public var pid: Int32
     /// 事件已投递给平台。失败时抛错，不返回报告。
     public var delivered: Bool
     /// 观察到具体后置条件。**不**从 `treeChanged` / `screenshotChanged` 推导。
     public var verified: Bool
-    /// 后置条件的种类：`caret_pixels`；nil 表示没有观察到任何后置条件（是否命中未验证）。
+    /// 后置条件的种类：`selection_changed` / `caret_pixels`；nil 表示没有观察到任何后置条件。
     public var verifiedBy: String?
+    /// 点击前 hit-test 到的落点元素 role；坐标动作没有探针时为 nil。
+    public var landingRole: String?
+    /// 点击前同一元素的 `AXSelectedTextRange`（"location,length"）；读不到时为 nil。
+    public var selectionBefore: String?
+    /// 点击后同一元素的 `AXSelectedTextRange`；读不到或引用失效时为 nil。
+    public var selectionAfter: String?
+    /// 点击后同一个 AX 引用是否仍可读；没有探针时为 nil。
+    public var landingElementValid: Bool?
+    /// 本次投递的点击次数（`mouseEventClickState`）；没有探针时为 nil。
+    public var clickCount: Int?
+    /// 未验证/无法判断时的人类可读原因。
+    public var verifiedNote: String?
     public var observed: Bool
     public var treeChanged: Bool?
     public var screenshotChanged: Bool?
@@ -31,6 +44,9 @@ public struct CoordinateReport: Sendable {
 
     public init(
         pid: Int32, delivered: Bool = true, verified: Bool = false, verifiedBy: String? = nil,
+        landingRole: String? = nil, selectionBefore: String? = nil,
+        selectionAfter: String? = nil, landingElementValid: Bool? = nil,
+        clickCount: Int? = nil, verifiedNote: String? = nil,
         observed: Bool, treeChanged: Bool?, screenshotChanged: Bool?,
         diffRatio: Double?, geometryChanged: Bool, tokenInvalidated: Bool,
         noOpSuspected: Bool, elapsed: TimeInterval
@@ -39,6 +55,12 @@ public struct CoordinateReport: Sendable {
         self.delivered = delivered
         self.verified = verified
         self.verifiedBy = verifiedBy
+        self.landingRole = landingRole
+        self.selectionBefore = selectionBefore
+        self.selectionAfter = selectionAfter
+        self.landingElementValid = landingElementValid
+        self.clickCount = clickCount
+        self.verifiedNote = verifiedNote
         self.observed = observed
         self.treeChanged = treeChanged
         self.screenshotChanged = screenshotChanged

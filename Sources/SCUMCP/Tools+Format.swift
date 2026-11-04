@@ -96,10 +96,18 @@ extension ScuTool {
     }
 
     /// 坐标点击结果。没有元素身份：`delivered` 只说明事件已投递，`verified` 只在观察到
-    /// 具体后置条件（目前是插入光标形态）时为 true，其余一律写“是否命中未验证”。
+    /// 具体后置条件（文本落点的选区变化或插入光标形态）时为 true，其余一律写“是否命中未验证”。
     static func coordinateText(_ r: CoordinateReport, action: String, detail: String) -> String {
         func flag(_ b: Bool?) -> String { b.map { $0 ? "true" : "false" } ?? "unknown" }
         let secs = String(format: "%.1f", r.elapsed)
+        var probe = ""
+        if r.landingRole != nil || r.selectionBefore != nil || r.landingElementValid != nil {
+            probe =
+                " landingRole=\(r.landingRole ?? "-") selectionBefore=\(r.selectionBefore ?? "-")"
+                + " selectionAfter=\(r.selectionAfter ?? "-")"
+                + " elementValid=\(flag(r.landingElementValid))"
+                + " clickCount=\(r.clickCount.map { String($0) } ?? "unknown")"
+        }
         var lines = [
             "已对 pid \(r.pid) 的\(detail) 投递\(action)。",
             "effect: delivered=\(flag(r.delivered)) verified=\(flag(r.verified)) "
@@ -108,17 +116,22 @@ extension ScuTool {
                 + "screenshotChanged=\(flag(r.screenshotChanged)) "
                 + "diffRatio=\(r.diffRatio.map { String(format: "%.4f", $0) } ?? "unknown") "
                 + "geometryChanged=\(flag(r.geometryChanged)) "
-                + "noOpSuspected=\(flag(r.noOpSuspected)) elapsed=\(secs)s",
+                + "noOpSuspected=\(flag(r.noOpSuspected)) elapsed=\(secs)s\(probe)",
         ]
         if r.verified {
             switch r.verifiedBy {
             case "caret_pixels":
                 lines.append("已验证：落点所在文本行出现了插入光标形态的像素变化（启发式判据，未读取焦点）。")
+            case "selection_changed":
+                lines.append(
+                    "已验证：落点文本元素的选区从 \(r.selectionBefore ?? "-") 变为 \(r.selectionAfter ?? "-")"
+                        + "（同一 AX 元素，点击前后各读一次）。")
             default:
                 lines.append("已验证：观察到后置条件 \(r.verifiedBy ?? "未知")。")
             }
         } else {
             lines.append("是否命中未验证：只确认事件已投递；没有观察到光标、焦点或选中这类后置条件。")
+            if let note = r.verifiedNote { lines.append("未验证原因：\(note)") }
         }
         if !r.observed {
             lines.append("⚠️ 点击已投递，但事后读不到界面，不知道效果；请用 get_screenshot 核实。")
