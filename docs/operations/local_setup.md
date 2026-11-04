@@ -17,13 +17,18 @@ macOS       arm64, macOS 26.x
 
 ### 两台机器分工（2026-11-04 起）
 
-代码在笔记本上编辑与提交，**构建、全量测试、出包一律在 macmini 上跑**：那台机器的
-`sshd-keygen-wrapper` 同时拿到了辅助功能和屏幕录制授权，缺权限而失败的 22 个 GUI 测试只在它上面能真正执行。
+代码在笔记本上编辑与提交，**构建、全量测试、出包一律在 macmini 上跑**：带 live 用例的全量门禁会
+真实操作界面、抢占鼠标，放它上面是为了不打断笔记本上的输入，不是本机没有权限。两台机器在
+OpenMausBot 宿主下都已授予辅助功能与屏幕录制（macmini 上记在 `sshd-keygen-wrapper` 上），
+23 个 live 用例两边都能真正执行。
 
 | 机器 | 角色 | 2026-11-04 实测 |
 |---|---|---|
-| 笔记本 | 编辑、提交、团队文档 | `8e035d6`，领先 `origin/main` 7 个提交，工作树干净 |
-| macmini（`dagermac-mini`） | 构建、全量测试、universal 出包 | 构建 7 秒；`swift test` 157/157、12 suite、64.7 秒；`screencapture` 输出 1920×1080 |
+| 笔记本 | 编辑、提交、团队文档 | `scu permissions` → 辅助功能：已授予（退出码 0） |
+| macmini（`dagermac-mini`） | 构建、全量测试、universal 出包 | `scu-mini check` 5/5；`swift test` 157/157、12 suite、测试段 64.5 秒；`screencapture` 输出 1920×1080 |
+
+两台机器的用例数不同源：本机 pre-commit 跳过 live，134 个实际执行；macmini 全量 157 个；
+CI 走 `macos-15` runner，135 个实际执行（`.github/workflows/check.yml:24` 设 `SCU_SKIP_LIVE: "1"`）。
 
 同步与执行只走一个入口，避免两边各改各的。脚本随仓库版本控制（`scripts/scu-mini`），
 `~/aiwork/bin/scu-mini` 是指向它的符号链接：
