@@ -90,7 +90,8 @@ Version 0.5.0 (2026-11-04); window identity shipped in 0.5.0. Verified so far:
 - real-app runs on NetEase Cloud Music (CEF), TextEdit multi-window, Calculator and Edge;
 - 6 real tasks: 5 passed, 1 partially passed.
 
-Known gaps: window IDs are implemented (wire v12) but same-title real-world regression is limited;
+Known gaps: window IDs are implemented (wire v12) and a two-same-title-TextEdit-window regression
+passed 4/4, while untitled windows are still uncovered;
 no browser surface; action convergence settles in two tiers (about 0.4 s after an observed change,
 about 2.4 s when nothing changed, 3 s cap), so a two-second load is covered — the remaining gap is a
 second long delay after an initial change; no code mode;

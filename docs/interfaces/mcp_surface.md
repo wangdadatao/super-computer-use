@@ -90,7 +90,8 @@ ScreenCaptureKit 候选；匹配不上就拒绝截图，不会退回可能不匹
 `window_not_found`，不会退回应用根去点别的窗口。
 
 窗口 ID 是 `CGWindowID`，在窗口生命周期内稳定；标题只是可读线索，同名窗口仍可能重复。
-无标题窗口、同名窗口应优先用 `window_id`。见 [ADR-0025](../decisions/adr_0025_window_target.md)、
+无标题窗口、同名窗口应优先用 `window_id`。窗口相关请求统一带 `target`，原生层为此升到**线协议 v12**；
+`scu` 与 `scu-native` 必须成对升级，握手会校验版本。见 [ADR-0025](../decisions/adr_0025_window_target.md)、
 [ADR-0026](../decisions/adr_0026_window_selection.md)、[ADR-0027](../decisions/adr_0027_window_root_locator.md)、
 [ADR-0031](../decisions/adr_0031_window_identity.md)。
 

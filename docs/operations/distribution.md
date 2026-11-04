@@ -151,7 +151,7 @@ cd scu-<version>-macos-universal
 
 - 包版本来自 `scuVersion`；`VERSION`、`serverInfo.version`、包名必须一致。
 - `scu` 与 `scu-native` 的线协议版本在握手时校验；不能混用不同版本的二进制。
-- 0.4.0 包是 v11；0.5.0 源码是 v12，分发包需重新构建。不同线协议的 `scu` 与 `scu-native` 不能混用，升级时必须成对替换。
+- 0.4.0 包是 v11；0.5.0 源码是**线协议 v12**（窗口身份，见 [ADR-0031](../decisions/adr_0031_window_identity.md)）。0.5.0 分发包需重新构建，**目前尚未产出**；不同线协议的 `scu` 与 `scu-native` 不能混用，升级时必须成对替换。
 - 升级：覆盖安装 `scu` 与 `scu-native`，然后重启宿主；没有自动更新。
 
 ## 当前证据与限制

@@ -75,7 +75,7 @@ TCC 权限又归属于宿主应用，不属于 SCU 二进制。
 - `dist/` 加入 `.gitignore`，构建产物不提交；
 - 0.4.0 产出 ad-hoc 通用 zip；Developer ID 路径已写好但未实际公证；
 - README 与 INSTALL 不再说“没有分发包”，改为说明分发包的签名状态与限制；
-- 分发包不改变线协议，仍是 v11。
+- 分发包不改变线协议：0.4.0 包为 v11，0.5.0 起为 v12（窗口身份，见 [ADR-0031](adr_0031_window_identity.md)）；升级时 `scu` 与 `scu-native` 必须成对替换。
 
 ## 相关文档
 
