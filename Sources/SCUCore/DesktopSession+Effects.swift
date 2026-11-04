@@ -13,7 +13,8 @@ extension DesktopSession {
         public var delivered: Bool
         /// 动作之后成功重读过界面。重读失败时为 false，下面三项均为 nil。
         public var observed: Bool
-        /// 连续两次重读的结构一致。上限内一直在变化则为 false。
+        /// 重读的静默已足够长（见 `Settle.quietPollsAfterChange` / `quietPollsWithoutChange`）。
+        /// 上限内一直在变化则为 false。
         public var converged: Bool
         /// 与动作前相比结构是否变化。动作前或动作后的读取被截断时无法比较，为 nil。
         public var treeChanged: Bool?
@@ -83,6 +84,11 @@ extension DesktopSession {
         var previous: Int?
         var settled: TreeReading?
         var settledDigest = 0
+        /// 连续多少次重读与上次一致。任何一次差异都归零。
+        var quietStreak = 0
+        /// 相对动作前是否已观察到变化。动作前的读取被截断时无从比较，按"已变化"处理：
+        /// 没有比较基准就不该再等"静默"，报告里也只会给 unknown。
+        var sawChange = pre.truncated
         do {
             while true {
                 settle.sleep(settle.interval)
@@ -92,12 +98,23 @@ extension DesktopSession {
                 let digest = Self.structuralDigest(ElementTable.flatten(reading.root))
                 settled = reading
                 settledDigest = digest
+                if !pre.truncated, digest != pre.digest { sawChange = true }
                 if let p = previous, p == digest, !reading.truncated {
-                    report.converged = true
-                    break
+                    quietStreak += 1
+                    let needed =
+                        sawChange ? settle.quietPollsAfterChange : settle.quietPollsWithoutChange
+                    if quietStreak >= needed {
+                        report.converged = true
+                        break
+                    }
+                } else {
+                    quietStreak = 0
                 }
                 previous = digest
-                if settle.now().timeIntervalSince(start) >= settle.cap { break }
+                // 上限约束的是"还要不要继续看是否在变"；若已经进入静默确认（刚读到一致），
+                // 允许把这一轮确认做完：读一次树的耗时随树大小变化，卡在最后一次确认上会
+                // 把"已稳定"误报成"未收敛"。丢掉的只是一轮确认，不是无限等待。
+                if settle.now().timeIntervalSince(start) >= settle.cap, quietStreak == 0 { break }
             }
         } catch let e as WireError {
             report.observationError = "[\(e.code)] \(e.message)"

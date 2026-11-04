@@ -218,21 +218,19 @@ struct FixtureTests {
         #expect(r.converged && r.treeChanged == false && r.noOpSuspected == true)
     }
 
-    @Test func slowLoadOfTwoSecondsIsMissedByTwoEqualReads_knownGap() throws {
-        // testing.md 第三行：点击后触发两秒加载，期望"等待期间不返回；稳定后返回已收敛（且有变化）"。
-        // P0 的最小判定（连续两次一致）会在 0.4 秒就判已收敛，错过 2 秒后的变化：这是**未满足**的出口门槛项。
-        // 用 withKnownIssue 固定"期望的行为"：它现在不成立；哪天成立了，这个测试会提示去更新记录。
+    @Test func slowLoadOfTwoSecondsIsWaitedOut() throws {
+        // testing.md 第三行：点击后触发两秒加载，期望“等待期间不返回；稳定后返回已收敛（且有变化）”。
+        // 2026-11-04 起判据分两档：从未见到变化时要求连续 11 次一致（约 2.2 秒）才判稳定，
+        // 所以这里能等到两秒后的变化，而不是在 0.4 秒就锁定“无变化”。见 ADR-0011 追加记录。
         let rig = try Rig()
         defer { rig.stop() }
         let (_, r) = try rig.click("Delayed")
         print(
             "FIXTURE-DELAYED: converged=\(r.converged) treeChanged=\(String(describing: r.treeChanged)) elapsed=\(r.elapsed)"
         )
-        withKnownIssue("两秒加载被过早判为收敛，见 ADR-0011 追加记录") {
-            #expect(r.converged && r.treeChanged == true)
-        }
-        // 事实：之后界面确实变了，说明这是判定的缺口而不是夹具没生效。
-        Thread.sleep(forTimeInterval: 2.5)
+        #expect(r.converged && r.treeChanged == true && r.noOpSuspected == false)
+        #expect(r.elapsed >= 2.0, "变化发生前就返回了：elapsed=\(r.elapsed)")
+        // 界面确实变了，说明这是判定等到了变化，而不是夹具没生效。
         let st = try rig.read()
         #expect(rig.label(startingWith: "status:", in: st) == "status: loaded")
     }

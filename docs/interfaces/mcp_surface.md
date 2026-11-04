@@ -112,22 +112,24 @@ ScreenCaptureKit 候选；匹配不上就拒绝截图，不会退回可能不匹
    标签或句柄不在快照里 → `element_gone`。给了 `label` 时先在同一快照里解析成句柄，再走后面的步骤。
 3. 原生层沿路径核对（[ADR-0015](../decisions/adr_0015_handle_resolution_by_path.md)），不符 → `stale_snapshot`，**不执行**。
 4. 投递 `AXPress`。目标不支持 → `unsupported_operation`；平台报错 → `action_failed`。
-5. 事后观察：每 200 毫秒重读一次界面，**连续两次结构一致且这次读取未被截断**才算收敛；与动作前比较。
-   总上限 3 秒是**时钟上限，在每次重读完成之后才检查**：单次重读仍受该次的 `budget_ms`（默认 15 秒）约束，
-   所以大树上一次点击的耗时可以远超 3 秒（访达列表视图约 1.5 万个元素时，一次重读约 5 秒，已超过上限，只做一次重读就停止）。
+5. 事后观察：每 200 毫秒重读一次界面，结构摘要连续一致才算收敛；从未见到变化时要求连续 12 次重读一致（约 2.4 秒），
+   已见到变化时只要两次（约 0.4 秒）；两种情形都要求该次读取未被截断。与动作前比较。
+   总上限 3 秒是**时钟上限，在每次重读完成之后才检查**；若已读到一次一致（静默确认进行中），允许把这一轮确认读完。
+   单次重读仍受该次的 `budget_ms`（默认 15 秒）约束，所以大树上一次点击的耗时可以远超 3 秒
+   （访达列表视图约 1.5 万个元素时，一次重读约 5 秒，已超过上限，只做一次重读就停止）。
    这些参数是启发式初值，见 [ADR-0011 追加记录](../decisions/adr_0011_convergence_over_fixed_delay.md)。
 
 **返回的是观察到的效果，不是"成功"。** 第一行人话；第二行固定格式、可解析：
 
 ```text
-effect: delivered=true observed=true converged=true treeChanged=false targetChanged=false noOpSuspected=true polls=2 elapsed=0.4s
+effect: delivered=true observed=true converged=true treeChanged=false targetChanged=false noOpSuspected=true polls=12 elapsed=2.4s
 ```
 
 | 字段 | 含义 | `unknown` 的情形 |
 | --- | --- | --- |
 | `delivered` | 平台没有报错。**不代表界面已经变化** | 恒为 true（失败时抛错，不返回摘要） |
 | `observed` | 事后成功重读过界面 | 重读失败时为 false（动作已投递，不报失败，免得调用方重复点击） |
-| `converged` | 连续两次重读结构一致，且这次读取未被截断 | 上限内一直在变化、或树被截断，则为 false；此时读到的是中间状态或不完整的树 |
+| `converged` | 连续一致的重读已足够长（见上面第 5 步的两档次数），且这次读取未被截断 | 上限内一直在变化、或树被截断，则为 false；此时读到的是中间状态或不完整的树 |
 | `treeChanged` | 与动作前相比结构是否变化 | 动作前或动作后的读取被截断，无法比较 |
 | `targetChanged` | 最后一次重读的树里，目标已不在原路径上或核对键不符（**不要求已收敛**） | 最后一次重读被截断 |
 | `noOpSuspected` | 已收敛且结构完全没变：**疑似**空操作 | 同 `treeChanged` |

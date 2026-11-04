@@ -179,8 +179,8 @@ SCU 在屏幕上留下可见痕迹，这是 AX 优先寻址的必要补偿：
   [会话与控制租约](session_and_lease.md)的串行化一节。
   是否允许多会话并行尚未决策。
 - **服务进程的生命周期**：常驻、按需启动，还是随 agent 会话启停。
-- **收敛判定的具体阈值**：P0 已取启发式初值（200 毫秒轮询、连续两次一致、3 秒上限），
-  是否合适仍待验证，已知会错过两秒后的变化，见[动作收敛与等待](action_convergence.md#p0_implementation)。
+- **收敛判定的具体阈值**：P0 已取启发式初值（200 毫秒轮询、已见变化时连续 1 次一致、从未见变化时连续 11 次一致、3 秒上限），
+  是否合适仍待验证；两秒慢加载已被覆盖，代价是空操作要等约 2.4 秒，见[动作收敛与等待](action_convergence.md#p0_implementation)。
 - **画布尺寸**：见 [ADR-0008](../decisions/adr_0008_coordinate_canvas.md)。
 - **浏览器适配器的首个后端**：按 [ADR-0030](../decisions/adr_0030_browser_surface.md)
   先接 Playwright MCP/CDP、扩展后置；两者之间先选哪个仍未定，当前未实现。

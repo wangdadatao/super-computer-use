@@ -142,19 +142,32 @@ public final class DesktopSession {
     }
 
     /// 动作之后等待界面稳定的参数。启发式初值，见 ADR-0011 的追加记录。
+    ///
+    /// 收敛的判据是"连续多少次重读的结构摘要一致"，分成两档：已经看见变化后只要求短确认，
+    /// 从未看见变化时要求长确认——因为"还没变"和"不会变"只能靠静默时长区分。
     public struct Settle {
         public var interval: TimeInterval
         public var cap: TimeInterval
+        /// 已观察到变化后，连续多少次一致视为变化已停止。默认 1 次：两次重读一致。
+        public var quietPollsAfterChange: Int
+        /// 从未观察到变化时，连续多少次一致才判定"稳定且无变化"。
+        /// 默认 11 次（加上首次读取共 12 次重读，约 2.4 秒）：必须跨过已验证的两秒慢加载，
+        /// 又要在总上限之前完成确认。代价是没有加载信号的空操作也要等这么久；
+        /// 这是承认"静默不等于稳定"的必然开销。
+        public var quietPollsWithoutChange: Int
         public var sleep: (TimeInterval) -> Void
         public var now: () -> Date
 
         public init(
             interval: TimeInterval = 0.2, cap: TimeInterval = 3.0,
+            quietPollsAfterChange: Int = 1, quietPollsWithoutChange: Int = 11,
             sleep: @escaping (TimeInterval) -> Void = { Thread.sleep(forTimeInterval: $0) },
             now: @escaping () -> Date = { Date() }
         ) {
             self.interval = interval
             self.cap = cap
+            self.quietPollsAfterChange = quietPollsAfterChange
+            self.quietPollsWithoutChange = quietPollsWithoutChange
             self.sleep = sleep
             self.now = now
         }

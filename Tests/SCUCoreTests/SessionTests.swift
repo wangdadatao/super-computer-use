@@ -891,10 +891,37 @@ final class FakeLauncher: AppLauncher, @unchecked Sendable {
         let rep = try s.click(token: st.token.value, handle: 3)
         #expect(rep.delivered && rep.observed && rep.converged)
         #expect(rep.treeChanged == false && rep.targetChanged == false && rep.noOpSuspected == true)
-        #expect(rep.polls == 2)  // 至少要两次一致的读取才算收敛
+        // 从未见到变化：要连续 quietPollsWithoutChange 次一致（默认 11 次）才算稳定，
+        // 即 12 次重读。不能因为前两次一致就宣布“没变化”——那正是慢加载被误判的原因。
+        #expect(rep.polls == 12)
         #expect(!rep.tokenInvalidated)
         _ = try s.resolve(token: st.token.value, handle: 3)
         #expect(r.actionCalls.count == 1 && r.actionCalls[0].action == .press)
+    }
+
+    @Test func slowChangeIsWaitedOutInsteadOfBeingReportedAsNoOp() throws {
+        // 回归：ADR-0011 追加记录中的“两秒加载”。变化在第 11 次重读才出现，
+        // 判据必须继续等到它发生，而不是在两次一致时就锁定“无变化”。
+        var frames: [R] = (0..<10).map { _ in .success(Self.tree()) }
+        frames += (0..<3).map { _ in .success(Self.tree(extra: true)) }
+        let (s, _, st, _) = try make(frames)
+        let rep = try s.click(token: st.token.value, handle: 3)
+        #expect(rep.converged && rep.observed)
+        #expect(rep.treeChanged == true && rep.noOpSuspected == false)
+        #expect(rep.elapsed >= 2.0, "变化发生前不得返回：elapsed=\(rep.elapsed)")
+        #expect(rep.tokenInvalidated)
+    }
+
+    @Test func trulyStaticUiConvergesAtTheQuietThresholdNotTheCap() throws {
+        // 真静止：静默阈值一到就收敛，不把 3 秒上限耗完，也不多读。
+        let (s, r, st, clock) = try make([])
+        let rep = try s.click(token: st.token.value, handle: 3)
+        #expect(rep.converged && rep.treeChanged == false && rep.noOpSuspected == true)
+        #expect(rep.polls == 12)
+        #expect(rep.elapsed > 2.3 && rep.elapsed < 2.5, "elapsed=\(rep.elapsed)")
+        #expect(rep.elapsed < DesktopSession.Settle().cap)
+        #expect(r.readCount == rep.polls, "稳定后不再重读")
+        #expect(clock.now.timeIntervalSince1970 > 2.3 && clock.now.timeIntervalSince1970 < 2.5)
     }
 
     @Test func structuralChangeThatSettlesInvalidatesTheOldTokenOnly() throws {
