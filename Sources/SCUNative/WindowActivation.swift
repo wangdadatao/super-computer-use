@@ -18,6 +18,10 @@ enum WindowActivation {
 
     /// 激活目标窗口。`target.windowID` 优先，其次标题，最后是默认的“最大非最小化窗口”。
     /// 找不到显式指定的窗口时失败，不退回另一个窗口。
+    ///
+    /// 每次都完整执行 `activate` + `AXRaise`：只在前台标志上“已经是它”不够——窗口可能被
+    /// 别的应用的窗口挡着，或还在另一个 Space 上；跳过抬升会让后续坐标点击落到遮挡它的
+    /// 应用上。激活造成的 AX 变化不再污染基线：基线改在最后一次激活之后采（A2）。
     @discardableResult
     static func activate(target: Target) throws -> ActivatedWindow {
         guard let app = NSRunningApplication(processIdentifier: target.pid) else {
@@ -43,10 +47,18 @@ enum WindowActivation {
         }
         if let chosen {
             AXUIElementPerformAction(chosen.element, kAXRaiseAction as CFString)
+            // 只 raise 不会把 key 从同一应用的另一个窗口挪过来。key 窗口会影响标题栏与
+            // 焦点类可观察属性，而前置基线是在激活之后采的，所以要先把激活做完整。
+            AXUIElementSetAttributeValue(
+                chosen.element, kAXMainAttribute as CFString, kCFBooleanTrue)
+            AXUIElementSetAttributeValue(
+                chosen.element, kAXFocusedAttribute as CFString, kCFBooleanTrue)
         }
 
         let deadline = Date().addingTimeInterval(1.0)
-        while NSWorkspace.shared.frontmostApplication?.processIdentifier != target.pid, Date() < deadline {
+        while Date() < deadline {
+            let front = NSWorkspace.shared.frontmostApplication?.processIdentifier == target.pid
+            if front, chosen.map({ isKeyWindow($0.element, pid: target.pid) }) ?? true { break }
             usleep(50_000)
         }
         guard NSWorkspace.shared.frontmostApplication?.processIdentifier == target.pid else {
@@ -56,6 +68,18 @@ enum WindowActivation {
         usleep(150_000)
         return ActivatedWindow(
             pid: target.pid, windowID: chosen?.windowID, title: chosen?.title, frame: chosen?.frame)
+    }
+
+    /// 该窗口是否已是应用的 key 窗口（`AXFocusedWindow`）。读不到就当作不是。
+    private static func isKeyWindow(_ element: AXUIElement, pid: Int32) -> Bool {
+        let app = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(app, AXBackend.messagingTimeout)
+        guard let focused = AXBackend.copy(app, kAXFocusedWindowAttribute),
+            CFGetTypeID(focused) == AXUIElementGetTypeID()
+        else {
+            return false
+        }
+        return CFEqual(focused as! AXUIElement, element)
     }
 
     /// 与截图相同的选择规则：面积最大的窗口。没有 frame 的窗口按 0 处理，
