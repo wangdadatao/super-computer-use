@@ -252,8 +252,8 @@ macmini 的两项授权挂在 `sshd-keygen-wrapper` 上；`scu permissions` 返�
 
 - 本机提交钩子固定 `SCU_SKIP_LIVE=1`（`scripts/hooks/pre-commit:8`），`AGENTS.md:34-35` 记为
   23 个 live 用例 skipped、134 个实际执行，摘要仍打印 157。**本机的 157 不是全量基线。**
-  `docs/operations/local_setup.md:21` 仍写「22 个 GUI 测试」，与这里的 23 不一致；本文不把本机数字
-  当基线，下一次文档同步应统一。
+  `docs/operations/local_setup.md` 已统一为 23 个 live 用例（本机 pre-commit 实跑 134、macmini 全量
+  157、CI 135），与本文口径一致；本文仍不把本机数字当基线。
 - 全量基线在被控端：`~/aiwork/bin/scu-mini check`，5/5，157 个全执行；报告必须带机器与工具链
   （2026-11-04 实测：macmini，Swift 6.4.0，26/40/64/157，测试段 64.4 秒，失败 0）。
 - 文档改动也要过 `check_docs.sh`：ADR 字段、链接、锚点、分类路由。
