@@ -25,13 +25,13 @@ need docs/interfaces/mcp_surface.md "version: $V"
 need docs/index.md "$V 已收口"
 need skills/scu/INSTALL.md "scu-$V-macos-universal.zip"
 need docs/interfaces/native_wire_protocol.md "当前协议版本为 **$W**"
-need README.md "**$V（"
+need README.md "**${V}（"
 need README.en.md "Version $V"
 
 CHANGELOG_TOP=$(sed -n 's/^## //p' CHANGELOG.md | head -1)
 case "$CHANGELOG_TOP" in
   "$V — "*) ;;
-  *) echo "❌ CHANGELOG 首段不是 $V：$CHANGELOG_TOP"; fail=1 ;;
+  *) echo "❌ CHANGELOG 首段不是 ${V}：${CHANGELOG_TOP}"; fail=1 ;;
 esac
 
 if [ "$fail" -eq 0 ]; then

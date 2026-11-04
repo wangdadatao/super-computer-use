@@ -55,7 +55,7 @@ case "$rc" in
   0) echo "✅ 辅助功能权限已授予当前宿主。" ;;
   2) echo "⚠️  当前宿主还没有辅助功能权限；按 INSTALL.md 第 6 步由用户授权，然后完全退出并重启宿主。" ;;
   *)
-    echo "❌ permissions 返回 $rc；本次安装不完整或 scu-native 无法启动，请检查 $PREFIX。" >&2
+    echo "❌ permissions 返回 ${rc}；本次安装不完整或 scu-native 无法启动，请检查 ${PREFIX}。" >&2
     exit 1 ;;
 esac
 

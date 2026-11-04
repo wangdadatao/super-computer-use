@@ -46,7 +46,7 @@ fi
 build_args=(-c release)
 for arch in $ARCHS; do build_args+=(--arch "$arch"); done
 
-echo "==> 构建 $VERSION（$ARCHS）"
+echo "==> 构建 ${VERSION}（${ARCHS}）"
 swift build "${build_args[@]}" 2>&1 | tail -5
 BIN="$(swift build "${build_args[@]}" --show-bin-path)"
 for f in scu scu-native; do
@@ -58,7 +58,7 @@ for f in scu scu-native; do
   actual="$(lipo -archs "$BIN/$f")"
   for arch in $ARCHS; do
     printf '%s\n' "$actual" | tr ' ' '\n' | grep -qx "$arch" || {
-      echo "❌ $f 缺少架构 $arch（实际：$actual）" >&2; exit 1;
+      echo "❌ $f 缺少架构 ${arch}（实际：${actual}）" >&2; exit 1;
     }
   done
 done
@@ -87,7 +87,7 @@ cp -R docs "$STAGE/docs"
 cp -R skills "$STAGE/skills"
 # 根目录副本的 docs/ 链接在包内可达；skills/ 保留原始相对链接。
 
-echo "==> 签名（$IDENTITY）"
+echo "==> 签名（${IDENTITY}）"
 for f in scu-native scu; do
   if [ "$IDENTITY" = "-" ]; then
     codesign --force --sign - "$STAGE/$f"
@@ -114,7 +114,7 @@ if [ "$IDENTITY" = "-" ]; then
   echo "⚠️  当前是 ad-hoc 签名；从网络下载后 Gatekeeper 可能拒绝运行。"
   echo "   要对外分发，请用 Developer ID Application 签名并公证。"
 elif [ -z "$SKIP_NOTARY" ] && [ -n "$NOTARY_PROFILE" ]; then
-  echo "==> 提交公证（profile: $NOTARY_PROFILE）"
+  echo "==> 提交公证（profile: ${NOTARY_PROFILE}）"
   xcrun notarytool submit "$ZIP" --keychain-profile "$NOTARY_PROFILE" --wait
   echo "ℹ️  zip 已公证。zip 本身不能 staple；Gatekeeper 需要联网取票据。"
 elif [ -n "$SKIP_NOTARY" ]; then

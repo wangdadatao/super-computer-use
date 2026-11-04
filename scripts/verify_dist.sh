@@ -25,7 +25,7 @@ fi
 [ -x "$SRC/scu-native" ] || { echo "❌ 缺少 scu-native（必须与 scu 同目录）" >&2; exit 1; }
 [ -f "$SRC/VERSION" ] || { echo "❌ 缺少 VERSION" >&2; exit 1; }
 VERSION="$(cat "$SRC/VERSION")"
-echo "==> 版本 $VERSION，目录 $SRC"
+echo "==> 版本 ${VERSION}，目录 $SRC"
 
 echo "==> 文件架构"
 for f in scu scu-native; do
@@ -68,9 +68,9 @@ set +e
 rc=$?
 set -e
 if [ "$rc" -ne 0 ] && [ "$rc" -ne 2 ]; then
-  echo "❌ scu permissions 返回 $rc（期望 0 或 2）" >&2; exit 1
+  echo "❌ scu permissions 返回 ${rc}（期望 0 或 2）" >&2; exit 1
 fi
-echo "   scu permissions 退出码 $rc（0=已授权，2=未授权，均可接受）"
+echo "   scu permissions 退出码 ${rc}（0=已授权，2=未授权，均可接受）"
 
 echo "==> MCP 握手与 list_apps"
 SOCK="$(mktemp -d "$TMP/socket.XXXXXX")"
