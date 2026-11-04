@@ -14,7 +14,7 @@
 
 ## 当前阶段
 
-**v2 已收口（0.2.0，2026-10-20）；0.3.0（默认差异，2026-10-20）；0.4.0 已收口（分发，2026-10-21）。**
+**v2 已收口（0.2.0，2026-10-20）；0.3.0（默认差异，2026-10-20）；0.4.0 已收口（分发，2026-10-21）；0.5.0 已收口（窗口身份，2026-11-04）。**
 源码构建与 macOS 通用二进制 zip 均可交付。分发包当前是 **ad-hoc 签名、未公证**；公开下载前需要 Developer ID 与公证。code mode 仍未做。
 **浏览器操作面**：规划为桌面之外的独立适配器（Playwright MCP/CDP 优先，扩展后置），当前未实现；见[操作面模型](architecture/surface_model.md)与 [ADR-0030](decisions/adr_0030_browser_surface.md)。
 v1 功能点：读取、点击、输入、设值；元素表输出 `[a]` 与 `frame`，四个元素动作工具（`click`/`type_text`/`press_key`/`set_value`）接受 `label`。
@@ -22,7 +22,7 @@ v2 功能点：`get_screenshot` 截取目标窗口并叠加标签；`launch_app`
 动作档可选连接级应用允许列表（`--allow-app`）；`list_windows` 枚举窗口，`get_ax_state(window=...)` 以指定窗口为根读树，元素动作也绑定该窗口。
 0.3.0：`get_ax_state` 默认输出与上次读取的差异，`full=true` 取完整表（[ADR-0028](decisions/adr_0028_incremental_tree_rendering.md)）。
 0.4.0：通用二进制 zip、ad-hoc/Developer ID 签名流水线、`install.sh` 与 `verify_dist.sh`（[ADR-0029](decisions/adr_0029_distribution.md)、[分发](operations/distribution.md)）。
-0.5 候选（未发布）：窗口身份已实现（`Target`、CGWindowID、线协议 v12）；见 [ADR-0031](decisions/adr_0031_window_identity.md)。
+0.5.0：窗口身份（`Target`、CGWindowID、线协议 v12）；见 [ADR-0031](decisions/adr_0031_window_identity.md)。
 2026-10-22：架构修复轮，无新功能；输入超时、截图只读语义、坐标窗口绑定、动作超时、策略授权集中化、
 工具/会话文件拆分、CI 与 MIT 许可证。结果见[验证记录](../verification/2026-10-22-architecture-fixes.md)。
 2026-10-22 开源准备：README 中英双语、`scu --help`、CONTRIBUTING/SECURITY/CODE_OF_CONDUCT/CHANGELOG、

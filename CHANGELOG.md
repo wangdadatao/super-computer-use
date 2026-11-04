@@ -4,7 +4,7 @@
 0.x 阶段不保证向后兼容，线协议版本单独记录在
 [docs/interfaces/native_wire_protocol.md](docs/interfaces/native_wire_protocol.md)。
 
-## 未发布
+## 0.5.0 — 2026-11-04
 
 ### 新增
 
@@ -22,7 +22,8 @@
   连续 11 次一致（约 2.4 秒）才判定"稳定且无变化"；总上限仍为 3 秒。修复两秒加载被误判为
   "已收敛・无变化"的已知缺口，代价是无加载信号的空操作从 0.4 秒变为约 2.4 秒。
   见 [ADR-0011 追加记录](docs/decisions/adr_0011_convergence_over_fixed_delay.md)。
-- 线协议升到 v12：窗口相关请求使用 `Target`，新增 `windowID`。
+- **线协议升到 v12：窗口相关请求使用 `Target`，新增 `windowID`。`scu` 与 `scu-native` 必须成对升级，
+  0.4.0（v11）与 0.5.0（v12）的二进制不能混用，没有数据迁移。**
 - 全树按 `.swift-format` 统一格式化，格式检查进入提交前入口与 CI。
 - README 重写：明确"桌面应用"范围，补快速开始、MCP 配置与已实现/未实现边界。
 - 文档中不再出现构建机的证书身份信息（历史记录同步清理）。

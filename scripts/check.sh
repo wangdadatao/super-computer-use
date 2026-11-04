@@ -14,8 +14,9 @@ cd "$(dirname "$0")/.."
 fail=0
 step() { echo; echo "━━ $1 ━━"; }
 
-step "1/5 文档与代码锚点"
+step "1/5 文档、版本与代码锚点"
 scripts/check_docs.sh || fail=1
+scripts/check_version.sh || fail=1
 
 step "2/5 代码格式"
 scripts/format.sh --check || fail=1
