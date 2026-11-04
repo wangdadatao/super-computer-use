@@ -4,6 +4,22 @@
 0.x 阶段不保证向后兼容，线协议版本单独记录在
 [docs/interfaces/native_wire_protocol.md](docs/interfaces/native_wire_protocol.md)。
 
+## 0.5.1 — 2026-11-04
+
+### 修复
+
+- **坐标点击能证明命中。** 文本落点不再靠像素猜：点击前记下落点元素的 AX 引用与
+  `AXSelectedTextRange`，点击后只读**同一个引用**，选区变了 → `verified=true`、
+  `verifiedBy=selection_changed`；元素被应用重建或读不到选区时如实 `verified=false`，
+  并给出 `unverifiedReason`，不退回像素、也不看别的元素。非文本落点仍走插入光标的
+  像素形态（`caret_pixels`）。两条判据按落点类型二选一，不 OR。
+- **截图铺满缓冲区，`scale` 描述内容而不是缓冲区。** 此前截图按窗口 points 的 1:1
+  画进按 `1600/frame.width` 放大的缓冲区（880pt 的窗口 → 内容 880×640 贴在
+  1600×1164 的左上角，右侧/下方是黑边），回报的 `scale` 却是缓冲区/窗口 = 1.818：
+  按图像像素点击会整体偏 1.818 倍，`changedRatio` 也被稀释到阈值以下。现在内容铺满
+  缓冲区、`scale` 由实际图像尺寸得出，阈值也按这个 `scale` 推。线协议随之升到 v13
+  （`clickAt` 应答为 `clicked`，带选区观察），`scu` 与 `scu-native` 必须成对替换。
+
 ## 0.5.0 — 2026-11-04
 
 ### 新增
