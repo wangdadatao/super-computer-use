@@ -78,3 +78,5 @@
 - [ADR-0013](../docs/decisions/adr_0013_p0_vertical_slice.md) 追加记录：令牌、效果、收敛三项当前状态。
 - [ADR-0011](../docs/decisions/adr_0011_convergence_over_fixed_delay.md) 追加记录：两秒加载缺口。
 - [测试策略](../docs/operations/testing.md)：当前状态；遮挡一行的期望需修订。
+
+> **2026-11-04 复测**：本记录结论 3（两秒加载被过早判为收敛）已由分档收敛判定修复——观察到结构变化后约 0.4 秒确认，零结构变化时等约 2.4 秒，上限 3 秒；夹具 `Delayed` 用例现为硬断言，`elapsed≈2.36s`、`treeChanged=true`。见 [ADR-0011 追加记录](../docs/decisions/adr_0011_convergence_over_fixed_delay.md) 与[测试策略](../docs/operations/testing.md#当前状态)。同轮 `scripts/check.sh` 通过：文档锚点、格式、构建、4 个 target 全过（157 用例，失败 0，无 known issue）、MCP 冒烟，退出码 0。本记录其余结论（遮挡、启动期不稳定、误拒）未变。

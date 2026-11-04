@@ -85,13 +85,15 @@ about reference implementations are registered with sources in
 
 Version 0.4.0 (2026-10-21); window identity is an unreleased change. Verified so far:
 
-- 155 automated tests, plus docs structure/link/anchor checks and mermaid rendering;
+- 157 automated tests, plus docs structure/link/anchor checks and mermaid rendering;
 - snapshot tokens and effect summaries hold on a controlled fixture (0/8 false rejections);
 - real-app runs on NetEase Cloud Music (CEF), TextEdit multi-window, Calculator and Edge;
 - 6 real tasks: 5 passed, 1 partially passed.
 
 Known gaps: window IDs are implemented (wire v12) but same-title real-world regression is limited;
-no browser surface; heuristic action convergence can miss changes after two seconds; no code mode;
+no browser surface; action convergence settles in two tiers (about 0.4 s after an observed change,
+about 2.4 s when nothing changed, 3 s cap), so a two-second load is covered — the remaining gap is a
+second long delay after an initial change; no code mode;
 no per-action approvals; and actions invoked through a host (Cursor/Claude) are not yet verified
 end to end.
 
