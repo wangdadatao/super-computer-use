@@ -1,6 +1,6 @@
 # ADR-0032 跨机操作面：v1 走 SSH stdio，不开放 HTTP 动作端点
 
-- **状态**：草案（提议中，未接受；2026-11-04 提出，待探路的外部规范核对后复审）
+- **状态**：已接受（2026-11-04；外部规范核对完成，结论见「规范核对结论」）。v1 **尚未部署**：没有客户端接入，key 与 wrapper 都没落，见「落地时点」
 - **日期**：2026-11-04
 
 <a id="remote_surface"></a>
@@ -30,7 +30,7 @@
   `tools/list` 返回 13 个工具，其中 8 个是动作工具。
 - macmini 上 `scu permissions` 返回「辅助功能：已授予」；通过 SSH 执行 `screencapture` 退出码 0，
   输出 1920×1080。两项系统授权挂在 `/usr/libexec/sshd-keygen-wrapper` 上，因此**任意 SSH 会话**都带着
-  这两项能力（`docs/operations/local_setup.md:20-21、50`）。
+  这两项能力（`docs/operations/local_setup.md:22、67`、[macOS 权限](../operations/permissions.md)「SSH 启动的进程」）。
 - SSH stdio 可用：`initialize` 正常返回，远程 stderr 0 字节，stdin 关闭后远程没有
   `scu mcp` / `scu-native` 残留。
 - macmini 的应用防火墙关闭（`socketfilterfw --getglobalstate` → `State = 0`）。
@@ -95,6 +95,34 @@ wrapper 不读取 `$SSH_ORIGINAL_COMMAND`，也不把客户端参数拼进命令
 **分两天发**：第一天只发只读 key，确认读取、截图、令牌都正常；动作 key 在只读验收通过后再发。
 两把 key 独立撤销，出问题先撤动作 key。
 
+### 4. 落地时点：现在不建 key，等有真实调用方再落
+
+**决定：暂不落两把 key 和两个 wrapper。** 不是「以后再说」，是现在落没有可验收的对象：
+
+- 被控端 `~/aiwork/bin` 不存在（2026-11-04 核对），`.build/release/scu` 会被下一次构建覆盖。wrapper
+  指向它时，没有客户端就只能验证「手工能跑通」，验证不了真正要用的那条路径：宿主 spawn ssh、
+  版本校验、断线回收，都要有客户端才能测。
+- 一把进 `authorized_keys` 的 key 就是一份长期有效的 GUI 控制凭据（见「取舍」第一条）。没有调用方时
+  它只有风险没有收益：控制端上任何能读私钥的进程都能用它。
+- `from=` 写的是 DHCP 地址，网络一变就是「连不上」。这算安全失败，但会留下一份看起来配好、实际不通的
+  部署，下一次排查要从零开始。
+
+**触发条件**（满足任一条再落）：出现需要从 A 用 MCP 宿主操作 B 的日常任务；或要把 B 固定成 CI、演示的
+被控端。
+
+**落地顺序**（缺一条不落）：
+
+1. wrapper 进仓库（`scripts/remote/`），随 `scu-mini sync` 部署，不再手工往 `~/aiwork/bin` 放裸脚本；
+   wrapper 指向固定路径的 release 二进制，启动即用 `--version` 自检。
+2. 先用一次性临时 key 打通端到端：宿主 spawn ssh → `initialize` → `tools/list` = 5 → 断线后 `pgrep`
+   为空；验完删掉临时 key。
+3. 再发只读 key，按「验证门禁」跑一遍并留输出；只读验收通过后才发动作 key。
+4. 撤销路径写进 `docs/operations/`；动作 key 出事优先撤。
+
+**既存事实**：macmini 上现在唯一的 SSH key `codex-macbook-to-macmini` 没有 `restrict` / `from=` /
+`command=`（2026-11-04 核对）。它需要 shell，不能用 forced command；落 v1 时应当同时评估给它加
+`from=`。本次不改 `authorized_keys`。
+
 ### 3. 被否方案与否决理由
 
 #### （b）MCP Streamable HTTP + 令牌鉴权：现在不做
@@ -117,8 +145,25 @@ wrapper 不读取 `$SSH_ORIGINAL_COMMAND`，也不把客户端参数拼进命令
 （例如纯网页客户端）；需要按调用审计或按用户计费；需要跨公网。立项时必须先过本文「验证门禁」里的
 HTTP 清单。
 
-MCP Streamable HTTP 的规范细节（会话标识、流式响应、Origin 校验的具体要求）以探路的调研结论为准，
-本文标「待探路确认」的地方不构成实现依据。
+#### 规范核对结论（2026-11-04）
+
+依据：探路的《SCU 跨机桌面要不要上 MCP HTTP》
+（`/Users/dager/aiwork/team/research/2026-11-04-scu-remote-transport.md`，团队目录，不在本仓库；
+只看官方文档，未实测延迟）。以下四条直接改变本文的判断：
+
+- **局域网裸奔不违反 MCP 规范，但也不构成合规。** 传输页里只有 `Origin` 校验是 MUST，「给所有连接
+  做鉴权」是 SHOULD，授权整体是 OPTIONAL。所以「先开端口、以后再补令牌」不会被规范拦下，能拦住它的
+  只有本仓库自己的门禁。
+- **一旦宣称做了授权，就必须是整套 OAuth 2.1**：401 挑战、PKCE（REQUIRED）、RFC 8414 元数据发现、
+  令牌只走 `Authorization: Bearer`（禁止放进 URL query）、授权端点必须 HTTPS。静态共享 bearer 不能
+  对外称为「符合 MCP 授权」。2025-06-18 起，`initialize` 之后的每个 HTTP 请求还必须带
+  `MCP-Protocol-Version` 头，不认识的版本必须回 400。
+- **2026-07-28 的草案传输页删掉了 GET 长连接和协议级 session（含 `Mcp-Session-Id`）。** 将来做（b）
+  不能把这两样当必备能力设计；2025-03-26 / 2025-06-18 / 2025-11-25 仍是旧形状。
+- **没有官方规范支持「computer-use MCP over HTTP 操作另一台 Mac」。** 同类产品要么同机 stdio
+  （Claude Code computer-use、Playwright MCP 默认），要么明确要求服务只绑 localhost 再用 `ssh -L`
+  （Playwright 的远程文档）；Claude Desktop 的 SSH 远程会话也是「在远端机器上跑 stdio」。这三条都把
+  （a）当默认，把 HTTP 当例外。
 
 #### （c）本机桥接/隧道：不作为 v1
 
@@ -260,6 +305,7 @@ macmini 的两项授权挂在 `sshd-keygen-wrapper` 上；`scu permissions` 返�
 
 ### v1（SSH stdio）的两机验收
 
+**接受这条 ADR 不等于部署完成。** 以下命令在真正落 key 时执行；现在跑会在第 2 步失败（wrapper 还不存在）。
 在控制端执行，全部要留输出：
 
 ```bash
@@ -296,6 +342,7 @@ ssh dagermac-mini 'lsof -nP -iTCP -sTCP:LISTEN | grep -i scu || echo "no listene
 
 没有全部通过，不合并 HTTP 传输：
 
+0. 若对外宣称「符合 MCP 授权」：401 挑战、PKCE、RFC 8414 元数据发现齐全；只用静态 bearer 时不得这样宣称。
 1. 无令牌 → 401；错误令牌 → 401；正确令牌 → 200。
 2. `Origin: http://evil.example` → 403；`Host: evil.example` → 403/421。
 3. `Content-Type: text/plain` 的 JSON-RPC → 415（或明确拒绝），不能执行。
@@ -339,4 +386,5 @@ ssh dagermac-mini 'lsof -nP -iTCP -sTCP:LISTEN | grep -i scu || echo "no listene
 - [ADR-0031 窗口身份](adr_0031_window_identity.md)：远程操作仍以 `Target` 与令牌为单位。
 - [MCP 接入面](../interfaces/mcp_surface.md)：stdio 传输、同步主循环、宿主验证状态。
 - [本地环境](../operations/local_setup.md)：两台机器分工、SSH 授权归属。
-- [macOS 权限](../operations/permissions.md)：权限按宿主归属。
+- [macOS 权限](../operations/permissions.md)：权限按宿主归属；SSH 启动的进程与被控端授权范围。
+- 跨机传输的规范调研（团队目录，不在本仓库）：`/Users/dager/aiwork/team/research/2026-11-04-scu-remote-transport.md`。

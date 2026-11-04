@@ -17,7 +17,7 @@
 **v2 已收口（0.2.0，2026-10-20）；0.3.0（默认差异，2026-10-20）；0.4.0 已收口（分发，2026-10-21）；0.5.0 已收口（窗口身份，2026-11-04）。**
 源码构建与 macOS 通用二进制 zip 均可交付。分发包当前是 **ad-hoc 签名、未公证**；公开下载前需要 Developer ID 与公证。code mode 仍未做。
 **浏览器操作面**：规划为桌面之外的独立适配器（Playwright MCP/CDP 优先，扩展后置），当前未实现；见[操作面模型](architecture/surface_model.md)与 [ADR-0030](decisions/adr_0030_browser_surface.md)。
-**跨机操作面**：当前只有部署方案草案（SSH stdio），不开放 HTTP 动作端点；见 [ADR-0032](decisions/adr_0032_remote_surface.md)。
+**跨机操作面**：只走 SSH stdio（ADR-0032 已接受，尚未部署、无客户端接入），不开放 HTTP 动作端点；见 [ADR-0032](decisions/adr_0032_remote_surface.md)。
 v1 功能点：读取、点击、输入、设值；元素表输出 `[a]` 与 `frame`，四个元素动作工具（`click`/`type_text`/`press_key`/`set_value`）接受 `label`。
 v2 功能点：`get_screenshot` 截取目标窗口并叠加标签；`launch_app`；`click_at` / `scroll_at` / `drag` 按截图坐标操作并在动作前显示指示环；
 动作档可选连接级应用允许列表（`--allow-app`）；`list_windows` 枚举窗口，`get_ax_state(window=...)` 以指定窗口为根读树，元素动作也绑定该窗口。
@@ -37,7 +37,7 @@ CI 与本地统一走 `scripts/check.sh`（含格式检查）、历史作者与�
 实现了两进程通信、版本协商、权限检测、无障碍树读取、快照令牌与按路径定位句柄、`AXPress` 点击与最小效果摘要、
 拒绝类目（`PolicyGate`），以及 MCP stdio 服务（`scu mcp`，见 [MCP 接入面](interfaces/mcp_surface.md)）。
 **默认只读，`scu mcp --actions` 才暴露 `click` / `type_text` / `press_key` / `set_value`。**
-**未实现**：句柄注册表（跨快照延续，按 K4 验证结果不实现）、逐次审批与租约、完整指示层/虚拟光标、code mode、浏览器操作面（adapter/扩展）、跨机 HTTP 传输（草案见 [ADR-0032](decisions/adr_0032_remote_surface.md)）。
+**未实现**：句柄注册表（跨快照延续，按 K4 验证结果不实现）、逐次审批与租约、完整指示层/虚拟光标、code mode、浏览器操作面（adapter/扩展）、跨机 HTTP 传输（已否，见 [ADR-0032](decisions/adr_0032_remote_surface.md)）。
 验证状态：令牌与效果摘要在受控夹具上满足（误拒 0/8；每次改值点击后都要重读）；输入、按键与设值在夹具与网易云（CEF，带无障碍启动参数）上成立（其他真实应用与输入法未验证）；收敛判定按静默次数分档（有变化后约 0.4 秒、零变化约 2.4 秒，上限 3 秒），两秒加载已满足；变化之后的第二次长延迟仍是缺口、不列为出口门槛；策略在夹具上满足；身份 K4 按冻结规则不成立；经宿主调用动作仍未验证。见[测试策略](operations/testing.md#当前状态)。
 v2 已收口；未进入 v2 的逐次审批、`batch`/受限 code mode 等见
 [ADR-0013 的 v2 候选](decisions/adr_0013_p0_vertical_slice.md#v2_candidates_2026_10_19)与

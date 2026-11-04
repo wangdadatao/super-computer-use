@@ -40,7 +40,7 @@
 - [ADR-0029 分发：可验证的 zip 优先](adr_0029_distribution.md)：通用二进制、ad-hoc 默认、Developer ID/公证路径、安装器边界。读取时机：改打包、签名、公证、安装流程时。
 - [ADR-0030 浏览器操作面通过适配器接入](adr_0030_browser_surface.md)：桌面加两个浏览器操作面、Playwright MCP/CDP 优先、扩展后置、独立令牌与 origin 策略。读取时机：讨论浏览器支持、标签页接管、Playwright MCP 或扩展时。
 - [ADR-0031 窗口身份：CGWindowID 进入 Target](adr_0031_window_identity.md)：`Target` 与线协议 v12、窗口 ID 优先、CoreGraphics 匹配与回退。读取时机：多窗口、同名/无标题窗口、截图坐标绑定或升线协议时。
-- [ADR-0032 跨机操作面：v1 走 SSH stdio，不开放 HTTP 动作端点](adr_0032_remote_surface.md)：（草案，未接受）两机连接方式、被否的 HTTP/隧道方案、局域网暴露的实测攻击面。读取时机：讨论远程操作、跨机 MCP、HTTP 传输或鉴权时。
+- [ADR-0032 跨机操作面：v1 走 SSH stdio，不开放 HTTP 动作端点](adr_0032_remote_surface.md)：（已接受，未部署）两机连接方式、落地时点、被否的 HTTP/隧道方案、局域网暴露的实测攻击面、MCP 规范核对结论。读取时机：讨论远程操作、跨机 MCP、HTTP 传输或鉴权时。
 
 ### 范围与安全
 

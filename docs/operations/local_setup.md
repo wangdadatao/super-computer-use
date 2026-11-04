@@ -66,6 +66,7 @@ reflog 会随 gc 消失。真需要纠正时在 mini 上显式处理（`scu-mini
 
 两项系统授权记在 `/usr/libexec/sshd-keygen-wrapper` 上，因此 macmini 上**任意** SSH 会话都能控制界面与截屏；
 撤销时把这一项从辅助功能和屏幕录制两个列表里都移出。这是有意选择的便利，不是最小权限配置。
+授权范围与撤销路径见 [macOS 权限](permissions.md)「SSH 启动的进程」。
 
 ## 构建与测试
 

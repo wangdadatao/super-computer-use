@@ -71,6 +71,30 @@ scu permissions        # 走的是原生进程实际使用的路径；未授予�
 未授予时，`scu permissions` 以退出码 2 结束，`scu dump` 报 `system_permission_missing`。
 `scu permissions` 只检测辅助功能；屏幕录制权限**尚未检测**，截图黑屏时先查这一项。
 
+## SSH 启动的进程（被控端）
+
+TCC 按「负责进程」记账。经 SSH 登录后执行的进程，责任链上是 `sshd`；macmini 上的辅助功能与屏幕录制就记在
+`/usr/libexec/sshd-keygen-wrapper` 上（2026-11-04 实测）：
+
+```bash
+ssh dagermac-mini '~/aiwork/SuperComputerUse/.build/release/scu permissions'  # 辅助功能：已授予（退出码 0）
+ssh dagermac-mini 'screencapture -x /tmp/probe.png'                          # 退出码 0，1920×1080
+```
+
+**授权范围是「能 SSH 登录并执行代码的人」，不是「scu 这个二进制」。** 任何拿到这把 SSH key 的进程
+（agent、脚本、编辑器插件）都站在这条已授过权的链上，可以读屏、点鼠标、输入，不需要在被控端再点一次
+「允许」。判断依据不是「scu 有没有被单独授权」，而是「谁进了这台机器的 SSH」。
+
+由此带来四条约束：
+
+- SSH 只开给需要的用户，关闭密码登录；这台机器的 22 端口不要暴露到公网。
+- 远端操作单独发 key，用 `restrict` / `from=` / `command=` 钉死（见
+  [ADR-0032](../decisions/adr_0032_remote_surface.md)），不要复用能开 shell 的 git push key。
+- 撤权分两层：删 `authorized_keys` 对应行并杀掉会话，只收回「还能连」；要收回系统权限，得把
+  `sshd-keygen-wrapper` 从辅助功能和屏幕录制两个列表里都移出——这会同时影响其它 SSH 用途，
+  没有替代入口时不要动它。
+- 「终端里 `scu permissions` 已授予」不能推出「SSH 会话里也授予」，反过来也一样；按宿主分别测。
+
 ## 排障
 
 | 症状 | 原因 | 处理 |
