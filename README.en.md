@@ -5,7 +5,7 @@ action actually took effect.
 
 [中文](README.md) · [Engineering docs](docs/index.md) · [Agent guide](skills/scu/SKILL.md)
 
-> Early-stage software (0.5.0). Source builds are supported. No prebuilt binaries are published yet:
+> Early-stage software (0.5.1). Source builds are supported. No prebuilt binaries are published yet:
 > the release zip is ad-hoc signed and not notarized, so public download would be blocked by Gatekeeper.
 
 ## The problem
@@ -83,7 +83,7 @@ about reference implementations are registered with sources in
 
 ## Status
 
-Version 0.5.0 (2026-11-04); window identity shipped in 0.5.0. Verified so far:
+Version 0.5.1 (2026-11-04); window identity shipped in 0.5.0; coordinate-click verification and screenshot scale fixed in 0.5.1. Verified so far:
 
 - 157 automated tests, plus docs structure/link/anchor checks and mermaid rendering;
 - snapshot tokens and effect summaries hold on a controlled fixture (0/8 false rejections);
