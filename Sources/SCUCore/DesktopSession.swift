@@ -9,10 +9,17 @@ public struct SnapshotToken: Hashable, Sendable, CustomStringConvertible {
 }
 
 /// 一次窗口截图，连同签发它的令牌。标签只包含落在截图窗口内的可交互元素。
-/// 坐标点击的观察结果。坐标点击没有元素身份，只能报告树是否变化；
+/// 坐标点击的观察结果。坐标点击没有元素身份，只能报告观察到的外部事实：
+/// `delivered` 只说明事件已投递；`verified` 只在观察到具体后置条件（目前只有插入光标形态）时为 true。
 /// 像素级变化要等截图 diff。
 public struct CoordinateReport: Sendable {
     public var pid: Int32
+    /// 事件已投递给平台。失败时抛错，不返回报告。
+    public var delivered: Bool
+    /// 观察到具体后置条件。**不**从 `treeChanged` / `screenshotChanged` 推导。
+    public var verified: Bool
+    /// 后置条件的种类：`caret_pixels`；nil 表示没有观察到任何后置条件（是否命中未验证）。
+    public var verifiedBy: String?
     public var observed: Bool
     public var treeChanged: Bool?
     public var screenshotChanged: Bool?
@@ -23,11 +30,15 @@ public struct CoordinateReport: Sendable {
     public var elapsed: TimeInterval
 
     public init(
-        pid: Int32, observed: Bool, treeChanged: Bool?, screenshotChanged: Bool?,
+        pid: Int32, delivered: Bool = true, verified: Bool = false, verifiedBy: String? = nil,
+        observed: Bool, treeChanged: Bool?, screenshotChanged: Bool?,
         diffRatio: Double?, geometryChanged: Bool, tokenInvalidated: Bool,
         noOpSuspected: Bool, elapsed: TimeInterval
     ) {
         self.pid = pid
+        self.delivered = delivered
+        self.verified = verified
+        self.verifiedBy = verifiedBy
         self.observed = observed
         self.treeChanged = treeChanged
         self.screenshotChanged = screenshotChanged

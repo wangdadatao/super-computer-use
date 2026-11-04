@@ -11,6 +11,12 @@ extension DesktopSession {
         public var target: TargetKey
         /// 动作已投递给平台。返回报告就意味着它为真；保留字段是为了与对外的摘要格式一致。
         public var delivered: Bool
+        /// 观察到**目标自身**的后置条件：目标已不是原来那个（`target_changed`），
+        /// 或路径上同一节点的自身字段变了（`target_state`）。
+        /// 不从“整棵树变了”推导：树变化也可能来自应用自身刷新。
+        public var verified: Bool
+        /// 后置条件的种类；nil 表示没有观察到目标自身的后置条件（是否命中未验证）。
+        public var verifiedBy: String?
         /// 动作之后成功重读过界面。重读失败时为 false，下面三项均为 nil。
         public var observed: Bool
         /// 重读的静默已足够长（见 `Settle.quietPollsAfterChange` / `quietPollsWithoutChange`）。
@@ -76,7 +82,8 @@ extension DesktopSession {
         // authorizedTarget 已经通过解析，记录与快照必然存在。
         guard let record = records[token], let pre else { throw WireError.internalError("动作后令牌记录丢失") }
         var report = ClickReport(
-            pid: record.pid, target: locator.target, delivered: true, observed: false, converged: false,
+            pid: record.pid, target: locator.target, delivered: true, verified: false, verifiedBy: nil,
+            observed: false, converged: false,
             treeChanged: nil, targetChanged: nil, noOpSuspected: nil, polls: 0, elapsed: 0,
             tokenInvalidated: false, observationError: nil)
 
@@ -135,6 +142,40 @@ extension DesktopSession {
         if !settled.truncated {
             report.targetChanged = !Self.targetPresent(locator, in: settled.root)
         }
+        // 后置条件只认目标自身：目标被替换/移除，或同一路径上的节点自身字段变了。
+        // 整棵树的变化不算：它可能就是应用自己的刷新，与这次动作无关。
+        if report.targetChanged == true {
+            report.verified = true
+            report.verifiedBy = "target_changed"
+        } else if !settled.truncated, handle >= 1, handle <= pre.entries.count,
+            let afterNode = Self.node(at: locator.path, in: settled.root),
+            Self.selfFieldsDiffer(pre.entries[handle - 1].node, afterNode)
+        {
+            report.verified = true
+            report.verifiedBy = "target_state"
+        }
         return report
+    }
+
+    /// 沿路径取下节点（与 `targetPresent` 相同的核对规则）。取不到时返回 nil。
+    static func node(at path: [PathStep], in root: AXNode) -> AXNode? {
+        var current = root
+        for step in path {
+            guard (current.childCount ?? current.children.count) == step.siblings,
+                current.children.indices.contains(step.index)
+            else { return nil }
+            let next = current.children[step.index]
+            guard next.role == step.role else { return nil }
+            current = next
+        }
+        return current
+    }
+
+    /// 节点**自身**的可观察字段是否不同（不含子节点内容）。
+    static func selfFieldsDiffer(_ a: AXNode, _ b: AXNode) -> Bool {
+        a.role != b.role || a.subrole != b.subrole || a.title != b.title
+            || a.identifier != b.identifier || a.description != b.description
+            || a.value != b.value || a.enabled != b.enabled
+            || (a.childCount ?? a.children.count) != (b.childCount ?? b.children.count)
     }
 }

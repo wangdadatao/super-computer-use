@@ -142,15 +142,23 @@ type Coordinates = { x: number; y: number; geometryToken: string };
 
 ## 动作效果
 
-> **P0 实际**：`click` 的效果摘要字段是 `delivered`、`observed`、`converged`、`treeChanged`、`targetChanged`、`noOpSuspected`、
+> **P0 实际**：`click` 的效果摘要字段是 `delivered`、`verified`、`verifiedBy`、`observed`、`converged`、`treeChanged`、`targetChanged`、`noOpSuspected`、
 > `polls`、`elapsed`、`tokenInvalidated`，没有 `focusStolenBy` 与 `snapshotToken`（树变化后旧令牌失效，不发新令牌，由调用方重读）。
 > 见 [MCP 接入面](mcp_surface.md#click_tool)。下面的接口是拟实施设计。
+>
+> **`delivered` 与 `verified` 是两个事实。** `delivered=true` 只表示事件已投递给平台，
+> 不代表界面响应、更不代表命中。`verified=true` 只在观察到具体后置条件时为真：
+> 元素动作看目标自身（`target_changed` / `target_state`），坐标点击只看落点所在文本行
+> 出现插入光标形态的像素变化（`caret_pixels`，启发式）；其余情形 `verified=false`，
+> 报告明写“是否命中未验证”。`treeChanged` / `screenshotChanged` **不参与**这个判断。
 
 每个动作返回效果摘要，而不是空返回：
 
 ```ts
 interface Effect {
-  delivered: boolean;          // 事件是否成功投递
+  delivered: boolean;          // 事件是否成功投递（不代表命中）
+  verified: boolean;           // 是否观察到具体的后置条件
+  verifiedBy: string | null;   // 后置条件的种类：target_changed / target_state / caret_pixels
   converged: boolean;          // 目标是否已进入稳定状态
   treeChanged: boolean;        // 树是否变化
   targetChanged: boolean;      // 目标元素的可观察属性是否变化

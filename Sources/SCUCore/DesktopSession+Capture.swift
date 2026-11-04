@@ -80,7 +80,9 @@ extension DesktopSession {
 
     /// 动作前再取一次当前窗口几何：截图后窗口可能移动/缩放，或同名窗口换了一个。
     /// 只按标题投递会把旧截图的坐标算到新位置上；先拒绝，要求重新截图。
-    func validateCoordinateWindow(_ binding: ScreenshotBinding, pid: Int32) throws {
+    /// 返回这一次的截图：它发生在最后一次激活之后，可以当像素基线用。
+    @discardableResult
+    func validateCoordinateWindow(_ binding: ScreenshotBinding, pid: Int32) throws -> WindowCapture {
         let target = Target(pid: pid, windowID: binding.windowID, windowTitle: binding.windowTitle)
         let current = try reader.captureWindow(target: target)
         guard current.windowFrame == binding.windowFrame, current.scale == binding.scale,
@@ -88,6 +90,53 @@ extension DesktopSession {
             binding.windowID == nil || current.windowID == binding.windowID
         else {
             throw WireError.staleGeometry("截图后窗口位置/缩放已变化，请重新 get_screenshot。")
+        }
+        return current
+    }
+
+    /// 坐标动作的前置基线，必须在**最后一次激活之后、投递之前**采集（A2）。
+    ///
+    /// 坐标动作链里有三次激活（截图、几何复核、投递前）；截图与复核都会 activate/raise 目标窗口，
+    /// 而激活本身会改动 AX 树与窗口外观。若基线取在激活之前，那些变化会被算成“点击的效果”，
+    /// 于是点空白也报 changed。这里在几何复核（最后一次激活）之后重读一次，再开始计时。
+    struct CoordinateBaseline {
+        var entries: [ElementTable.Entry]
+        /// 绑定窗口的子树的摘要；定位不到窗口时为 nil（未知，不当作“没变化”）。
+        var digest: Int?
+        var truncated: Bool
+        /// 激活后的窗口图，用作像素基线与光标形态判定。
+        var png: Data
+    }
+
+    func coordinateBaseline(
+        r: Record, snap: Snapshot, binding: ScreenshotBinding, capture: WindowCapture
+    ) -> CoordinateBaseline {
+        guard
+            let reading = try? reader.readTree(
+                target: r.target, maxDepth: snap.maxDepth, budgetMs: snap.budgetMs)
+        else {
+            return CoordinateBaseline(entries: [], digest: nil, truncated: true, png: capture.png)
+        }
+        let entries = ElementTable.flatten(reading.root)
+        return CoordinateBaseline(
+            entries: entries,
+            digest: reading.truncated ? nil : Self.windowScopedDigest(entries, binding: binding),
+            truncated: reading.truncated, png: capture.png)
+    }
+
+    /// 落点是否落在文本类元素上。只用来决定“要不要看插入光标”，不参与“命中”判定。
+    static let textRoles: Set<String> = [
+        "AXTextArea", "AXTextField", "AXComboBox", "AXSearchField", "AXWebArea",
+    ]
+
+    static func pointIsInTextElement(
+        _ entries: [ElementTable.Entry], x: Double, y: Double
+    ) -> Bool {
+        entries.contains { entry in
+            guard textRoles.contains(entry.node.role), let f = entry.node.frame,
+                f.width > 0, f.height > 0
+            else { return false }
+            return x >= f.x && x < f.x + f.width && y >= f.y && y < f.y + f.height
         }
     }
 
@@ -147,7 +196,8 @@ extension DesktopSession {
     }
 
     func observeCoordinate(
-        token: String, r: Record, snap: Snapshot, binding: ScreenshotBinding, start: Date
+        token: String, r: Record, snap: Snapshot, binding: ScreenshotBinding,
+        baseline: CoordinateBaseline, point: (x: Double, y: Double)?, start: Date
     ) -> CoordinateReport {
         settle.sleep(settle.interval)
         var observed = false
@@ -164,14 +214,15 @@ extension DesktopSession {
             observed = true
             invalidated = after.token != SnapshotToken(token)
             let afterEntries = ElementTable.flatten(after.reading.root)
-            if let before = Self.windowScopedDigest(snap.entries, binding: binding),
+            // 基线读不到（readTree 抛错或 truncated）就是 unknown，`treeChanged` 留 nil；
+            // 不得退回激活前的令牌快照——那是早于最后一次激活的状态，激活本身的变化会被
+            // 算成点击效果，等于把 A2 修掉的老 bug 从降级路径放回来。也不得用“令牌失效”
+            // 顶替结构变化：激活改过树同样会让令牌失效。
+            let beforeDigest = baseline.truncated ? nil : baseline.digest
+            if let before = beforeDigest,
                 let afterDigest = Self.windowScopedDigest(afterEntries, binding: binding)
             {
                 changed = before != afterDigest
-            } else {
-                // 绑定窗口定位不到（例如无标题窗口）：只能退回全局判断。
-                // 全局也没变时不要断言“没变化”，报未知比误报 noOp 更安全。
-                changed = invalidated ? true : nil
             }
         } catch {
             observed = false
@@ -180,6 +231,8 @@ extension DesktopSession {
         var screenshotChanged: Bool?
         var diffRatio: Double?
         var geometryChanged = false
+        var verified = false
+        var verifiedBy: String?
         let boundTarget = Target(pid: r.pid, windowID: binding.windowID, windowTitle: binding.windowTitle)
         if let after = try? reader.captureWindow(target: boundTarget) {
             if after.width != binding.width || after.height != binding.height
@@ -187,15 +240,50 @@ extension DesktopSession {
                 || (binding.windowID != nil && after.windowID != binding.windowID)
             {
                 geometryChanged = true
-            } else if let ratio = ScreenshotDiff.changedRatio(before: binding.png, after: after.png) {
+            } else if let ratio = ScreenshotDiff.changedRatio(before: baseline.png, after: after.png) {
                 diffRatio = ratio
                 screenshotChanged = ratio > 0.001
+                // 坐标点击唯一的可观察后置条件：落点所在行出现了插入光标形态的窄高像素变化。
+                // 只在落点确实落在文本类元素上时看，避免把按钮高亮/窗口外观当成光标。
+                // 插入光标会闪烁；一次抓图可能正好落在“灭”的相位。落点在文本上时
+                // 最多再补拍两次（间隔 0.45 秒），看到任一帧有光标形态就算观察到。
+                if let point,
+                    Self.pointIsInTextElement(
+                        baseline.entries,
+                        x: binding.windowFrame.x + point.x / binding.scale,
+                        y: binding.windowFrame.y + point.y / binding.scale)
+                {
+                    var sawCaret =
+                        ScreenshotDiff.caretAppeared(
+                            before: baseline.png, after: after.png, at: point, scale: binding.scale)
+                        == true
+                    var extra = 0
+                    while !sawCaret, extra < 2 {
+                        usleep(450_000)
+                        extra += 1
+                        guard let again = try? reader.captureWindow(target: boundTarget),
+                            again.width == after.width, again.height == after.height,
+                            again.windowFrame == after.windowFrame
+                        else { continue }
+                        if ScreenshotDiff.caretAppeared(
+                            before: baseline.png, after: again.png, at: point, scale: binding.scale)
+                            == true
+                        {
+                            sawCaret = true
+                        }
+                    }
+                    if sawCaret {
+                        verified = true
+                        verifiedBy = "caret_pixels"
+                    }
+                }
             }
         }
 
         let noOp = observed && changed == false && (screenshotChanged == false || screenshotChanged == nil)
         return CoordinateReport(
-            pid: r.pid, observed: observed, treeChanged: changed,
+            pid: r.pid, delivered: true, verified: verified, verifiedBy: verifiedBy,
+            observed: observed, treeChanged: changed,
             screenshotChanged: screenshotChanged, diffRatio: diffRatio,
             geometryChanged: geometryChanged, tokenInvalidated: invalidated,
             noOpSuspected: noOp, elapsed: Date().timeIntervalSince(start))
@@ -205,14 +293,18 @@ extension DesktopSession {
     public func clickAt(token: String, screenshotID: String, x: Double, y: Double) throws -> CoordinateReport {
         let (r, snap, binding) = try coordinateContext(token: token, screenshotID: screenshotID)
         try checkPoint(x, y, in: binding)
-        try validateCoordinateWindow(binding, pid: r.pid)
+        let capture = try validateCoordinateWindow(binding, pid: r.pid)
+        // A2：基线在最后一次激活之后、投递之前采集；start 也从这里计。
+        let baseline = coordinateBaseline(r: r, snap: snap, binding: binding, capture: capture)
         let start = Date()
         let point = globalPoint(x: x, y: y, binding: binding)
         let boundTarget = Target(pid: r.pid, windowID: binding.windowID, windowTitle: binding.windowTitle)
         try performCoordinate(token: token) {
             _ = try reader.clickAt(target: boundTarget, x: point.x, y: point.y)
         }
-        return observeCoordinate(token: token, r: r, snap: snap, binding: binding, start: start)
+        return observeCoordinate(
+            token: token, r: r, snap: snap, binding: binding, baseline: baseline,
+            point: (x: x, y: y), start: start)
     }
 
     /// 在截图坐标 (x, y) 滚动。dy > 0 表示向下，dx > 0 表示向右。
@@ -224,7 +316,8 @@ extension DesktopSession {
         guard abs(dx) + abs(dy) > 0 else {
             throw WireError.invalidCoordinates("滚动增量不能为 0。")
         }
-        try validateCoordinateWindow(binding, pid: r.pid)
+        let capture = try validateCoordinateWindow(binding, pid: r.pid)
+        let baseline = coordinateBaseline(r: r, snap: snap, binding: binding, capture: capture)
         let start = Date()
         let point = globalPoint(x: x, y: y, binding: binding)
         let boundTarget = Target(pid: r.pid, windowID: binding.windowID, windowTitle: binding.windowTitle)
@@ -232,7 +325,10 @@ extension DesktopSession {
             _ = try reader.scrollAt(
                 target: boundTarget, x: point.x, y: point.y, dx: dx, dy: dy)
         }
-        return observeCoordinate(token: token, r: r, snap: snap, binding: binding, start: start)
+        // 滚动没有可读的后置条件（没有光标/焦点），verified 保持 false，报告明写“是否命中未验证”。
+        return observeCoordinate(
+            token: token, r: r, snap: snap, binding: binding, baseline: baseline,
+            point: nil, start: start)
     }
 
     /// 从截图坐标 (fromX, fromY) 拖到 (toX, toY)。
@@ -246,7 +342,8 @@ extension DesktopSession {
         guard fromX != toX || fromY != toY else {
             throw WireError.invalidCoordinates("拖拽的起点与终点相同。")
         }
-        try validateCoordinateWindow(binding, pid: r.pid)
+        let capture = try validateCoordinateWindow(binding, pid: r.pid)
+        let baseline = coordinateBaseline(r: r, snap: snap, binding: binding, capture: capture)
         let start = Date()
         let from = globalPoint(x: fromX, y: fromY, binding: binding)
         let to = globalPoint(x: toX, y: toY, binding: binding)
@@ -256,6 +353,9 @@ extension DesktopSession {
                 target: boundTarget, fromX: from.x, fromY: from.y, toX: to.x, toY: to.y,
                 durationMs: max(100, min(2_000, durationMs)))
         }
-        return observeCoordinate(token: token, r: r, snap: snap, binding: binding, start: start)
+        // 拖拽同样没有可读的后置条件；verified 保持 false。
+        return observeCoordinate(
+            token: token, r: r, snap: snap, binding: binding, baseline: baseline,
+            point: nil, start: start)
     }
 }

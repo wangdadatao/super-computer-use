@@ -95,24 +95,38 @@ extension ScuTool {
         return s
     }
 
-    /// 坐标点击结果。没有元素身份，只报告树变化；像素变化需要截图 diff。
+    /// 坐标点击结果。没有元素身份：`delivered` 只说明事件已投递，`verified` 只在观察到
+    /// 具体后置条件（目前是插入光标形态）时为 true，其余一律写“是否命中未验证”。
     static func coordinateText(_ r: CoordinateReport, action: String, detail: String) -> String {
         func flag(_ b: Bool?) -> String { b.map { $0 ? "true" : "false" } ?? "unknown" }
         let secs = String(format: "%.1f", r.elapsed)
         var lines = [
             "已对 pid \(r.pid) 的\(detail) 投递\(action)。",
-            "effect: observed=\(flag(r.observed)) treeChanged=\(flag(r.treeChanged)) "
+            "effect: delivered=\(flag(r.delivered)) verified=\(flag(r.verified)) "
+                + "verifiedBy=\(r.verifiedBy ?? "-") "
+                + "observed=\(flag(r.observed)) treeChanged=\(flag(r.treeChanged)) "
                 + "screenshotChanged=\(flag(r.screenshotChanged)) "
                 + "diffRatio=\(r.diffRatio.map { String(format: "%.4f", $0) } ?? "unknown") "
                 + "geometryChanged=\(flag(r.geometryChanged)) "
                 + "noOpSuspected=\(flag(r.noOpSuspected)) elapsed=\(secs)s",
         ]
+        if r.verified {
+            switch r.verifiedBy {
+            case "caret_pixels":
+                lines.append("已验证：落点所在文本行出现了插入光标形态的像素变化（启发式判据，未读取焦点）。")
+            default:
+                lines.append("已验证：观察到后置条件 \(r.verifiedBy ?? "未知")。")
+            }
+        } else {
+            lines.append("是否命中未验证：只确认事件已投递；没有观察到光标、焦点或选中这类后置条件。")
+        }
         if !r.observed {
             lines.append("⚠️ 点击已投递，但事后读不到界面，不知道效果；请用 get_screenshot 核实。")
         } else if r.treeChanged == true {
-            lines.append("界面结构已变化，旧令牌已作废，请重新 get_ax_state。")
+            lines.append(
+                "投递后界面结构发生变化（这不证明命中：也可能来自应用自身刷新或窗口激活），旧令牌已作废，请重新 get_ax_state。")
         } else if r.treeChanged == false, r.screenshotChanged == true {
-            lines.append("AX 树没有变化，但截图检测到像素变化；可能是画布/悬停/局部刷新。")
+            lines.append("AX 树没有变化，但截图检测到像素变化；可能是画布/悬停/局部刷新，同样不证明命中。")
         } else if r.geometryChanged {
             lines.append("⚠️ 点击后窗口位置或缩放变化，截图 diff 不可比；重新 get_screenshot 核实。")
         } else if r.noOpSuspected {
@@ -137,15 +151,24 @@ extension ScuTool {
         let secs = String(format: "%.1f", r.elapsed)
         var lines = [
             "已对 \(name)（pid \(r.pid)）投递\(verb)。",
-            "effect: delivered=\(flag(r.delivered)) observed=\(flag(r.observed)) converged=\(flag(r.converged)) "
+            "effect: delivered=\(flag(r.delivered)) verified=\(flag(r.verified)) "
+                + "verifiedBy=\(r.verifiedBy ?? "-") "
+                + "observed=\(flag(r.observed)) converged=\(flag(r.converged)) "
                 + "treeChanged=\(flag(r.treeChanged)) targetChanged=\(flag(r.targetChanged)) "
                 + "noOpSuspected=\(flag(r.noOpSuspected)) polls=\(r.polls) elapsed=\(secs)s",
         ]
+        if r.verified {
+            let what = r.verifiedBy == "target_changed" ? "目标已不是原来那个" : "目标自身的字段发生变化"
+            lines.append("已验证：\(what)（\(r.verifiedBy ?? "-")）。")
+        } else if r.observed {
+            lines.append("是否命中未验证：只确认事件已投递；没有观察到目标自身的光标、焦点或选中这类后置条件。")
+        }
         if !r.observed {
             lines.append(
                 "⚠️ 动作已投递，但事后读不到界面（\(r.observationError ?? "未知原因")），不知道效果；请用 get_ax_state 确认。")
         } else if r.treeChanged == true {
-            lines.append("界面结构已变化，旧令牌已作废，请重新 get_ax_state。")
+            lines.append(
+                "投递后界面结构发生变化（这不证明命中：也可能来自应用自身刷新），旧令牌已作废，请重新 get_ax_state。")
         } else if r.noOpSuspected == true {
             lines.append(
                 "⚠️ 疑似空操作：界面稳定后结构没有任何变化。也可能动作只改变了无障碍树之外的东西（剪贴板、文件、窗口外状态），"

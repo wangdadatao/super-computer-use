@@ -64,7 +64,7 @@ scu mcp --actions --allow-app-file ~/.config/scu/pi-apps.json
 | `list_apps` | 无 | 每行 `pid<TAB>名称<TAB>bundle id`（无 bundle id 时为 `-`） |
 | `list_windows` | `pid`（必填） | 每行 `#窗口ID<TAB>"标题"<TAB>(x,y,w,h)`（无 ID 时省略 ID 列）；标题缺失为 `-`。只枚举窗口，不激活、不截图 |
 | `get_ax_state` | `pid`（必填）、`max_depth`、`budget_ms`、`max_elements`、`focus`、`focus_role`、`window_id`、`window`、`full` | 读取无障碍树，返回带标签与 `frame` 的文本化元素表；默认只返回与上次读取的差异，`full=true` 返回完整表；`window_id` 优先于 `window` 标题；绑定的窗口同时用于截图与坐标动作 |
-| `get_screenshot` | `token` | 截取令牌对应的目标窗口，叠加标签，返回 PNG、`screenshot_id`、窗口 frame、`window_id` 与 title；需要屏幕录制权限。不改内容，但会激活并 raise 目标窗口 |
+| `get_screenshot` | `token` | 截取令牌对应的目标窗口，叠加标签，返回 PNG、`screenshot_id`、窗口 frame、`window_id` 与 title；需要屏幕录制权限。不改内容，但会激活并 raise 目标窗口。截图**不含鼠标指针** |
 | `launch_app`（仅 `--actions`） | `app` | 启动/激活应用（bundle id、名称或 `.app` 路径）；见下 |
 | `click`（仅 `--actions`） | `token`、`handle` 或 `label`（二选一） | 对目标执行 `AXPress`；见下 |
 | `click_at`（仅 `--actions`） | `token`、`screenshot_id`、`x`、`y` | 在截图坐标投递真实鼠标点击；见下 |
@@ -123,12 +123,14 @@ ScreenCaptureKit 候选；匹配不上就拒绝截图，不会退回可能不匹
 **返回的是观察到的效果，不是"成功"。** 第一行人话；第二行固定格式、可解析：
 
 ```text
-effect: delivered=true observed=true converged=true treeChanged=false targetChanged=false noOpSuspected=true polls=12 elapsed=2.4s
+effect: delivered=true verified=false verifiedBy=- observed=true converged=true treeChanged=false targetChanged=false noOpSuspected=true polls=12 elapsed=2.4s
 ```
 
 | 字段 | 含义 | `unknown` 的情形 |
 | --- | --- | --- |
-| `delivered` | 平台没有报错。**不代表界面已经变化** | 恒为 true（失败时抛错，不返回摘要） |
+| `delivered` | 平台没有报错。**不代表界面已经变化，也不代表命中** | 恒为 true（失败时抛错，不返回摘要） |
+| `verified` | 观察到**具体后置条件**。元素动作看目标自身（`target_changed` / `target_state`）；坐标为 `caret_pixels`（落点所在行出现插入光标形态的像素变化，启发式） | 没有观察到后置条件时恒为 false，报告会明写“是否命中未验证” |
+| `verifiedBy` | 后置条件的种类；`-` 表示没有 | 同上 |
 | `observed` | 事后成功重读过界面 | 重读失败时为 false（动作已投递，不报失败，免得调用方重复点击） |
 | `converged` | 连续一致的重读已足够长（见上面第 5 步的两档次数），且这次读取未被截断 | 上限内一直在变化、或树被截断，则为 false；此时读到的是中间状态或不完整的树 |
 | `treeChanged` | 与动作前相比结构是否变化 | 动作前或动作后的读取被截断，无法比较 |
@@ -141,6 +143,9 @@ effect: delivered=true observed=true converged=true treeChanged=false targetChan
 "疑似空操作"的含义有限：动作只改变了无障碍树之外的东西（剪贴板、文件、窗口外状态）时同样会触发，
 所以它是"请核实"的提示，不是失败判定。
 
+**`treeChanged` 不是成功信号。** 它只说“投递后结构变了”，变化也可能来自应用自身刷新或窗口激活，
+所以它既不置 `verified`，也不再产生“界面结构已变化”这种读起来像成功的提示。
+
 <a id="input_tools"></a>
 
 ### `click_at`
@@ -151,14 +156,18 @@ effect: delivered=true observed=true converged=true treeChanged=false targetChan
 2. `screenshot_id` 必须属于当前令牌，否则 `stale_geometry`。动作前会重新取绑定窗口的几何；
    位置/缩放/尺寸变化时返回 `stale_geometry`，不投递事件。绑定使用截图实际对应的
    `window_id`（取不到时退回标题/frame），不再重新按标题选一次；动作后仍以
-   `geometryChanged` 报告事后变化。
+   `geometryChanged` 报告事后变化。截图不含鼠标指针。
 3. 点击前会激活并 raise 目标窗口，确认它成为 frontmost；失败则**不点击**，避免点到别的应用。
    随后在目标位置显示约 120ms 的蓝色指示环（不在截图里），再投递事件。
 4. 用真实鼠标事件（会移动光标），不是 `CGEvent.postToPid`。
-5. 点击后重读 AX 树，并再截一张图比较全图像素比例：
+5. 前置基线取在**最后一次激活之后、投递之前**：几何复核的截图会激活/raise 目标窗口，
+   它的 AX 变化与窗口外观变化都归入基线，不算这次点击的效果。
+6. 点击后重读 AX 树，并再截一张图比较全图像素比例：
    结构变化 → 令牌作废；树没变但图变了 → `screenshotChanged=true`；
    树和图都没变 → `noOpSuspected=true`；窗口几何变了 → `geometryChanged=true`。
-   全图比例不定位变化区域，也不证明点中了目标；不要重复点。
+7. `verified` 只在落点是文本类元素、且落点所在行出现插入光标形态的窄高像素变化时为 true
+   （`verifiedBy=caret_pixels`）。这是启发式判据，不读取焦点；其余情形一律 `verified=false`，
+   报告明写“是否命中未验证”。全图比例与 token 状态都不证明点中了目标；不要重复点。
 
 设计见 [ADR-0020](../decisions/adr_0020_coordinate_click.md)。
 
@@ -166,13 +175,14 @@ effect: delivered=true observed=true converged=true treeChanged=false targetChan
 
 在截图坐标 `(x,y)` 投递滚轮事件。`dy > 0` 向下，`dx > 0` 向右；增量为 0 返回
 `invalid_coordinates`。与 `click_at` 相同：截图绑定令牌、先激活目标窗口、显示指示环、真实事件；
-滚动后重读 AX 树并比较全图像素比例。设计见 [ADR-0021](../decisions/adr_0021_scroll_and_drag.md)。
+滚动后重读 AX 树并比较全图像素比例。滚动没有可读的命中后置条件，`verified` 恒为 false，
+报告明写“是否命中未验证”。设计见 [ADR-0021](../decisions/adr_0021_scroll_and_drag.md)。
 
 ### `drag`
 
 在截图坐标内从 `(from_x, from_y)` 拖到 `(to_x, to_y)`，`duration_ms` 默认 400。起终点相同或越界
 返回 `invalid_coordinates`；起点与终点会各显示一个指示环。拖拽可能移动文件/列表项，属于高风险动作；没有审批层之前只用于
-低风险、可逆的场景。验证同样是 AX 树 + 全图像素比例。
+低风险、可逆的场景。验证同样是 AX 树 + 全图像素比例，`verified` 恒为 false。
 
 ### `type_text`、`press_key` 与 `set_value`
 

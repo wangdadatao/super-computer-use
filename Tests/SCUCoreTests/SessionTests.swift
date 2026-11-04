@@ -1,5 +1,8 @@
+import CoreGraphics
 import Foundation
+import ImageIO
 import Testing
+import UniformTypeIdentifiers
 
 @testable import SCUCore
 @testable import SCUWire
@@ -22,6 +25,9 @@ final class ScriptedReader: DesktopReader {
     private(set) var captureTitles: [String?] = []
     private(set) var captureWindowIDs: [UInt32?] = []
     var capture: Result<WindowCapture, WireError> = .failure(.unsupportedOperation("没有配置截图"))
+    /// 非空时，每次抓图按顺序取一项，取完后一直返回最后一项。用来模拟“点击后画面出现光标”。
+    var captureScript: [Result<WindowCapture, WireError>] = []
+    private(set) var captureCount = 0
     var action: Result<ActionOutcome, WireError> = .success(.acted)
     private(set) var actionCalls: [(pid: Int32, locator: ElementLocator, action: ActionKind)] = []
     private(set) var actionWindowTitles: [String?] = []
@@ -57,7 +63,9 @@ final class ScriptedReader: DesktopReader {
     func captureWindow(target: Target) throws -> WindowCapture {
         captureWindowIDs.append(target.windowID)
         captureTitles.append(target.windowTitle)
-        return try capture.get()
+        defer { captureCount += 1 }
+        guard !captureScript.isEmpty else { return try capture.get() }
+        return try captureScript[min(captureCount, captureScript.count - 1)].get()
     }
 
     func clickAt(target: Target, x: Double, y: Double) throws -> ActionOutcome {
@@ -409,6 +417,161 @@ final class FakeLauncher: AppLauncher, @unchecked Sendable {
         // 全局结构变了，令牌会失效；但这次动作的效果仍应按绑定窗口判为“没变化”。
         #expect(report.treeChanged == false)
         #expect(report.tokenInvalidated == true)
+    }
+
+    /// 白底窗口图。`caret` 给 (x, top, bottom) 时画一条 1 像素宽的竖线，模拟文本插入光标。
+    /// 坐标用图像左上角为原点（与截图坐标一致）。
+    static func windowPNG(
+        width: Int = 80, height: Int = 60, caret: (x: Int, top: Int, bottom: Int)? = nil
+    ) -> Data {
+        let context = CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        context.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        if let caret {
+            context.setFillColor(CGColor(red: 0, green: 0, blue: 0, alpha: 1))
+            let h = caret.bottom - caret.top
+            context.fill(
+                CGRect(x: caret.x, y: height - caret.bottom, width: 1, height: h))
+        }
+        let image = context.makeImage()!
+        let data = NSMutableData()
+        let destination = CGImageDestinationCreateWithData(
+            data as CFMutableData, UTType.png.identifier as CFString, 1, nil)!
+        CGImageDestinationAddImage(destination, image, nil)
+        CGImageDestinationFinalize(destination)
+        return data as Data
+    }
+
+    static func capture(_ png: Data, width: Int = 80, height: Int = 60) -> WindowCapture {
+        WindowCapture(
+            png: png, width: width, height: height, scale: 1,
+            windowFrame: Rect(x: 0, y: 0, width: Double(width), height: Double(height)),
+            windowID: nil, windowTitle: "主")
+    }
+
+    /// 文本类元素占满窗口的树：坐标点击的前置摘要里能看到“落点在文本上”。
+    static func textWindowTree() -> TreeReading {
+        let textArea = AXNode(
+            role: "AXTextArea", frame: Rect(x: 0, y: 0, width: 80, height: 60))
+        let window = AXNode(
+            role: "AXWindow", title: "主", frame: Rect(x: 0, y: 0, width: 80, height: 60),
+            childCount: 1, children: [textArea])
+        return TreeReading(
+            root: AXNode(role: "AXApplication", childCount: 1, children: [window]),
+            truncated: false)
+    }
+
+    /// 与 textWindowTree 相同，但窗口下多一个节点：让事后摘要与令牌快照不同。
+    static func textWindowTreeWithExtraNode() -> TreeReading {
+        let textArea = AXNode(role: "AXTextArea", frame: Rect(x: 0, y: 0, width: 80, height: 60))
+        let extra = AXNode(
+            role: "AXButton", title: "新", frame: Rect(x: 0, y: 50, width: 10, height: 10))
+        let window = AXNode(
+            role: "AXWindow", title: "主", frame: Rect(x: 0, y: 0, width: 80, height: 60),
+            childCount: 2, children: [textArea, extra])
+        return TreeReading(
+            root: AXNode(role: "AXApplication", childCount: 1, children: [window]),
+            truncated: false)
+    }
+
+    @Test func coordinateClickWithoutAPostconditionIsNotVerified() throws {
+        let r = ScriptedReader()
+        let s = DesktopSession(reader: r, settle: Clock().settle)
+        r.tree = Self.textWindowTree()
+        let a = try read(s)
+        let blank = Self.windowPNG()
+        // 截图、几何复核、事后观察三次都用同一张空白图：画面没有变化。
+        r.captureScript = [.success(Self.capture(blank))]
+        let shot = try s.captureScreenshot(token: a.token.value)
+        let report = try s.clickAt(token: a.token.value, screenshotID: shot.id, x: 40, y: 20)
+        #expect(report.delivered)
+        #expect(!report.verified)
+        #expect(report.verifiedBy == nil)
+        #expect(report.treeChanged == false)
+        #expect(report.screenshotChanged == false)
+    }
+
+    @Test func coordinateClickReportsCaretAsVerified() throws {
+        let r = ScriptedReader()
+        let s = DesktopSession(reader: r, settle: Clock().settle)
+        r.tree = Self.textWindowTree()
+        let a = try read(s)
+        let blank = Self.windowPNG()
+        let withCaret = Self.windowPNG(caret: (x: 40, top: 13, bottom: 27))
+        // 截图与几何复核用空白图；事后观察时落点所在行出现光标形态的竖线。
+        r.captureScript = [
+            .success(Self.capture(blank)), .success(Self.capture(blank)),
+            .success(Self.capture(withCaret)),
+        ]
+        let shot = try s.captureScreenshot(token: a.token.value)
+        let report = try s.clickAt(token: a.token.value, screenshotID: shot.id, x: 40, y: 20)
+        #expect(report.delivered)
+        #expect(report.verified)
+        #expect(report.verifiedBy == "caret_pixels")
+        #expect(report.screenshotChanged == true)
+    }
+
+    /// A2：投递前重取的前置摘要把“激活造成的树变化”算进基线，不算成点击的效果。
+    @Test func treeChangeBeforeDeliveryIsNotCountedAsTheClickEffect() throws {
+        let r = ScriptedReader()
+        let s = DesktopSession(reader: r, settle: Clock().settle)
+        r.tree = Self.textWindowTree()
+        let a = try read(s)
+        // 令牌快照之后、投递之前树变了（例如窗口激活后出现了一个新节点），
+        // 点击本身没有造成变化：事后读取与前置基线一致。
+        let after = Self.textWindowTree()
+        r.script = [.success(a.reading), .success(after), .success(after)]
+        r.captureScript = [.success(Self.capture(Self.windowPNG()))]
+        let shot = try s.captureScreenshot(token: a.token.value)
+        let report = try s.clickAt(token: a.token.value, screenshotID: shot.id, x: 40, y: 20)
+        #expect(report.treeChanged == false)
+        #expect(!report.verified)
+    }
+
+    /// A2 降级路径：基线读取抛错时结构变化是 unknown，不得退回激活前的令牌快照。
+    @Test func unreadableBaselineLeavesTreeChangeUnknown() throws {
+        let r = ScriptedReader()
+        let s = DesktopSession(reader: r, settle: Clock().settle)
+        r.tree = Self.textWindowTree()
+        let a = try read(s)
+        // 事后读取比令牌快照多一个节点（令牌会失效）；基线那次读取抛错。
+        r.script = [
+            .success(a.reading),
+            .failure(.platformUnavailable("基线读取失败")),
+            .success(Self.textWindowTreeWithExtraNode()),
+        ]
+        r.captureScript = [.success(Self.capture(Self.windowPNG()))]
+        let shot = try s.captureScreenshot(token: a.token.value)
+        let report = try s.clickAt(token: a.token.value, screenshotID: shot.id, x: 40, y: 20)
+        #expect(report.delivered)
+        #expect(!report.verified)
+        #expect(report.tokenInvalidated)
+        #expect(report.treeChanged == nil)
+        #expect(report.noOpSuspected != true)
+    }
+
+    /// 同上，但基线读取成功而树被截断：截断的基线也是 unknown。
+    @Test func truncatedBaselineLeavesTreeChangeUnknown() throws {
+        let r = ScriptedReader()
+        let s = DesktopSession(reader: r, settle: Clock().settle)
+        r.tree = Self.textWindowTree()
+        let a = try read(s)
+        r.script = [
+            .success(a.reading),
+            .success(TreeReading(root: Self.textWindowTree().root, truncated: true)),
+            .success(Self.textWindowTreeWithExtraNode()),
+        ]
+        r.captureScript = [.success(Self.capture(Self.windowPNG()))]
+        let shot = try s.captureScreenshot(token: a.token.value)
+        let report = try s.clickAt(token: a.token.value, screenshotID: shot.id, x: 40, y: 20)
+        #expect(report.delivered)
+        #expect(!report.verified)
+        #expect(report.tokenInvalidated)
+        #expect(report.treeChanged == nil)
+        #expect(report.noOpSuspected != true)
     }
 
     @Test func screenshotLabelsAreClippedToTheCapturedWindow() throws {

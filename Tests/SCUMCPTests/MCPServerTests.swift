@@ -595,7 +595,9 @@ final class FakeAppLauncher: AppLauncher, @unchecked Sendable {
         let r = t.callTool(s, "click", ["token": .string(tok), "handle": 2])
         #expect(!r.isError)
         #expect(r.text.contains("AXButton#2"))
-        #expect(r.text.contains("effect: delivered=true observed=true converged=true treeChanged=false"))
+        #expect(
+            r.text.contains(
+                "effect: delivered=true verified=false verifiedBy=- observed=true converged=true treeChanged=false"))
         #expect(r.text.contains("疑似空操作"))
         #expect(reader.actionCalls.count == 1)
         #expect(reader.actionCalls[0].locator.target.title == "确定")
@@ -780,6 +782,9 @@ final class FakeAppLauncher: AppLauncher, @unchecked Sendable {
             ])
         #expect(!r.isError)
         #expect(r.text.contains("截图坐标 (40, 60)"))
+        #expect(r.text.contains("effect: delivered=true verified=false verifiedBy=-"))
+        #expect(r.text.contains("是否命中未验证"))
+        #expect(!r.text.contains("界面结构已变化"))
         #expect(reader.coordinateClicks.count == 1)
         // 图像坐标 → 全局点：(100 + 40/2, 200 + 60/2)
         #expect(reader.coordinateClicks[0].pid == 42)

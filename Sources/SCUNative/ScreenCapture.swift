@@ -110,6 +110,9 @@ enum ScreenCapture {
         config.width = width
         config.height = height
         config.ignoreShadowsSingleWindow = true
+        // 不把鼠标指针画进截图：它会盖住落点处的插入光标（坐标点击的命中判据），
+        // 也会让两次截图的 diff 里凭空多出指针形状的变化。
+        config.showsCursor = false
         config.capturesAudio = false
         config.pixelFormat = kCVPixelFormatType_32BGRA
 
