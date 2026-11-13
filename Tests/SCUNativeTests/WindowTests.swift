@@ -65,4 +65,19 @@ import Testing
                 Rect(x: 0, y: 0, width: 1, height: 1),
             ]) == 1)
     }
+
+    /// ID 与标题同时给：两种身份判定，拒绝，不让 ID 静默胜出。
+    @Test func conflictingWindowTargetIsRejected() {
+        let target = Target(pid: 7, windowID: 12, windowTitle: "收件箱")
+        let error = #expect(throws: WireError.self) { try AXBackend.validateTarget(target) }
+        #expect(error?.code == "conflicting_target")
+        #expect(error?.retry == "no")
+    }
+
+    /// 合法的三种写法各自过关：只有 ID、只有标题、ID + 线索。
+    @Test func nonConflictingWindowTargetsPass() throws {
+        try AXBackend.validateTarget(Target(pid: 7, windowID: 12))
+        try AXBackend.validateTarget(Target(pid: 7, windowTitle: "收件箱"))
+        try AXBackend.validateTarget(Target.forWindow(pid: 7, windowID: 12, titleHint: "收件箱"))
+    }
 }

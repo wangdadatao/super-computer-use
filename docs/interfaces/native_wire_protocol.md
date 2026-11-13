@@ -176,7 +176,7 @@ agent 侧的会话 API 见[协议总览](protocol_overview.md)，两者是不同
 补齐时需同步本文与实现。
 
 原生层在本边界上产生的错误码：`system_permission_missing`、`target_missing`、
-`protocol_version_mismatch`、`window_not_found`、`internal_error`，以及 `AXPress` 失败时的 `unsupported_operation`
+`protocol_version_mismatch`、`window_not_found`、`conflicting_target`、`internal_error`，以及 `AXPress` 失败时的 `unsupported_operation`
 （平台报动作不支持、属性不支持或未实现）与 `action_failed`（其余平台错误，含 `apiDisabled`）。`platform_unavailable` 由协议层在
 **读请求连接失败、对端消失，或动作请求尚未完整写出**时本地生成，不经线路传输；
 `action_outcome_unknown` 由协议层在**动作请求已完整写出、但应答前发生超时/断开/通信失败/帧错位**时本地生成。

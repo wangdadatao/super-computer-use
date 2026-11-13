@@ -82,3 +82,10 @@ ADR-0026 做了显式窗口选择，但只绑定了截图与坐标动作：元�
 - [ADR-0018 标签寻址](adr_0018_label_addressing.md)
 - [原生层线协议](../interfaces/native_wire_protocol.md)
 - [MCP 接入面](../interfaces/mcp_surface.md)
+
+## 补记（T-018，0.5.2）
+
+ADR-0031 之后 ID 优先、标题被静默忽略，等于两种身份判定同时给时由实现替调用方挑一个。
+0.5.2 起改为 **同时给 ID 与标题 → `conflicting_target`**：ID 与标题不再共存于 `windowTitle`，
+标题只作诊断线索（`Target.titleHint`，不上线）。既要有 ID 又要有标题的调用点统一改用
+`Target.forWindow(pid:windowID:titleHint:)`。见[错误码表](../interfaces/error_taxonomy.md#error_codes)。

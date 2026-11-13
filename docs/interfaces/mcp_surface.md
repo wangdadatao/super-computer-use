@@ -87,7 +87,8 @@ ScreenCaptureKit 候选；匹配不上就拒绝截图，不会退回可能不匹
 `window`（精确标题）：此时**元素表从该窗口子树开始读取**，句柄路径、标签都以窗口为根；
 之后 `get_screenshot` / `click_at` / `scroll_at` / `drag` 也使用该窗口，`click` / `type_text` /
 `press_key` / `set_value` 同样用令牌上的窗口 ID 定位。窗口关闭或重建后，旧令牌的动作在开始前返回
-`window_not_found`，不会退回应用根去点别的窗口。
+`window_not_found`，不会退回应用根去点别的窗口。`window_id` 与 `window` 同时给返回
+`conflicting_target`：ID 与标题是两种身份判定，不静默取其一。
 
 窗口 ID 是 `CGWindowID`，在窗口生命周期内稳定；标题只是可读线索，同名窗口仍可能重复。
 无标题窗口、同名窗口应优先用 `window_id`。窗口相关请求统一带 `target`，原生层为此升到**线协议 v12**；
@@ -368,6 +369,7 @@ Removed element IDs: 12-15, 20（旧快照句柄，不可用于动作）
 | `app_not_found` | 用 bundle id、显示名或完整 `.app` 路径重试 |
 | `app_not_authorized` | 让用户把应用加入 `--allow-app` / `--allow-app-file` 并重启服务；不要换相近应用重试 |
 | `window_not_found` | 重新 `list_windows`，用仍存在的 `window_id` 绑定；没有 ID 时才用标题 |
+| `conflicting_target` | `window_id` 与 `window` 只给一个；两者同时给时协议不会替你挑 |
 | `click_at` 的 `noOpSuspected` | 树与图都没变；不要重复点，必要时让用户核实 |
 | `target_switched` | 令牌属于之前读取的另一个应用，对要操作的应用重新读取 |
 | `unsupported_operation` | 该元素不支持这个动作（不能点击、不接受焦点、或不认识键名）；可尝试父元素、子元素或改换方式 |
