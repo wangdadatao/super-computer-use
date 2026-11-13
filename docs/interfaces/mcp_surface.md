@@ -63,7 +63,7 @@ scu mcp --actions --allow-app-file ~/.config/scu/pi-apps.json
 | `check_permissions` | 无 | 报告启动本服务的宿主是否有辅助功能权限。权限未授予不算工具错误，是对状态的如实报告 |
 | `list_apps` | 无 | 每行 `pid<TAB>名称<TAB>bundle id`（无 bundle id 时为 `-`） |
 | `list_windows` | `pid`（必填） | 每行 `#窗口ID<TAB>"标题"<TAB>(x,y,w,h)`（无 ID 时省略 ID 列）；标题缺失为 `-`。只枚举窗口，不激活、不截图 |
-| `get_ax_state` | `pid`（必填）、`max_depth`、`budget_ms`、`max_elements`、`focus`、`focus_role`、`window_id`、`window`、`full` | 读取无障碍树，返回带标签与 `frame` 的文本化元素表；默认只返回与上次读取的差异，`full=true` 返回完整表；`window_id` 优先于 `window` 标题；绑定的窗口同时用于截图与坐标动作 |
+| `get_ax_state` | `pid`（必填）、`max_depth`、`budget_ms`、`max_elements`、`focus`、`focus_role`、`window_id`、`window`、`full` | 读取无障碍树，返回带标签与 `frame` 的文本化元素表；默认只返回与上次读取的差异，`full=true` 返回完整表；`window_id` 与 `window` 标题二选一，同时给返回 `conflicting_target`；绑定的窗口同时用于截图与坐标动作 |
 | `get_screenshot` | `token` | 截取令牌对应的目标窗口，叠加标签，返回 PNG、`screenshot_id`、窗口 frame、`window_id` 与 title；需要屏幕录制权限。不改内容，但会激活并 raise 目标窗口。截图**不含鼠标指针** |
 | `launch_app`（仅 `--actions`） | `app` | 启动/激活应用（bundle id、名称或 `.app` 路径）；见下 |
 | `click`（仅 `--actions`） | `token`、`handle` 或 `label`（二选一） | 对目标执行 `AXPress`；见下 |

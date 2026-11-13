@@ -167,7 +167,7 @@ extension ScuTool {
                     ],
                     "window_id": [
                         "type": "integer", "minimum": 1,
-                        "description": "窗口 ID（list_windows 返回，优先于 window 标题）；用于同名/无标题窗口",
+                        "description": "窗口 ID（list_windows 返回，与 window 标题二选一，同时给返回 conflicting_target）；用于同名/无标题窗口",
                     ],
                     "full": [
                         "type": "boolean",

@@ -128,7 +128,7 @@ extension ScuTool {
                 读取指定应用的无障碍树，返回文本化元素表。只读，不会操作应用。\
                 默认返回与上一次读取的差异（~ 变化，+ 新增，删除项用旧句柄范围概括）；\
                 首次读取、切换目标、树被截断或读取参数变化时返回完整表。需要完整表时传 full=true。\
-                可用 window_id 指定窗口 ID（优先），或用 window 指定窗口标题；此时元素表以该窗口为根读取，\
+                可用 window_id 指定窗口 ID，或用 window 指定窗口标题（二选一，同时给返回 conflicting_target）；此时元素表以该窗口为根读取，\
                 截图与坐标动作也绑定该窗口。窗口 ID/标题来自 list_windows；找不到会返回 window_not_found。\
                 每行一个元素，缩进表示层级，格式 [a] [角色#句柄] "标题" 属性… frame=(x,y,w,h)。\
                 可交互元素前的 [a] 是本次快照的标签；click / type_text / press_key / set_value 可以用 label 代替 handle。\
