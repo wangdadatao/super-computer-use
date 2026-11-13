@@ -405,6 +405,32 @@ struct ToolReply: Equatable {
         #expect(reader.treeCalls[2].pid == 44)
     }
 
+    @Test func conflictingWindowIDAndTitleIsRejectedBeforeReading() {
+        let r = callTool(
+            server, "get_ax_state",
+            ["pid": 42, "window_id": 7, "window": "主窗口"])
+        #expect(r.isError)
+        #expect(r.text.hasPrefix("[conflicting_target]"))
+        #expect(reader.treeCalls.isEmpty)
+    }
+
+    @Test func windowIDAndTitleBindOnlyTheGivenSide() {
+        let s = server
+        _ = callTool(s, "get_ax_state", ["pid": 42, "window_id": 7])
+        #expect(reader.treeWindowIDs.count == 1 && reader.treeWindowIDs[0] == 7)
+        #expect(reader.treeWindowTitles.count == 1 && reader.treeWindowTitles[0] == nil)
+
+        _ = callTool(s, "get_ax_state", ["pid": 42, "window": "主窗口"])
+        #expect(reader.treeWindowIDs.count == 2 && reader.treeWindowIDs[1] == nil)
+        #expect(reader.treeWindowTitles.count == 2 && reader.treeWindowTitles[1] == "主窗口")
+
+        // 空串等价于未给出，不算冲突。
+        let empty = callTool(s, "get_ax_state", ["pid": 42, "window_id": 8, "window": ""])
+        #expect(!empty.isError)
+        #expect(reader.treeWindowIDs.count == 3 && reader.treeWindowIDs[2] == 8)
+        #expect(reader.treeWindowTitles.count == 3 && reader.treeWindowTitles[2] == nil)
+    }
+
     @Test func invalidArgumentsAreToolErrorsAndNeverReachTheReader() {
         let s = server
         let cases: [JSONValue?] = [

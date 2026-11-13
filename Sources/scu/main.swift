@@ -187,6 +187,7 @@ func run(command: String, args: [String]) throws {
     var budgetMs = scuDefaultTreeBudgetMs
     var windowID: UInt32?
     var windowTitle: String?
+    var windowTarget: Target?
     if command == "dump" || command == "identity" {
         guard let pidText = option("--pid", in: args), let p = Int32(pidText) else {
             throw usage("缺少或无效的 --pid")
@@ -208,6 +209,9 @@ func run(command: String, args: [String]) throws {
             guard !window.isEmpty else { throw usage("--window 不能为空") }
             windowTitle = window
         }
+        // ID 与标题同时给是两种身份判定：在拉起 sidecar 之前拒绝，不触达原生层。
+        windowTarget = try Target.forRequest(
+            pid: pid, windowID: windowID, windowTitle: windowTitle)
     } else if command == "windows" {
         guard let pidText = option("--pid", in: args), let p = Int32(pidText) else {
             throw usage("缺少或无效的 --pid")
@@ -252,10 +256,11 @@ func run(command: String, args: [String]) throws {
         }
 
     case "identity":
+        guard let windowTarget else { throw CLIExit(code: 1, message: "内部错误：缺少窗口目标") }
         guard
             case .tree(let root, let truncated) = try client.call(
                 .dumpTree(
-                    target: Target.forWindow(pid: pid, windowID: windowID, titleHint: windowTitle),
+                    target: windowTarget,
                     maxDepth: depth, budgetMs: budgetMs),
                 timeoutMs: treeTimeoutMs(budgetMs))
         else {
@@ -287,10 +292,11 @@ func run(command: String, args: [String]) throws {
             Data("深度上限 \(depth)：更深的节点未读取，分布只覆盖已读取部分。\n".utf8))
 
     default:  // dump
+        guard let windowTarget else { throw CLIExit(code: 1, message: "内部错误：缺少窗口目标") }
         guard
             case .tree(let root, let truncated) = try client.call(
                 .dumpTree(
-                    target: Target.forWindow(pid: pid, windowID: windowID, titleHint: windowTitle),
+                    target: windowTarget,
                     maxDepth: depth, budgetMs: budgetMs),
                 timeoutMs: treeTimeoutMs(budgetMs))
         else {

@@ -14,7 +14,9 @@ extension DesktopSession {
         pid: Int32, maxDepth: Int, budgetMs: Int, windowID: UInt32? = nil,
         windowTitle: String? = nil
     ) throws -> SessionState {
-        let target = Target.forWindow(pid: pid, windowID: windowID, titleHint: windowTitle)
+        // 入口层先绑定：ID 与标题同时给是两种身份判定，在触达 reader 之前拒绝。
+        let target = try Target.forRequest(
+            pid: pid, windowID: windowID, windowTitle: windowTitle)
         // 受限连接必须在读树之前确认应用身份，避免先读到数据再拒绝。
         let knownIdentity: Identity?
         if appAuthorization.isRestricted {

@@ -230,6 +230,18 @@ public struct Target: Codable, Sendable, Equatable, Hashable {
         return Target(pid: pid, windowID: windowID, titleHint: titleHint)
     }
 
+    /// 入口层绑定：`windowID` 与 `windowTitle` 是两种身份判定，同时给出时拒绝
+    /// （`conflicting_target`），不做“ID 静默胜出”。标题只作线索的写法走
+    /// `forWindow(pid:windowID:titleHint:)`。
+    public static func forRequest(
+        pid: Int32, windowID: UInt32?, windowTitle: String?
+    ) throws -> Target {
+        if let windowID, let windowTitle {
+            throw WireError.conflictingTarget(pid: pid, windowID: windowID, title: windowTitle)
+        }
+        return forWindow(pid: pid, windowID: windowID, titleHint: windowTitle)
+    }
+
     private enum CodingKeys: String, CodingKey { case pid, windowID, windowTitle }
 }
 
