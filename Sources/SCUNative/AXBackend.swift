@@ -61,10 +61,20 @@ public enum AXBackend {
         return match.element
     }
 
+    /// 目标自检：窗口 ID 与标题同时给出等于两种身份判定，拒绝而不是让 ID 静默胜出。
+    /// 只给 ID、标题作线索的写法是 `Target.forWindow`（标题落在 `titleHint`）。
+    // @project-doc docs/interfaces/error_taxonomy.md#error_structure
+    static func validateTarget(_ target: Target) throws {
+        if let windowID = target.windowID, let title = target.windowTitle {
+            throw WireError.conflictingTarget(pid: target.pid, windowID: windowID, title: title)
+        }
+    }
+
     /// 元素定位的根：默认应用根；指定窗口时以该窗口为根。
-    /// 窗口 ID 优先于标题；两者都没有时使用应用根。
+    /// 窗口 ID 优先于标题；两者都没有时使用应用根。两者同时给出是错误（`conflicting_target`）。
     // @project-doc docs/decisions/adr_0027_window_root_locator.md#window_root_locator
     static func rootElement(target: Target) throws -> AXUIElement {
+        try validateTarget(target)
         if let windowID = target.windowID {
             return try windowElement(pid: target.pid, windowID: windowID)
         }

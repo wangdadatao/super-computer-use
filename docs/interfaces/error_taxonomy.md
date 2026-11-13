@@ -66,6 +66,7 @@ interface ScuError {
 **`code` 是唯一的分支依据。** 协议保证 `code` 的稳定性和语义；
 `message` 的措辞可能随时调整，解析它是未定义行为。
 
+<a id="error_codes"></a>
 ## 错误码表
 
 | code | layer | retry | 含义 |
@@ -79,6 +80,7 @@ interface ScuError {
 | `app_not_found` | protocol | `no` | 启动/解析时找不到应用；v2 新增 |
 | `app_not_authorized` | policy | `no` | 应用不在本次连接的允许列表里；v2 新增，见 [ADR-0024](../decisions/adr_0024_app_authorization.md) |
 | `window_not_found` | protocol | `after_refresh` | 指定的窗口 ID 或标题不存在、已变化或窗口已重建（读取、截图、坐标动作与元素动作都可能返回）；v2 新增，见 [ADR-0026](../decisions/adr_0026_window_selection.md)、[ADR-0027](../decisions/adr_0027_window_root_locator.md)、[ADR-0031](../decisions/adr_0031_window_identity.md) |
+| `conflicting_target` | protocol | `no` | 目标同时给了窗口 ID 与标题，无法判定按哪个绑定；协议不替调用方挑一个。标题只作线索的写法是 `Target.forWindow`，见 [ADR-0027](../decisions/adr_0027_window_root_locator.md#window_root_locator) |
 | `ambiguous_reference` | protocol | `after_disambiguation` | **目标**引用歧义（同名应用 / 同 URL 标签页），携带 `candidates` |
 | `unsupported_operation` | protocol | `no` | 元素或参数不支持该操作（如不可写元素设值、元素不接受焦点、不认识的键名） |
 | `policy_denied` | policy | `no` | 命中拒绝类目，不可协商 |
@@ -93,7 +95,7 @@ interface ScuError {
 | `protocol_version_mismatch` | boundary | `no` | 两侧协议版本不一致 |
 | `internal_error` | boundary | `immediate` | 未归类的内部故障 |
 
-**当前实际发出的码**：`stale_snapshot`、`stale_geometry`、`invalid_coordinates`、`app_not_found`、`app_not_authorized`、`window_not_found`、`target_switched`、`element_gone`、
+**当前实际发出的码**：`stale_snapshot`、`stale_geometry`、`invalid_coordinates`、`app_not_found`、`app_not_authorized`、`window_not_found`、`conflicting_target`、`target_switched`、`element_gone`、
 `unsupported_operation`、`policy_denied`、`system_permission_missing`、`target_missing`、`platform_unavailable`、
 `action_outcome_unknown`、`action_failed`、`protocol_version_mismatch`、`internal_error`。
 `ambiguous_reference`、`authorization_*`、`confirmation_*` 是设计目标，尚无构造它们的代码（目标歧义、逐次审批未实现）。

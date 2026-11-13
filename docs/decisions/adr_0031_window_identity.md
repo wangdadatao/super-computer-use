@@ -71,7 +71,8 @@ CoreGraphics 的窗口号是公开契约。
 ## 后果
 
 - 线协议 v12：所有窗口相关请求带 `target`；`list_windows`、`WindowCapture` 带 `windowID`；
-- MCP `get_ax_state` 增加 `window_id`，优先于 `window` 标题；
+- MCP `get_ax_state` 增加 `window_id`，优先于 `window` 标题（2026-11-13 起改为：两者同时给出返回
+  `conflicting_target`，不再静默取 ID，见 [ADR-0027](adr_0027_window_root_locator.md)）；
 - `get_screenshot` 输出 `window_id`，坐标动作绑定实际截图窗口；
 - 新增 `Target`、`WindowInfo.windowID`、`WindowCapture.windowID` 与匹配测试；
 - 已知限制：AX/CG 匹配不唯一时无 ID；同名窗口仍可能回退到标题；窗口重建后 ID 改变；

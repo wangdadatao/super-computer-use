@@ -17,6 +17,7 @@ enum WindowActivation {
     }
 
     /// 激活目标窗口。`target.windowID` 优先，其次标题，最后是默认的“最大非最小化窗口”。
+    /// ID 与标题同时给出是错误（`conflicting_target`），与元素读取共用同一个自检。
     /// 找不到显式指定的窗口时失败，不退回另一个窗口。
     ///
     /// 每次都完整执行 `activate` + `AXRaise`：只在前台标志上“已经是它”不够——窗口可能被
@@ -24,6 +25,7 @@ enum WindowActivation {
     /// 应用上。激活造成的 AX 变化不再污染基线：基线改在最后一次激活之后采（A2）。
     @discardableResult
     static func activate(target: Target) throws -> ActivatedWindow {
+        try AXBackend.validateTarget(target)
         guard let app = NSRunningApplication(processIdentifier: target.pid) else {
             throw WireError.targetMissing(pid: target.pid)
         }

@@ -63,7 +63,7 @@ scu mcp --actions --allow-app-file ~/.config/scu/pi-apps.json
 | `check_permissions` | 无 | 报告启动本服务的宿主是否有辅助功能权限。权限未授予不算工具错误，是对状态的如实报告 |
 | `list_apps` | 无 | 每行 `pid<TAB>名称<TAB>bundle id`（无 bundle id 时为 `-`） |
 | `list_windows` | `pid`（必填） | 每行 `#窗口ID<TAB>"标题"<TAB>(x,y,w,h)`（无 ID 时省略 ID 列）；标题缺失为 `-`。只枚举窗口，不激活、不截图 |
-| `get_ax_state` | `pid`（必填）、`max_depth`、`budget_ms`、`max_elements`、`focus`、`focus_role`、`window_id`、`window`、`full` | 读取无障碍树，返回带标签与 `frame` 的文本化元素表；默认只返回与上次读取的差异，`full=true` 返回完整表；`window_id` 优先于 `window` 标题；绑定的窗口同时用于截图与坐标动作 |
+| `get_ax_state` | `pid`（必填）、`max_depth`、`budget_ms`、`max_elements`、`focus`、`focus_role`、`window_id`、`window`、`full` | 读取无障碍树，返回带标签与 `frame` 的文本化元素表；默认只返回与上次读取的差异，`full=true` 返回完整表；`window_id` 与 `window` 标题二选一，同时给返回 `conflicting_target`；绑定的窗口同时用于截图与坐标动作 |
 | `get_screenshot` | `token` | 截取令牌对应的目标窗口，叠加标签，返回 PNG、`screenshot_id`、窗口 frame、`window_id` 与 title；需要屏幕录制权限。不改内容，但会激活并 raise 目标窗口。截图**不含鼠标指针** |
 | `launch_app`（仅 `--actions`） | `app` | 启动/激活应用（bundle id、名称或 `.app` 路径）；见下 |
 | `click`（仅 `--actions`） | `token`、`handle` 或 `label`（二选一） | 对目标执行 `AXPress`；见下 |
@@ -87,7 +87,8 @@ ScreenCaptureKit 候选；匹配不上就拒绝截图，不会退回可能不匹
 `window`（精确标题）：此时**元素表从该窗口子树开始读取**，句柄路径、标签都以窗口为根；
 之后 `get_screenshot` / `click_at` / `scroll_at` / `drag` 也使用该窗口，`click` / `type_text` /
 `press_key` / `set_value` 同样用令牌上的窗口 ID 定位。窗口关闭或重建后，旧令牌的动作在开始前返回
-`window_not_found`，不会退回应用根去点别的窗口。
+`window_not_found`，不会退回应用根去点别的窗口。`window_id` 与 `window` 同时给返回
+`conflicting_target`：ID 与标题是两种身份判定，不静默取其一。
 
 窗口 ID 是 `CGWindowID`，在窗口生命周期内稳定；标题只是可读线索，同名窗口仍可能重复。
 无标题窗口、同名窗口应优先用 `window_id`。窗口相关请求统一带 `target`，原生层为此升到**线协议 v12**；
@@ -368,6 +369,7 @@ Removed element IDs: 12-15, 20（旧快照句柄，不可用于动作）
 | `app_not_found` | 用 bundle id、显示名或完整 `.app` 路径重试 |
 | `app_not_authorized` | 让用户把应用加入 `--allow-app` / `--allow-app-file` 并重启服务；不要换相近应用重试 |
 | `window_not_found` | 重新 `list_windows`，用仍存在的 `window_id` 绑定；没有 ID 时才用标题 |
+| `conflicting_target` | `window_id` 与 `window` 只给一个；两者同时给时协议不会替你挑 |
 | `click_at` 的 `noOpSuspected` | 树与图都没变；不要重复点，必要时让用户核实 |
 | `target_switched` | 令牌属于之前读取的另一个应用，对要操作的应用重新读取 |
 | `unsupported_operation` | 该元素不支持这个动作（不能点击、不接受焦点、或不认识键名）；可尝试父元素、子元素或改换方式 |
