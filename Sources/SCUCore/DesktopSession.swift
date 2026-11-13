@@ -137,7 +137,7 @@ public final class DesktopSession {
         }
 
         var target: Target {
-            Target(pid: pid, windowID: windowID, windowTitle: windowTitle)
+            Target.forWindow(pid: pid, windowID: windowID, titleHint: windowTitle)
         }
     }
 

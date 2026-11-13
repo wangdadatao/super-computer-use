@@ -255,7 +255,7 @@ func run(command: String, args: [String]) throws {
         guard
             case .tree(let root, let truncated) = try client.call(
                 .dumpTree(
-                    target: Target(pid: pid, windowID: windowID, windowTitle: windowTitle),
+                    target: Target.forWindow(pid: pid, windowID: windowID, titleHint: windowTitle),
                     maxDepth: depth, budgetMs: budgetMs),
                 timeoutMs: treeTimeoutMs(budgetMs))
         else {
@@ -290,7 +290,7 @@ func run(command: String, args: [String]) throws {
         guard
             case .tree(let root, let truncated) = try client.call(
                 .dumpTree(
-                    target: Target(pid: pid, windowID: windowID, windowTitle: windowTitle),
+                    target: Target.forWindow(pid: pid, windowID: windowID, titleHint: windowTitle),
                     maxDepth: depth, budgetMs: budgetMs),
                 timeoutMs: treeTimeoutMs(budgetMs))
         else {

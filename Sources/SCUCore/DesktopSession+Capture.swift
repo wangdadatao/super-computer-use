@@ -83,7 +83,7 @@ extension DesktopSession {
     /// 返回这一次的截图：它发生在最后一次激活之后，可以当像素基线用。
     @discardableResult
     func validateCoordinateWindow(_ binding: ScreenshotBinding, pid: Int32) throws -> WindowCapture {
-        let target = Target(pid: pid, windowID: binding.windowID, windowTitle: binding.windowTitle)
+        let target = Target.forWindow(pid: pid, windowID: binding.windowID, titleHint: binding.windowTitle)
         let current = try reader.captureWindow(target: target)
         guard current.windowFrame == binding.windowFrame, current.scale == binding.scale,
             current.width == binding.width, current.height == binding.height,
@@ -257,7 +257,7 @@ extension DesktopSession {
             // 没进选区判据的原因照实报（例如“落点不在文本控件内”），好核对走了哪条判据。
             verifiedNote = note
         }
-        let boundTarget = Target(pid: r.pid, windowID: binding.windowID, windowTitle: binding.windowTitle)
+        let boundTarget = Target.forWindow(pid: r.pid, windowID: binding.windowID, titleHint: binding.windowTitle)
         if let after = try? reader.captureWindow(target: boundTarget) {
             if after.width != binding.width || after.height != binding.height
                 || after.windowFrame != binding.windowFrame || after.scale != binding.scale
@@ -327,7 +327,7 @@ extension DesktopSession {
         let baseline = coordinateBaseline(r: r, snap: snap, binding: binding, capture: capture)
         let start = Date()
         let point = globalPoint(x: x, y: y, binding: binding)
-        let boundTarget = Target(pid: r.pid, windowID: binding.windowID, windowTitle: binding.windowTitle)
+        let boundTarget = Target.forWindow(pid: r.pid, windowID: binding.windowID, titleHint: binding.windowTitle)
         let probe = try performCoordinate(token: token) {
             try reader.clickAt(target: boundTarget, x: point.x, y: point.y)
         }
@@ -349,7 +349,7 @@ extension DesktopSession {
         let baseline = coordinateBaseline(r: r, snap: snap, binding: binding, capture: capture)
         let start = Date()
         let point = globalPoint(x: x, y: y, binding: binding)
-        let boundTarget = Target(pid: r.pid, windowID: binding.windowID, windowTitle: binding.windowTitle)
+        let boundTarget = Target.forWindow(pid: r.pid, windowID: binding.windowID, titleHint: binding.windowTitle)
         try performCoordinate(token: token) {
             _ = try reader.scrollAt(
                 target: boundTarget, x: point.x, y: point.y, dx: dx, dy: dy)
@@ -376,7 +376,7 @@ extension DesktopSession {
         let start = Date()
         let from = globalPoint(x: fromX, y: fromY, binding: binding)
         let to = globalPoint(x: toX, y: toY, binding: binding)
-        let boundTarget = Target(pid: r.pid, windowID: binding.windowID, windowTitle: binding.windowTitle)
+        let boundTarget = Target.forWindow(pid: r.pid, windowID: binding.windowID, titleHint: binding.windowTitle)
         try performCoordinate(token: token) {
             _ = try reader.dragAt(
                 target: boundTarget, fromX: from.x, fromY: from.y, toX: to.x, toY: to.y,

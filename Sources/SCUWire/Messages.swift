@@ -155,6 +155,15 @@ public struct WireError: Error, Codable, Sendable, Equatable {
             message: "进程 \(pid) 找不到窗口 ID \(windowID)；窗口可能已关闭或重建，请重新读取界面。")
     }
 
+    /// 目标同时给了窗口 ID 与标题：两种身份判定，协议不替调用方挑一个。
+    /// 只给 ID、标题作诊断线索的写法是 `Target.forWindow`。
+    public static func conflictingTarget(pid: Int32, windowID: UInt32, title: String) -> WireError {
+        WireError(
+            code: "conflicting_target", layer: "protocol", retry: "no",
+            message:
+                "目标同时给了窗口 ID \(windowID) 与标题“\(title)”，无法判定按哪个绑定；请只给一个，或改用 Target.forWindow 把标题降为线索。")
+    }
+
     /// 找不到要启动/解析的应用。
     public static func appNotFound(_ identifier: String) -> WireError {
         WireError(
@@ -193,17 +202,35 @@ public struct Target: Codable, Sendable, Equatable, Hashable {
     public var pid: Int32
     public var windowID: UInt32?
     public var windowTitle: String?
+    /// 诊断线索：与 `windowID` 一起给出时**不参与**身份判定，也不上线（只留在本进程）。
+    /// 只由 `forWindow(pid:windowID:titleHint:)` 写入；直接构造 `Target` 不要设它。
+    public var titleHint: String? = nil
 
-    public init(pid: Int32, windowID: UInt32? = nil, windowTitle: String? = nil) {
+    public init(
+        pid: Int32, windowID: UInt32? = nil, windowTitle: String? = nil,
+        titleHint: String? = nil
+    ) {
         self.pid = pid
         self.windowID = windowID
         self.windowTitle = windowTitle
+        self.titleHint = titleHint
     }
 
     /// 只按标题绑定窗口的旧式目标。
     public init(pid: Int32, windowTitle: String?) {
         self.init(pid: pid, windowID: nil, windowTitle: windowTitle)
     }
+
+    /// 按窗口 ID 绑定；标题只作诊断线索，不参与身份判定。
+    ///
+    /// `windowID` 为 nil 时没有 ID 可寻址，退回标题寻址（与 `init(pid:windowTitle:)` 相同）。
+    /// 这样原本“有 ID 用 ID、没 ID 用标题”的调用点换成它之后行为不变。
+    public static func forWindow(pid: Int32, windowID: UInt32?, titleHint: String?) -> Target {
+        guard let windowID else { return Target(pid: pid, windowTitle: titleHint) }
+        return Target(pid: pid, windowID: windowID, titleHint: titleHint)
+    }
+
+    private enum CodingKeys: String, CodingKey { case pid, windowID, windowTitle }
 }
 
 public struct WindowInfo: Codable, Sendable, Equatable {
