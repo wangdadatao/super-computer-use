@@ -76,6 +76,10 @@ agent 侧的会话 API 见[协议总览](protocol_overview.md)，两者是不同
 `Target` 是 `{pid: int, windowID?: number, windowTitle?: string}`。`windowID` 是 CGWindowID，窗口生命周期内稳定；
 `windowTitle` 只是可读线索，可能重复或变化。两者都缺省表示“应用默认窗口”。
 
+`windowID` 与 `windowTitle` **二选一**，不是优先级关系：两者同时给出返回 `conflicting_target`（`retry=no`），
+不替你挑一个。MCP 与 CLI 在拉起原生进程之前就拒绝；直接发帧的调用方由原生层 `rootElement` / 窗口激活再拒。
+仅给一个时，`windowID` 精确匹配，`windowTitle` 按标题匹配。
+
 `frame` 是 `{x, y, width, height}`（均为浮点数）。`WindowInfo` 是 `{windowID?: number, title?: string, frame?: Rect}`，
 字段缺失表示平台没有提供；窗口不可枚举时返回空数组，不是错误。
 
