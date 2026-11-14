@@ -34,6 +34,8 @@ extension AXBackend {
         case .found(let element):
             prepareKeyboardTarget(element, pid: target.pid)
             try focus(element, pid: target.pid)
+            // 门禁必须在字符循环之前：判定失败时一个按键都不发。
+            try KeyboardFocus.requireEstablished(action: .typeText, element: element, pid: target.pid)
             let source = CGEventSource(stateID: .combinedSessionState)
             for character in text {
                 switch character {
@@ -61,6 +63,7 @@ extension AXBackend {
         case .found(let element):
             prepareKeyboardTarget(element, pid: target.pid)
             try focus(element, pid: target.pid)
+            try KeyboardFocus.requireEstablished(action: .pressKey, element: element, pid: target.pid)
             postKey(combo, pid: target.pid, source: CGEventSource(stateID: .combinedSessionState))
             return .acted
         }
@@ -138,7 +141,8 @@ extension AXBackend {
         return nil
     }
 
-    /// 应用当前的 first responder。用于避免对已聚焦元素重复设焦点（会折叠选区）。
+    /// 应用当前的 first responder。用于避免对已聚焦元素重复设焦点（会折叠选区），
+    /// 也用作投递前的焦点门禁。
     static func focusedElement(pid: Int32) -> AXUIElement? {
         let app = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(app, messagingTimeout)
@@ -148,8 +152,33 @@ extension AXBackend {
         return (value as! AXUIElement)
     }
 
-    /// 把焦点设到目标元素。焦点是异步生效的，等它被读回为 true 最多约 300 毫秒；
-    /// 元素不报告焦点状态时不视为失败（部分控件不支持 AXFocused 的读取）。
+    /// 应用当前的 key window（`AXFocusedWindow`）。读不到时为 nil。
+    static func focusedWindow(pid: Int32) -> AXUIElement? {
+        let app = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(app, messagingTimeout)
+        guard let value = copy(app, kAXFocusedWindowAttribute),
+            CFGetTypeID(value) == AXUIElementGetTypeID()
+        else { return nil }
+        return (value as! AXUIElement)
+    }
+
+    /// `element` 是否就是 `window` 或它的后代（沿 `AXParent` 向上）。最多 32 层。
+    static func withinWindow(_ element: AXUIElement, window: AXUIElement) -> Bool {
+        var current = element
+        for _ in 0..<32 {
+            if CFEqual(current, window) { return true }
+            guard let parent = copy(current, kAXParentAttribute),
+                CFGetTypeID(parent) == AXUIElementGetTypeID()
+            else { return false }
+            current = parent as! AXUIElement
+            AXUIElementSetMessagingTimeout(current, messagingTimeout)
+        }
+        return false
+    }
+
+    /// 把焦点设到目标元素。焦点是异步生效的：一次 set，之后只读回等待，最多 600 毫秒
+    /// （12 × 50ms）。**不重试 set**：TextEdit 等控件会在重设焦点时把选区折叠成插入点。
+    /// 读回失败不在这里报错——由 `KeyboardFocus` 统一判定，给出具体原因与零按键证据。
     static func focus(_ element: AXUIElement, pid: Int32) throws {
         // 已是焦点时不要重复 SetAttribute：TextEdit 等控件会在重设焦点时把选区折叠成插入点，
         // 从而破坏前一个 press_key(cmd+a) 建立的全选状态。
@@ -164,10 +193,26 @@ extension AXBackend {
         default:
             throw WireError.actionFailed("设置焦点失败：\(axErrorName(status))")
         }
-        for _ in 0..<6 {
-            if bool(element, kAXFocusedAttribute) == true { return }
-            Thread.sleep(forTimeInterval: 0.05)
+        _ = waitForFocus(expected: element, pid: pid)
+    }
+
+    /// 设焦后的读回：每 50ms 读一次应用级 `AXFocusedUIElement`，最多 12 次。
+    /// 返回最后一次读到的元素（nil 表示一直读不到）；读到目标时提前返回。
+    /// `read` / `sleep` 可注入，用于不碰真应用的读回单测。
+    @discardableResult
+    static func waitForFocus(
+        expected: AXUIElement, pid: Int32, attempts: Int = 12,
+        interval: TimeInterval = 0.05,
+        read: (Int32) -> AXUIElement? = { focusedElement(pid: $0) },
+        sleep: (TimeInterval) -> Void = { Thread.sleep(forTimeInterval: $0) }
+    ) -> AXUIElement? {
+        var last: AXUIElement?
+        for _ in 0..<max(1, attempts) {
+            sleep(interval)
+            last = read(pid)
+            if let last, CFEqual(last, expected) { return last }
         }
+        return last
     }
 
     // MARK: - 事件投递
