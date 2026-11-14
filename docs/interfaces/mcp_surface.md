@@ -195,8 +195,8 @@ effect: delivered=true verification=refuted verificationReason=postcondition_abs
      `target_not_visible`，事后读不到该属性 → `unknown` + `observation_failed`。两种 unknown
      都在 `verifiedNote` 写明原因，**不回退**到像素或“全窗口任意选区变化”。
    - 落点在文本元素内但选区读不到时才看像素：落点所在行出现插入光标形态的窄高变化 →
-     `verifiedBy=caret_pixels`；三帧都可比且都没有光标形态 → `refuted`；一帧都不可比 →
-     `unknown` + `screenshot_unavailable`。这是启发式判据，不读取焦点。
+     `verifiedBy=caret_pixels`；三帧都可比且都没有光标形态 → `refuted`；有任何一帧不可比
+     （截图取不到或尺寸不符）→ `unknown` + `screenshot_unavailable`。这是启发式判据，不读取焦点。
    - 落点不是文本元素：没有可读的后置条件，恒为 `unknown` + `no_readable_postcondition`。
      坐标点按钮要 `verified` 请改用元素寻址的 `click`。
    全图比例与 token 状态都不证明点中了目标；不要重复点。坐标点击的摘要行还会带

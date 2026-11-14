@@ -321,7 +321,7 @@ extension DesktopSession {
                     } else if comparable {
                         postcondition = false
                     } else {
-                        // 一帧都不可比：这是"截图取不到"，不是"没有光标"。
+                        // 有帧不可比：这是"截图取不到"，不是"没有光标"。
                         screenshotAvailable = false
                     }
                 }
