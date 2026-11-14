@@ -9,6 +9,7 @@ SCU 失败返回的结构、分类与可重试性。成功返回的形态见
 - [成功与失败的边界](#成功与失败的边界)
 - [错误结构](#错误结构)
 - [错误码表](#错误码表)
+- [details](#details)
 - [可重试性](#可重试性)
 - [在 code mode 中的形态](#在-code-mode-中的形态)
 
@@ -60,9 +61,10 @@ interface ScuError {
   retry: RetryAdvice;
   /** 人类可读描述。用于日志与展示，不用于分支判断。 */
   message: string;
-  /** 错误码特定的补充信息。 */
-  details?: Record<string, unknown>;
-  /** 仅 ambiguous_reference 携带：候选目标列表，调用方可直接选用。 */
+  /** 错误码特定的补充信息。值为字符串，键由错误码定义；见下文“details”。 */
+  details?: Record<string, string>;
+  /** 仅 ambiguous_reference 的**目标**歧义携带：候选目标列表，调用方可直接选用。
+   *  窗口标题歧义目前只写 message，不带这个字段。 */
   candidates?: TargetRef[];
 }
 ```
@@ -76,7 +78,7 @@ interface ScuError {
 | code | layer | retry | 含义 |
 | --- | --- | --- | --- |
 | `stale_snapshot` | protocol | `after_refresh` | 快照令牌失效，树已变化 |
-| `stale_geometry` | protocol | `after_refresh` | 截图不存在、已过期、不属于当前令牌，或动作前复核发现绑定窗口的几何已变化（见 [MCP 接入面](mcp_surface.md#click_tool)） |
+| `stale_geometry` | protocol | `after_refresh` | 截图不存在、已过期、不属于当前令牌，或动作前复核发现绑定窗口的几何已变化（见 [MCP 接入面](mcp_surface.md#click_tool)）。`details.reason` 见下文 |
 | `invalid_coordinates` | protocol | `no` | 坐标不在截图范围内；v2 新增 |
 | `target_switched` | protocol | `after_rebind` | 令牌属于已解绑的目标 |
 | `target_missing` | protocol | `no` | 目标不存在或已退出 |
@@ -85,8 +87,9 @@ interface ScuError {
 | `app_not_authorized` | policy | `no` | 应用不在本次连接的允许列表里；v2 新增，见 [ADR-0024](../decisions/adr_0024_app_authorization.md) |
 | `window_not_found` | protocol | `after_refresh` | 指定的窗口 ID 或标题不存在、已变化或窗口已重建（读取、截图、坐标动作与元素动作都可能返回）；v2 新增，见 [ADR-0026](../decisions/adr_0026_window_selection.md)、[ADR-0027](../decisions/adr_0027_window_root_locator.md)、[ADR-0031](../decisions/adr_0031_window_identity.md) |
 | `conflicting_target` | protocol | `no` | 目标同时给了窗口 ID 与标题，无法判定按哪个绑定；协议不替调用方挑一个。标题只作线索的写法是 `Target.forWindow`，见 [ADR-0027](../decisions/adr_0027_window_root_locator.md#window_root_locator) |
-| `ambiguous_reference` | protocol | `after_disambiguation` | **目标**引用歧义（同名应用 / 同 URL 标签页），携带 `candidates` |
+| `ambiguous_reference` | protocol | `after_disambiguation` | 引用歧义：标题去重后匹配 ≥2 个窗口（窗口标题当身份时）；**零动作**。`details.reason=title_ambiguous`、`candidate_count=N`，候选写在 `message`。应用/URL 标签页的歧义仍是设计目标 |
 | `unsupported_operation` | protocol | `no` | 元素或参数不支持该操作（如不可写元素设值、元素不接受焦点、不认识的键名） |
+| `focus_not_established` | platform | `after_user_action` | 键盘动作投递前，应用级 `AXFocusedUIElement` 不是目标（或读不到）；**零按键**。`details.reason` 见下文 |
 | `policy_denied` | policy | `no` | 命中拒绝类目，不可协商 |
 | `authorization_denied` | policy | `no` | 用户在授权提示中明确拒绝 |
 | `authorization_timeout` | policy | `after_user_action` | 授权提示超时未响应 |
@@ -99,11 +102,42 @@ interface ScuError {
 | `protocol_version_mismatch` | boundary | `no` | 两侧协议版本不一致 |
 | `internal_error` | boundary | `immediate` | 未归类的内部故障 |
 
-**当前实际发出的码**：`stale_snapshot`、`stale_geometry`、`invalid_coordinates`、`app_not_found`、`app_not_authorized`、`window_not_found`、`conflicting_target`、`target_switched`、`element_gone`、
+**当前实际发出的码**：`stale_snapshot`、`stale_geometry`、`invalid_coordinates`、`app_not_found`、`app_not_authorized`、`window_not_found`、`conflicting_target`、`ambiguous_reference`、`focus_not_established`、`target_switched`、`element_gone`、
 `unsupported_operation`、`policy_denied`、`system_permission_missing`、`target_missing`、`platform_unavailable`、
 `action_outcome_unknown`、`action_failed`、`protocol_version_mismatch`、`internal_error`。
-`ambiguous_reference`、`authorization_*`、`confirmation_*` 是设计目标，尚无构造它们的代码（目标歧义、逐次审批未实现）。
+`ambiguous_reference` 目前只在**窗口标题**歧义时发出（`candidates` 未实现）；`authorization_*`、`confirmation_*` 仍是设计目标，尚无构造它们的代码（逐次审批未实现）。
 应用允许列表的拒绝使用 `app_not_authorized`，不是 `authorization_denied`；后者保留给交互式授权提示。
+
+<a id="details"></a>
+## details
+
+`details` 只给三个码用，值一律是字符串（不塞数组、不塞嵌套对象）。`message` 的措辞可变，
+调用方只按 `code` 与 `details` 分支。没有需要说明的补充信息时**不出现该字段**（不是空对象）。
+
+**`stale_geometry`**：`reason` 按坐标路径的检查顺序取**第一个**失败项，同一次调用永远同一个 reason；
+只有实际失败的那一项带 `expected` / `actual`。
+
+| 顺序 | `reason` | 判据 | 额外键 |
+| --- | --- | --- | --- |
+| 0 | `capture_unknown` | `screenshot_id` 不存在或已被淘汰 | — |
+| 1 | `capture_token_mismatch` | 绑定存在但不属于当前令牌 | — |
+| 2 | `window_gone` | 动作前复核时窗口已找不到（原生 `window_not_found` 在协议层翻译） | `bound_by=window_id\|window_title` |
+| 3 | `window_replaced` | 绑定与当前 `windowID` 都非 nil 且不相等（ID 变了、几何没变） | `expected=#旧ID`、`actual=#新ID` |
+| 4 | `frame_changed` | 窗口 frame 不等 | `expected=x,y,w,h`、`actual=x,y,w,h` |
+| 5 | `scale_changed` | 截图 scale 不等（三位小数） | `expected`、`actual` |
+| 6 | `size_changed` | 图像宽高不等 | `expected=w×h`、`actual=w×h` |
+
+`get_screenshot` 自己取新截图时若窗口已关，仍报 `window_not_found`，不翻译成 `stale_geometry`。
+
+**`ambiguous_reference`**：`reason=title_ambiguous`、`candidate_count=N`。候选的窗口号与 frame
+只写在 `message` 里（按视觉顺序 y、x，最多 5 个），类型化的 `candidates` 未实现。
+
+**`focus_not_established`**：`reason` 为 `focused_element_elsewhere` / `focused_element_unreadable` /
+`window_not_key` 之一；`observed_role` 在读得到当前焦点时给出；`app_active` 只是诊断，不作门禁；
+`keys_posted` 恒为 `0`——判定在字符/按键循环之前，一个按键都没有发。
+
+输出层：MCP 首行保持 `[code] message（retry=…）`，有 `details` 时追加一行
+`details: reason=… key=value`（`reason` 在前，其余键按字母序）；CLI 的 stderr 用同样格式。
 
 **接入层（MCP）自己的码**不经原生层，没有 `layer` 与 `retry`，工具文本里不带 `（retry=…）`：
 

@@ -22,6 +22,26 @@
     refuted / unknown 各有一句说明，取代原来笼统的"是否命中未验证"。
   - `noOpSuspected` 降级为观察事实，不参与判定；观察到后置条件时恒为 false。
 
+- **窗口标题歧义拒绝（`ambiguous_reference`）。** 标题被当作窗口身份时，去重后匹配两个以上
+  窗口返回 `ambiguous_reference`（`retry=after_disambiguation`，零动作），候选写在 `message`；
+  恰好一个不变，零个仍是 `window_not_found`。读树、截图与元素动作的窗口根三处入口统一。
+  观测摘要的标题回退遇歧义只让 `treeChanged=unknown`，不抛错。
+
+- **键盘动作的焦点门禁（`focus_not_established`）。** `type_text` / `press_key` 投递前读应用级
+  `AXFocusedUIElement`，必须与目标元素一致（`press_key` 另要求目标窗口是 `AXFocusedWindow`）；
+  不一致或读不到就抛错，`keys_posted=0`，一个按键都不发。读回最多 600ms，不重试 set。
+
+### 变更
+
+- **线协议 14：`failure.error` 增加可选 `details`。** `scu` 与 `scu-native` 必须成对替换；
+  为 nil 时该键不出现在 JSON 里。`details` 只给 `stale_geometry`、`ambiguous_reference`、
+  `focus_not_established` 三个码用。
+- **`stale_geometry` 带 `details.reason`。** 坐标路径按固定顺序只报第一个失败项：
+  `capture_unknown`、`capture_token_mismatch`、`window_gone`（带 `bound_by`）、
+  `window_replaced`、`frame_changed`、`scale_changed`、`size_changed`（后四项带 `expected`/`actual`）。
+  原生层的 `window_not_found` 在坐标动作的复核点翻成 `stale_geometry/window_gone`；
+  `get_screenshot` 仍报 `window_not_found`。MCP 与 CLI 在错误首行后追加 `details: k=v` 一行。
+
 ## 0.5.1 — 2026-11-04
 
 ### 修复

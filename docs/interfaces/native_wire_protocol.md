@@ -128,7 +128,7 @@ agent 侧的会话 API 见[协议总览](protocol_overview.md)，两者是不同
    消息中同时给出双方版本，然后关闭连接。不降级运行。
 4. 版本号是编译期常量，来源见实现中的 `scuNativeProtocolVersion`。
 
-当前版本 **13**。版本 1 → 2：`dumpTree` 增加 `budgetMs`，`tree` 应答增加 `truncated`，
+当前版本 **14**。版本 1 → 2：`dumpTree` 增加 `budgetMs`，`tree` 应答增加 `truncated`，
 `AXNode` 增加 `description`。版本 2 → 3：`AXNode` 增加 `childCount`；新增请求 `performAction`，
 新增应答 `acted`、`located`、`stale`（[ADR-0015](../decisions/adr_0015_handle_resolution_by_path.md)）。
 版本 3 → 4：新增 `typeText` / `pressKey`；4 → 5：新增 `setValue`（[ADR-0016](../decisions/adr_0016_input_and_keys.md)）；
@@ -141,6 +141,10 @@ agent 侧的会话 API 见[协议总览](protocol_overview.md)，两者是不同
 11 → 12：所有窗口相关请求把 `pid + windowTitle` 收敛为 `target: Target`，增加 `windowID`；`listWindows`/`WindowCapture` 增加 `windowID`（[ADR-0031](../decisions/adr_0031_window_identity.md)）。
 12 → 13：`clickAt` 的应答从 `acted` 改为 `clickProbe`，附带落点元素与它点击前后的 `AXSelectedTextRange`；
 元素引用失效时如实报 `elementValid=false`，不回退到像素判据。其余请求的应答不变。
+13 → 14：`failure.error` 增加可选 `details`（`[String: String]`，为 nil 时不出现在 JSON 里）；
+新增原生层构造的 `ambiguous_reference`（窗口标题去重后匹配 ≥2）与 `focus_not_established`
+（键盘动作投递前焦点不是目标）两个码及其 details。老侧必须因版本不等报 `protocol_version_mismatch`，
+不静默丢掉 `details`。
 
 线格式本身的任何不兼容变更（字段改名、`type` 增删、语义变化）都要提升版本号。
 
@@ -175,15 +179,21 @@ agent 侧的会话 API 见[协议总览](protocol_overview.md)，两者是不同
 | `layer` | string | `policy` / `protocol` / `platform` / `boundary` |
 | `retry` | string | 可重试性 |
 | `message` | string | 人类可读，不用于分支 |
+| `details` | object? | 错误码特定的补充信息，键与值都是字符串；为 nil 时**省略** |
 
-`ScuError` 定义的 `details` 与 `candidates` **当前未实现**：P0 的消息没有需要它们的错误。
-补齐时需同步本文与实现。
+`details` 已实现，但只有 `stale_geometry`（协议层）、`ambiguous_reference` 与 `focus_not_established`
+（原生层）带它；其它码保持四字段。键与取值见[错误分类](error_taxonomy.md#details)。
+`ScuError` 的 `candidates` 仍未实现：窗口标题歧义把候选写在 `message` 里。
 
 原生层在本边界上产生的错误码：`system_permission_missing`、`target_missing`、
-`protocol_version_mismatch`、`window_not_found`、`conflicting_target`、`internal_error`，以及 `AXPress` 失败时的 `unsupported_operation`
+`protocol_version_mismatch`、`window_not_found`、`ambiguous_reference`、`conflicting_target`、`focus_not_established`、`internal_error`，以及 `AXPress` 失败时的 `unsupported_operation`
 （平台报动作不支持、属性不支持或未实现）与 `action_failed`（其余平台错误，含 `apiDisabled`）。`platform_unavailable` 由协议层在
 **读请求连接失败、对端消失，或动作请求尚未完整写出**时本地生成，不经线路传输；
 `action_outcome_unknown` 由协议层在**动作请求已完整写出、但应答前发生超时/断开/通信失败/帧错位**时本地生成。
+
+窗口标题当身份时：去重后恰好一个 → 与今天同一个窗口；零个 → `window_not_found`；
+两个以上 → `ambiguous_reference`（`retry=after_disambiguation`，零动作）。读树、截图与元素动作的
+窗口根共用这一条规则。
 
 越界参数、无法解析的帧、握手前的请求目前都归入 `internal_error`。
 是否为它们引入专门的错误码待定。
@@ -195,7 +205,8 @@ agent 侧的会话 API 见[协议总览](protocol_overview.md)，两者是不同
 - **未知字段**：当前实现的 JSON 解码**会忽略**未知字段。
   [ADR-0012](../decisions/adr_0012_protocol_versioning.md) 要求"不做未知字段的静默忽略"，
   但两侧版本必须相等，因此未知字段只可能来自错配的实现而不是正常演进，
-  实际风险有限。是否改为严格拒绝，待定。
+  实际风险有限。是否改为严格拒绝，待定。`failure.error.details` 的加入正是因此升到 14：
+  同号不同构建会让旧侧静默丢字段，升版后旧侧明确报 `protocol_version_mismatch`。
 
 ## 当前实现范围
 
@@ -203,7 +214,9 @@ agent 侧的会话 API 见[协议总览](protocol_overview.md)，两者是不同
 版本错配、越界深度与预算、对端关闭后写入、无人连接超时、读取应答的等待可读超时、遍历预算耗尽、
 `childCount` 的真实性（预算耗尽时记真实数量）、定位器每一类失效（子节点数、角色、核对键、下标越界、
 子节点读不到）、畸形定位器被拒绝且连接保持、`performAction` 对真实访达的 `verify` 与篡改检测、
-`Target`/`windowID` 编解码与窗口匹配（frame/标题消歧、歧义返回 nil）。
+`Target`/`windowID` 编解码与窗口匹配（frame/标题消歧、歧义返回 nil）、
+窗口标题歧义（0/1/≥2、同一元素去重、候选清单）、`WireError.details` 编解码与协议 14、
+`stale_geometry` 的七种 reason 与优先级、`focus_not_established` 的判定与焦点读回。
 
 `typeText` / `pressKey` 由按键解析单元测试、会话层测试与夹具上的真实输入/提交测试覆盖（见 [ADR-0016](../decisions/adr_0016_input_and_keys.md)）。
 
@@ -214,8 +227,8 @@ agent 侧的会话 API 见[协议总览](protocol_overview.md)，两者是不同
 `NativeClient.transportError` 与 `Tests/SCUCoreTests/NativeClientTimeoutTests.swift`。
 该测试覆盖映射函数，不覆盖真实子进程的关闭与回收；后者由握手/关闭类测试与 MCP 冒烟分别覆盖。
 
-当前协议版本为 **13**（P0 时为 3；v1 依次加入 `typeText` / `pressKey` 与 `setValue`；
+当前协议版本为 **14**（P0 时为 3；v1 依次加入 `typeText` / `pressKey` 与 `setValue`；
 v2 加入 `captureWindow`、`AXNode.actions`、`clickAt`、`scrollAt` 与 `dragAt`，v3 收口窗口读取；
-v4 把 `clickAt` 的应答换成带落点探针的 `clickProbe`）。
+v4 把 `clickAt` 的应答换成带落点探针的 `clickProbe`；v5（协议 14）给 `failure.error` 增加可选 `details`）。
 消息目录覆盖当前需要的十三种请求；变更通知等随能力增加，
 每增加一种都要在此登记并视情况提升版本号。

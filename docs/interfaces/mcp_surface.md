@@ -91,7 +91,9 @@ ScreenCaptureKit 候选；匹配不上就拒绝截图，不会退回可能不匹
 `conflicting_target`：ID 与标题是两种身份判定，不静默取其一。
 
 窗口 ID 是 `CGWindowID`，在窗口生命周期内稳定；标题只是可读线索，同名窗口仍可能重复。
-无标题窗口、同名窗口应优先用 `window_id`。窗口相关请求统一带 `target`，原生层为此升到**线协议 v12**；
+无标题窗口、同名窗口应优先用 `window_id`。**标题当身份时**，去重后恰好一个窗口才放行；
+两个以上返回 `ambiguous_reference`（`retry=after_disambiguation`，零动作，候选写在 `message`）；
+零个仍是 `window_not_found`。读树、截图与元素动作的窗口根共用这一条规则。窗口相关请求统一带 `target`，原生层为此升到**线协议 v12**；
 `scu` 与 `scu-native` 必须成对升级，握手会校验版本。见 [ADR-0025](../decisions/adr_0025_window_target.md)、
 [ADR-0026](../decisions/adr_0026_window_selection.md)、[ADR-0027](../decisions/adr_0027_window_root_locator.md)、
 [ADR-0031](../decisions/adr_0031_window_identity.md)。
@@ -175,7 +177,9 @@ effect: delivered=true verification=refuted verificationReason=postcondition_abs
 
 1. 坐标以 `get_screenshot` 的图像左上角为原点，单位是图像像素；越界返回 `invalid_coordinates`。
 2. `screenshot_id` 必须属于当前令牌，否则 `stale_geometry`。动作前会重新取绑定窗口的几何；
-   位置/缩放/尺寸变化时返回 `stale_geometry`，不投递事件。绑定使用截图实际对应的
+   位置/缩放/尺寸变化或窗口被换掉时返回 `stale_geometry`，不投递事件；`details.reason` 说明
+   是哪一项（`capture_unknown` / `capture_token_mismatch` / `window_gone` / `window_replaced` /
+   `frame_changed` / `scale_changed` / `size_changed`），只报第一个失败项。绑定使用截图实际对应的
    `window_id`（取不到时退回标题/frame），不再重新按标题选一次；动作后仍以
    `geometryChanged` 报告事后变化。截图不含鼠标指针。
 3. 点击前会激活并 raise 目标窗口，确认它成为 frontmost；失败则**不点击**，避免点到别的应用。
@@ -226,8 +230,14 @@ effect: delivered=true verification=refuted verificationReason=postcondition_abs
 策略 → 令牌 → 原生层沿路径核对 → 聚焦该元素 → 投递键盘事件 → 事后观察。
 
 - **聚焦**：先 raise 元素所在的窗口，必要时激活应用；元素已是 first responder 时不重复设焦点（避免折叠选区），
-  否则设置 `AXFocused` 并等待读回。
+  否则设置 `AXFocused` 一次并等待读回（最多 600ms，不重试 set）。
   不接受"当前的焦点元素"这种隐式目标，因为写错位置可能触发搜索、发送或提交，代价不可逆。
+- **焦点门禁**：`type_text` 投递前读应用级 `AXFocusedUIElement`，必须就是目标元素；
+  `press_key` 还要求目标窗口就是 `AXFocusedWindow`（目标无窗口祖先时跳过这一条）。
+  不相等或读不到 → `focus_not_established`（`retry=after_user_action`），**一个按键都不发**；
+  `details.reason` 为 `focused_element_elsewhere` / `focused_element_unreadable` / `window_not_key`，
+  `keys_posted=0`。不用元素自身的 `AXFocused`（应用会谎报），也不拿 `isActive` 当门禁。
+  只保证目标**应用内**的焦点被抢；系统级弹窗（TCC、AuthKit）不在这个判据里。
 - **投递**：`CGEvent` 键盘事件直接投递到目标进程（`postToPid`）。事件进的是进程，
   真正接收文字的是 key window 的 first responder，所以多窗口下必须 raise 目标窗口；
   输入会切换前台，但不会移动鼠标。
@@ -384,6 +394,8 @@ Removed element IDs: 12-15, 20（旧快照句柄，不可用于动作）
 而协议错误通常只被宿主当作故障处理。
 
 工具错误文本形如 `[system_permission_missing] 未授予系统权限：辅助功能（retry=after_user_action）`，
+有 `details` 时在其后另起一行：`details: reason=frame_changed actual=20,0,800,600 expected=0,0,800,600`
+（`reason` 在前，其余键按字母序；CLI 的 stderr 用同样格式）。
 `code` 取自[错误码表](error_taxonomy.md)，参数错误用 `invalid_argument`。协议层与原生层的错误文本带 `（retry=…）`；
 `invalid_argument`（接入层自己的码）与兜底的 `internal_error` 没有。
 按 `code` 追加一段处置提示（按 `code` 分支，不解析 `message`）：
@@ -395,6 +407,8 @@ Removed element IDs: 12-15, 20（旧快照句柄，不可用于动作）
 | `app_not_found` | 用 bundle id、显示名或完整 `.app` 路径重试 |
 | `app_not_authorized` | 让用户把应用加入 `--allow-app` / `--allow-app-file` 并重启服务；不要换相近应用重试 |
 | `window_not_found` | 重新 `list_windows`，用仍存在的 `window_id` 绑定；没有 ID 时才用标题 |
+| `ambiguous_reference` | 标题对应多个窗口：改用 `window_id`（`list_windows` 可查），或关闭多余窗口后重试 |
+| `focus_not_established` | 焦点不在目标上：先处理挡住目标的窗口/sheet，或改用 `set_value`；未发按键 |
 | `conflicting_target` | `window_id` 与 `window` 只给一个；两者同时给时协议不会替你挑 |
 | `click_at` 的 `noOpSuspected` | 树与图都没变；不要重复点，必要时让用户核实 |
 | `target_switched` | 令牌属于之前读取的另一个应用，对要操作的应用重新读取 |
@@ -453,6 +467,15 @@ socket 目录建在 `TMPDIR`（若设置且存在）或系统临时目录下。
 <a id="unverified"></a>
 
 ## 未验证项
+
+- **T-019 第二批（2026-11-14）只在非 GUI 单测里验证**：
+  - `AXFocusedUIElement` / `AXFocusedWindow` 在 TextEdit / Safari / Electron 上是否可靠，
+    以及应用内 sheet（TextEdit 未保存确认、保存面板）是否挡住焦点；判定表与读回有单测，真机场景未跑。
+  - 真实同名窗口（TextEdit 两个“未命名”）是否触发 `ambiguous_reference`；匹配器与三个入口有单测，
+    真实窗口未构造。
+  - 窗口被真正关闭后，坐标动作的 `stale_geometry/window_gone` 是否在复核点被捕获；
+    七个 reason 有假 reader 单测，SCK/AX 的时序未验证。
+  - 协议 14 的两侧握手与 `details` 跨 IPC 编码未在真实 sidecar 上跑。
 
 - **真实应用上的动作只验证了一个**：网易云音乐 `3.1.12`（CEF），以 `--force-renderer-accessibility` 启动后，
   `type_text`（中文）、`press_key(Return)`、`click` 与播放器状态核实均成立，见
