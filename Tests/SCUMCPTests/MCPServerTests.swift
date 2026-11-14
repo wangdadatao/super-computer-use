@@ -627,7 +627,8 @@ final class FakeAppLauncher: AppLauncher, @unchecked Sendable {
         #expect(r.text.contains("AXButton#2"))
         #expect(
             r.text.contains(
-                "effect: delivered=true verification=refuted verificationReason=postcondition_absent verified=false verifiedBy=- observed=true converged=true treeChanged=false"))
+                "effect: delivered=true verification=refuted verificationReason=postcondition_absent verified=false verifiedBy=- observed=true converged=true treeChanged=false"
+            ))
         #expect(r.text.contains("疑似空操作"))
         #expect(reader.actionCalls.count == 1)
         #expect(reader.actionCalls[0].locator.target.title == "确定")
@@ -814,7 +815,8 @@ final class FakeAppLauncher: AppLauncher, @unchecked Sendable {
         #expect(r.text.contains("截图坐标 (40, 60)"))
         #expect(
             r.text.contains(
-                "effect: delivered=true verification=unknown verificationReason=no_readable_postcondition verified=false verifiedBy=-"))
+                "effect: delivered=true verification=unknown verificationReason=no_readable_postcondition verified=false verifiedBy=-"
+            ))
         #expect(r.text.contains("结果未知（unknown）"))
         #expect(r.text.contains("unknown 不等于成功"))
         #expect(!r.text.contains("界面结构已变化"))

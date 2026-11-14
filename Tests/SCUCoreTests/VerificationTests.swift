@@ -190,8 +190,10 @@ import Testing
         let r = ScriptedReader()
         let (s, _) = session(r)
         let before = try s.readState(pid: 10, maxDepth: 12, budgetMs: 1000)
-        r.script = [.success(TreeReading(root: Self.sampleTree(), truncated: false)),
-                    .failure(.platformUnavailable("事后读取失败"))]
+        r.script = [
+            .success(TreeReading(root: Self.sampleTree(), truncated: false)),
+            .failure(.platformUnavailable("事后读取失败")),
+        ]
         let report = try s.click(token: before.token.value, handle: 3)
         #expect(report.observed == false)
         #expect(report.verificationState == .unknown)
@@ -218,8 +220,10 @@ import Testing
         let (s, _) = session(r)
         let before = try s.readState(pid: 10, maxDepth: 12, budgetMs: 1000)
         r.script = (0..<40).map { i in
-            .success(TreeReading(root: Self.sampleTree(okTitle: i.isMultiple(of: 2) ? "甲" : "乙"),
-                                 truncated: false))
+            .success(
+                TreeReading(
+                    root: Self.sampleTree(okTitle: i.isMultiple(of: 2) ? "甲" : "乙"),
+                    truncated: false))
         }
         let report = try s.click(token: before.token.value, handle: 3)
         #expect(report.converged == false)
