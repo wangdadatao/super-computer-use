@@ -357,7 +357,7 @@ extension DesktopSession {
                         extra += 1
                         guard let again = try? reader.captureWindow(target: boundTarget),
                             again.width == after.width, again.height == after.height,
-                            again.windowFrame == after.windowFrame
+                            again.windowFrame == after.windowFrame, again.scale == after.scale
                         else {
                             // 补拍失败或几何变了：这一帧不可比，不能当成“没有光标”。
                             comparable = false

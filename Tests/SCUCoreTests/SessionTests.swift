@@ -541,6 +541,28 @@ final class FakeLauncher: AppLauncher, @unchecked Sendable {
         #expect(!report.verified)
     }
 
+    /// 补拍帧的 `scale` 与事后帧不同：坐标映射会错位，这一帧不可比。
+    @Test func caretExtraFrameWithADifferentScaleIsNotComparable() throws {
+        let r = ScriptedReader()
+        let s = DesktopSession(reader: r, settle: Clock().settle)
+        r.tree = Self.textWindowTree()
+        let a = try read(s)
+        let blank = Self.windowPNG()
+        let sameFrame = Rect(x: 0, y: 0, width: 80, height: 60)
+        let rescaled = WindowCapture(
+            png: blank, width: 80, height: 60, scale: 2, windowFrame: sameFrame,
+            windowID: nil, windowTitle: "主")
+        r.captureScript = [
+            .success(Self.capture(blank)), .success(Self.capture(blank)),
+            .success(rescaled), .success(Self.capture(blank)),
+        ]
+        let shot = try s.captureScreenshot(token: a.token.value)
+        let report = try s.clickAt(token: a.token.value, screenshotID: shot.id, x: 40, y: 20)
+        #expect(report.delivered)
+        #expect(report.verificationState == .unknown)
+        #expect(report.verificationState != .refuted)
+    }
+
     /// 三帧全部可比且都没有光标形态，才允许 refuted。
     @Test func caretRefutationHoldsWhenAllFramesAreComparable() throws {
         let r = ScriptedReader()
