@@ -28,7 +28,8 @@ need docs/interfaces/native_wire_protocol.md "当前协议版本为 **$W**"
 need README.md "**${V}（"
 need README.en.md "Version $V"
 
-CHANGELOG_TOP=$(sed -n 's/^## //p' CHANGELOG.md | head -1)
+# CHANGELOG 可以有一段 `## Unreleased`（待发布条目）排在已发布版本之前；版本断言取第一个具名版本。
+CHANGELOG_TOP=$(sed -n 's/^## //p' CHANGELOG.md | grep -v '^Unreleased$' | head -1)
 case "$CHANGELOG_TOP" in
   "$V — "*) ;;
   *) echo "❌ CHANGELOG 首段不是 ${V}：${CHANGELOG_TOP}"; fail=1 ;;
