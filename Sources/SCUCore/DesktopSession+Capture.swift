@@ -203,6 +203,8 @@ extension DesktopSession {
         settle.sleep(settle.interval)
         var observed = false
         var changed: Bool?
+        /// 事后读取是否被截断。没观察到时无意义（observed 已说明）。
+        var truncated = false
         var invalidated = false
         do {
             // 观察读取仍用令牌自己的窗口根：readState 的令牌复用/失效判断必须与令牌的
@@ -213,6 +215,7 @@ extension DesktopSession {
                 pid: r.pid, maxDepth: snap.maxDepth, budgetMs: snap.budgetMs,
                 windowID: r.windowID, windowTitle: r.windowTitle)
             observed = true
+            truncated = after.reading.truncated
             invalidated = after.token != SnapshotToken(token)
             let afterEntries = ElementTable.flatten(after.reading.root)
             // 基线读不到（readTree 抛错或 truncated）就是 unknown，`treeChanged` 留 nil；
@@ -232,21 +235,37 @@ extension DesktopSession {
         var screenshotChanged: Bool?
         var diffRatio: Double?
         var geometryChanged = false
-        var verified = false
-        var verifiedBy: String?
+        /// 事后截图取到且可比（像素判据要用它）。
+        var screenshotAvailable = false
         var verifiedNote: String?
         // 判据按落点类型二选一，不叠加：文本落点只看同一元素的 AXSelectedTextRange，
         // 非文本落点才看像素。两条都跑再 OR，会让“文本上像素判据失效”被永久掩盖。
         let landedOnText = probe?.rangeBefore != nil
+        /// 判据结果：true 观察到后置条件、false 为假、nil 判不了。
+        var postcondition: Bool?
+        /// 观察到的后置条件种类。
+        var kind: String?
+        /// 落点元素在事后是否仍可读。
+        var landingStillReadable: Bool?
+        // 落点是否落在文本元素上：选区判据之外只算一次，两条路径与判定都要用。
+        let global =
+            point.map {
+                ScreenshotMapping(windowFrame: binding.windowFrame, scale: binding.scale)
+                    .globalPoint(imageX: $0.x, imageY: $0.y)
+            }
+        let pointOnText =
+            global.map { Self.pointIsInTextElement(baseline.entries, x: $0.x, y: $0.y) } ?? false
         if let probe, let before = probe.rangeBefore {
+            landingStillReadable = probe.elementValid
             if !probe.elementValid {
                 verifiedNote =
                     probe.note ?? "落点元素的 AX 引用在点击后失效，无法比较选区；不回退到像素判据。"
             } else if let after = probe.rangeAfter {
                 if after != before {
-                    verified = true
-                    verifiedBy = "selection_changed"
+                    postcondition = true
+                    kind = "selection_changed"
                 } else {
+                    postcondition = false
                     verifiedNote = "点击后同一元素的选区没有变化（\(before)）。"
                 }
             } else {
@@ -264,58 +283,77 @@ extension DesktopSession {
                 || (binding.windowID != nil && after.windowID != binding.windowID)
             {
                 geometryChanged = true
-            } else if let ratio = ScreenshotDiff.changedRatio(before: baseline.png, after: after.png) {
-                diffRatio = ratio
-                screenshotChanged = ratio > 0.001
+            } else {
+                screenshotAvailable = true
+                if let ratio = ScreenshotDiff.changedRatio(before: baseline.png, after: after.png) {
+                    diffRatio = ratio
+                    screenshotChanged = ratio > 0.001
+                }
                 // 非文本落点才看像素：落点所在行出现了插入光标形态的窄高像素变化。
                 // 文本落点已经由选区判定（上面）；这里必须跳过，避免两套判据叠加。
                 // 插入光标会闪烁；一次抓图可能正好落在“灭”的相位。落点在文本上时
-                // 最多再补拍两次（间隔 0.45 秒），看到任一帧有光标形态就算观察到。
-                let global =
-                    point.map {
-                        ScreenshotMapping(windowFrame: binding.windowFrame, scale: binding.scale)
-                            .globalPoint(imageX: $0.x, imageY: $0.y)
-                    }
-                if !landedOnText, let point, let global,
-                    Self.pointIsInTextElement(baseline.entries, x: global.x, y: global.y)
-                {
-                    var sawCaret =
-                        ScreenshotDiff.caretAppeared(
-                            before: baseline.png, after: after.png, at: point, scale: binding.scale)
-                        == true
+                // 最多再补拍两次（间隔 0.45 秒），看到任一帧有光标形态就算观察到；
+                // 三帧都可比且都没有光标形态，才算“后置条件为假”（refuted）。
+                if !landedOnText, let point, pointOnText {
+                    var comparable = true
+                    var sawCaret = ScreenshotDiff.caretAppeared(
+                        before: baseline.png, after: after.png, at: point, scale: binding.scale)
+                    if sawCaret == nil { comparable = false }
                     var extra = 0
-                    while !sawCaret, extra < 2 {
+                    while sawCaret != true, extra < 2 {
                         usleep(450_000)
                         extra += 1
                         guard let again = try? reader.captureWindow(target: boundTarget),
                             again.width == after.width, again.height == after.height,
                             again.windowFrame == after.windowFrame
                         else { continue }
-                        if ScreenshotDiff.caretAppeared(
+                        if let seen = ScreenshotDiff.caretAppeared(
                             before: baseline.png, after: again.png, at: point, scale: binding.scale)
-                            == true
                         {
-                            sawCaret = true
+                            sawCaret = seen
+                        } else {
+                            comparable = false
                         }
                     }
-                    if sawCaret {
-                        verified = true
-                        verifiedBy = "caret_pixels"
+                    if sawCaret == true {
+                        postcondition = true
+                        kind = "caret_pixels"
+                    } else if comparable {
+                        postcondition = false
+                    } else {
+                        // 一帧都不可比：这是"截图取不到"，不是"没有光标"。
+                        screenshotAvailable = false
                     }
                 }
             }
         }
 
-        let noOp = observed && changed == false && (screenshotChanged == false || screenshotChanged == nil)
-        return CoordinateReport(
-            pid: r.pid, delivered: true, verified: verified, verifiedBy: verifiedBy,
+        // 声明的后置条件：文本落点才有。非文本落点、scroll_at、drag 一律没有。
+        var readablePostcondition = landedOnText || pointOnText
+        // 基线被截断时，“落点上没有文本元素”可能是没读到：不能据此断言“没有可读后置条件”。
+        if !readablePostcondition, point != nil, baseline.truncated { readablePostcondition = true }
+        let verdict = Verification.coordinate(
+            .init(
+                readablePostcondition: readablePostcondition, observed: observed,
+                baselineAvailable: !baseline.truncated, treeTruncated: truncated,
+                geometryChanged: geometryChanged, screenshotAvailable: screenshotAvailable,
+                landingStillReadable: landingStillReadable, postcondition: postcondition,
+                kind: kind))
+        var report = CoordinateReport(
+            pid: r.pid, delivered: true, verified: false, verifiedBy: nil,
             landingRole: probe?.role, selectionBefore: probe?.rangeBefore,
             selectionAfter: probe?.rangeAfter, landingElementValid: probe?.elementValid,
             clickCount: probe?.clickCount, verifiedNote: verifiedNote,
             observed: observed, treeChanged: changed,
             screenshotChanged: screenshotChanged, diffRatio: diffRatio,
             geometryChanged: geometryChanged, tokenInvalidated: invalidated,
-            noOpSuspected: noOp, elapsed: Date().timeIntervalSince(start))
+            noOpSuspected: observed && changed == false
+                && (screenshotChanged == false || screenshotChanged == nil),
+            elapsed: Date().timeIntervalSince(start))
+        // 判定与派生的 verified/verifiedBy 一次写入；观察到后置条件时它会清掉 noOpSuspected
+        //（选区变化不进结构摘要，两者会同时为真）。
+        report.apply(verdict)
+        return report
     }
 
     /// 在截图坐标 (x, y) 点击。坐标以截图左上角为原点，单位是图像像素。
@@ -354,7 +392,8 @@ extension DesktopSession {
             _ = try reader.scrollAt(
                 target: boundTarget, x: point.x, y: point.y, dx: dx, dy: dy)
         }
-        // 滚动没有可读的后置条件（没有光标/焦点），verified 保持 false，报告明写“是否命中未验证”。
+        // 滚动没有可读的后置条件：verificationState 恒为 unknown + no_readable_postcondition，
+        // 报告明写“unknown 不等于成功”。
         return observeCoordinate(
             token: token, r: r, snap: snap, binding: binding, baseline: baseline,
             point: nil, start: start)
@@ -382,7 +421,7 @@ extension DesktopSession {
                 target: boundTarget, fromX: from.x, fromY: from.y, toX: to.x, toY: to.y,
                 durationMs: max(100, min(2_000, durationMs)))
         }
-        // 拖拽同样没有可读的后置条件；verified 保持 false。
+        // 拖拽同样没有可读的后置条件：unknown + no_readable_postcondition。
         return observeCoordinate(
             token: token, r: r, snap: snap, binding: binding, baseline: baseline,
             point: nil, start: start)

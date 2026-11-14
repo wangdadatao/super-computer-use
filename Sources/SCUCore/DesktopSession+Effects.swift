@@ -14,9 +14,15 @@ extension DesktopSession {
         /// 观察到**目标自身**的后置条件：目标已不是原来那个（`target_changed`），
         /// 或路径上同一节点的自身字段变了（`target_state`）。
         /// 不从“整棵树变了”推导：树变化也可能来自应用自身刷新。
+        /// 恒等于 `verificationState == .verified`（见 `Verification`）。
         public var verified: Bool
-        /// 后置条件的种类；nil 表示没有观察到目标自身的后置条件（是否命中未验证）。
+        /// 后置条件的种类；只有 `verified` 时有值。
         public var verifiedBy: String?
+        /// 三值结论：`verified` / `refuted` / `unknown`。唯一判定点是 `Verification.action(_:)`。
+        /// `refuted` 只否定声明的后置条件，不证明界面外没有副作用；`unknown` 不等于成功。
+        public var verificationState: VerificationState
+        /// `refuted` / `unknown` 的原因；`verified` 时为 nil。
+        public var verificationReason: VerificationReason?
         /// 动作之后成功重读过界面。重读失败时为 false，下面三项均为 nil。
         public var observed: Bool
         /// 重读的静默已足够长（见 `Settle.quietPollsAfterChange` / `quietPollsWithoutChange`）。
@@ -33,6 +39,16 @@ extension DesktopSession {
         /// 因树变化，调用时所用的令牌已被会话作废。
         public var tokenInvalidated: Bool
         public var observationError: String?
+
+        /// 把三值判定写进报告：`verified` / `verifiedBy` 是派生字段，只在这里赋值。
+        /// 观察到目标自身的后置条件时清掉 `noOpSuspected`（两者同时为真没有意义）。
+        mutating func apply(_ verdict: VerificationVerdict) {
+            verificationState = verdict.state
+            verificationReason = verdict.reason
+            verified = verdict.state == .verified
+            verifiedBy = verdict.by
+            if verified { noOpSuspected = false }
+        }
     }
 
     /// 点击：执行 `AXPress`，再观察效果。
@@ -83,6 +99,7 @@ extension DesktopSession {
         guard let record = records[token], let pre else { throw WireError.internalError("动作后令牌记录丢失") }
         var report = ClickReport(
             pid: record.pid, target: locator.target, delivered: true, verified: false, verifiedBy: nil,
+            verificationState: .unknown, verificationReason: .observationFailed,
             observed: false, converged: false,
             treeChanged: nil, targetChanged: nil, noOpSuspected: nil, polls: 0, elapsed: 0,
             tokenInvalidated: false, observationError: nil)
@@ -144,16 +161,21 @@ extension DesktopSession {
         }
         // 后置条件只认目标自身：目标被替换/移除，或同一路径上的节点自身字段变了。
         // 整棵树的变化不算：它可能就是应用自己的刷新，与这次动作无关。
-        if report.targetChanged == true {
-            report.verified = true
-            report.verifiedBy = "target_changed"
-        } else if !settled.truncated, handle >= 1, handle <= pre.entries.count,
-            let afterNode = Self.node(at: locator.path, in: settled.root),
-            Self.selfFieldsDiffer(pre.entries[handle - 1].node, afterNode)
+        let stateChanged: Bool
+        if !settled.truncated, handle >= 1, handle <= pre.entries.count,
+            let afterNode = Self.node(at: locator.path, in: settled.root)
         {
-            report.verified = true
-            report.verifiedBy = "target_state"
+            stateChanged = Self.selfFieldsDiffer(pre.entries[handle - 1].node, afterNode)
+        } else {
+            stateChanged = false
         }
+        // 三值结论只在 `Verification.action` 里算一次；下面四个字段全由它派生。
+        let verdict = Verification.action(
+            .init(
+                observed: report.observed, converged: report.converged,
+                baselineAvailable: !pre.truncated, truncated: settled.truncated,
+                targetResolved: report.targetChanged, stateChanged: stateChanged))
+        report.apply(verdict)
         return report
     }
 

@@ -124,14 +124,16 @@ ScreenCaptureKit 候选；匹配不上就拒绝截图，不会退回可能不匹
 **返回的是观察到的效果，不是"成功"。** 第一行人话；第二行固定格式、可解析：
 
 ```text
-effect: delivered=true verified=false verifiedBy=- observed=true converged=true treeChanged=false targetChanged=false noOpSuspected=true polls=12 elapsed=2.4s
+effect: delivered=true verification=refuted verificationReason=postcondition_absent verified=false verifiedBy=- observed=true converged=true treeChanged=false targetChanged=false noOpSuspected=true polls=12 elapsed=2.4s
 ```
 
 | 字段 | 含义 | `unknown` 的情形 |
 | --- | --- | --- |
 | `delivered` | 平台没有报错。**不代表界面已经变化，也不代表命中** | 恒为 true（失败时抛错，不返回摘要） |
-| `verified` | 观察到**具体后置条件**。元素动作看目标自身（`target_changed` / `target_state`）；坐标点击按落点类型二选一：文本落点看同一元素 `AXSelectedTextRange` 的变化（`selection_changed`），非文本落点看落点所在行的插入光标形态（`caret_pixels`，启发式） | 没有观察到后置条件时恒为 false，报告会明写“是否命中未验证” |
-| `verifiedBy` | 后置条件的种类；`-` 表示没有 | 同上 |
+| `verificationState` | 三值结论：`verified`（观察到声明的后置条件）/ `refuted`（声明的后置条件为假）/ `unknown`（判不了）。**唯一判定点**，由动作种类、声明的后置条件与观察结果算一次 | `unknown` 时看 `verificationReason` |
+| `verificationReason` | `refuted` / `unknown` 的原因码；`verified` 时为 `-` | `refuted` 目前只有 `postcondition_absent`；`unknown` 见下表 |
+| `verified` | 向后兼容字段，恒等于 `verificationState == .verified`。元素动作看目标自身（`target_changed` / `target_state`）；坐标点击按落点类型二选一：文本落点看同一元素 `AXSelectedTextRange` 的变化（`selection_changed`），读不到选区时看落点所在行的插入光标形态（`caret_pixels`，启发式） | 非 verified 时恒为 false |
+| `verifiedBy` | 后置条件的种类；只有 `verified` 时有值 | 同上 |
 | `observed` | 事后成功重读过界面 | 重读失败时为 false（动作已投递，不报失败，免得调用方重复点击） |
 | `converged` | 连续一致的重读已足够长（见上面第 5 步的两档次数），且这次读取未被截断 | 上限内一直在变化、或树被截断，则为 false；此时读到的是中间状态或不完整的树 |
 | `treeChanged` | 与动作前相比结构是否变化 | 动作前或动作后的读取被截断，无法比较 |
@@ -142,7 +144,25 @@ effect: delivered=true verified=false verifiedBy=- observed=true converged=true 
 结构没变（含疑似空操作）时令牌仍有效。无法判断时（截断）不作废，下一次动作由原生层再核对一遍目标。
 
 "疑似空操作"的含义有限：动作只改变了无障碍树之外的东西（剪贴板、文件、窗口外状态）时同样会触发，
-所以它是"请核实"的提示，不是失败判定。
+所以它是"请核实"的提示，不是失败判定。它是**观察事实**，不参与三值判定；观察到后置条件时恒为 false。
+
+`refuted` 的定义是"**声明的后置条件为假**"，不是"什么都没发生"：它只否定那一条可读谓词，
+剪贴板、文件、窗口外状态本来就观察不到。报告里的文案会明写这一句，免得调用方把 `refuted`
+当成"全局无副作用"。`unknown` 则是"判不了"，**不等于成功**。
+
+`unknown` / `refuted` 的原因码：
+
+| 原因 | 状态 | 含义 |
+| --- | --- | --- |
+| `postcondition_absent` | refuted | 已收敛、目标仍在、声明的后置条件为假 |
+| `observation_failed` | unknown | 事后重读失败，或读到了但读不出这条后置条件 |
+| `tree_truncated` | unknown | 事后读取被截断，树不完整 |
+| `screenshot_unavailable` | unknown | 事后截图取不到或不可比（像素判据要用它） |
+| `baseline_unavailable` | unknown | 动作前的基线读不到，没有比较基准 |
+| `geometry_changed` | unknown | 动作后窗口位置/缩放变了，像素判据不可比 |
+| `no_readable_postcondition` | unknown | 这个动作没有可读的后置条件：坐标点击非文本落点、`scroll_at`、`drag` |
+| `target_not_visible` | unknown | 落点元素或目标在事后已不可读（被重建或移除） |
+| `not_converged` | unknown | 事后界面一直没有稳定，读到的是中间状态 |
 
 **`treeChanged` 不是成功信号。** 它只说“投递后结构变了”，变化也可能来自应用自身刷新或窗口激活，
 所以它既不置 `verified`，也不再产生“界面结构已变化”这种读起来像成功的提示。
@@ -166,18 +186,22 @@ effect: delivered=true verified=false verifiedBy=- observed=true converged=true 
 6. 点击后重读 AX 树，并再截一张图比较全图像素比例：
    结构变化 → 令牌作废；树没变但图变了 → `screenshotChanged=true`；
    树和图都没变 → `noOpSuspected=true`；窗口几何变了 → `geometryChanged=true`。
-7. `verified` 按落点类型选**一个**判据，不叠加、不 OR：
+7. `verificationState` 按落点类型选**一个**判据，不叠加、不 OR（`verified` 是它的派生字段）：
    - 落点在文本控件内（`AXTextArea` / `AXTextField` / `AXComboBox` / `AXSearchField`，或其子节点）
      且 `AXSelectedTextRange` 读得到：点击前记录该控件的 AX 引用与选区快照，
      点击后**只读同一个 AXUIElement**（不重新 hit-test，避免把重建后的另一个元素算成命中）。
-     选区变了 → `verified=true`、`verifiedBy=selection_changed`；元素引用在点击后失效、
-     或事后读不到该属性 → `verified=false`，`verifiedNote` 写明原因，**不回退**到像素或
-     “全窗口任意选区变化”。
-   - 其余落点才看像素：落点所在行出现插入光标形态的窄高变化 → `verifiedBy=caret_pixels`。
-     这是启发式判据，不读取焦点。
-   其余情形一律 `verified=false`，报告明写“是否命中未验证”。全图比例与 token 状态都不证明点中了目标；
-   不要重复点。坐标点击的摘要行还会带 `landingRole` / `selectionBefore` / `selectionAfter` /
-   `elementValid`（有探针时），用来核对它走了哪条判据。
+     选区变了 → `verificationState=verified`、`verifiedBy=selection_changed`；选区没变 →
+     `refuted` + `postcondition_absent`；元素引用在点击后失效 → `unknown` +
+     `target_not_visible`，事后读不到该属性 → `unknown` + `observation_failed`。两种 unknown
+     都在 `verifiedNote` 写明原因，**不回退**到像素或“全窗口任意选区变化”。
+   - 落点在文本元素内但选区读不到时才看像素：落点所在行出现插入光标形态的窄高变化 →
+     `verifiedBy=caret_pixels`；三帧都可比且都没有光标形态 → `refuted`；一帧都不可比 →
+     `unknown` + `screenshot_unavailable`。这是启发式判据，不读取焦点。
+   - 落点不是文本元素：没有可读的后置条件，恒为 `unknown` + `no_readable_postcondition`。
+     坐标点按钮要 `verified` 请改用元素寻址的 `click`。
+   全图比例与 token 状态都不证明点中了目标；不要重复点。坐标点击的摘要行还会带
+   `landingRole` / `selectionBefore` / `selectionAfter` / `elementValid`（有探针时），
+   用来核对它走了哪条判据。
 
 设计见 [ADR-0020](../decisions/adr_0020_coordinate_click.md)。
 
@@ -185,14 +209,16 @@ effect: delivered=true verified=false verifiedBy=- observed=true converged=true 
 
 在截图坐标 `(x,y)` 投递滚轮事件。`dy > 0` 向下，`dx > 0` 向右；增量为 0 返回
 `invalid_coordinates`。与 `click_at` 相同：截图绑定令牌、先激活目标窗口、显示指示环、真实事件；
-滚动后重读 AX 树并比较全图像素比例。滚动没有可读的命中后置条件，`verified` 恒为 false，
-报告明写“是否命中未验证”。设计见 [ADR-0021](../decisions/adr_0021_scroll_and_drag.md)。
+滚动后重读 AX 树并比较全图像素比例。滚动没有可读的后置条件：`verificationState` 恒为
+`unknown`、`verificationReason=no_readable_postcondition`，报告明写“unknown 不等于成功”。
+设计见 [ADR-0021](../decisions/adr_0021_scroll_and_drag.md)。
 
 ### `drag`
 
 在截图坐标内从 `(from_x, from_y)` 拖到 `(to_x, to_y)`，`duration_ms` 默认 400。起终点相同或越界
 返回 `invalid_coordinates`；起点与终点会各显示一个指示环。拖拽可能移动文件/列表项，属于高风险动作；没有审批层之前只用于
-低风险、可逆的场景。验证同样是 AX 树 + 全图像素比例，`verified` 恒为 false。
+低风险、可逆的场景。验证同样是 AX 树 + 全图像素比例，但没有可读的后置条件：
+`verificationState` 恒为 `unknown`、`verificationReason=no_readable_postcondition`。
 
 ### `type_text`、`press_key` 与 `set_value`
 

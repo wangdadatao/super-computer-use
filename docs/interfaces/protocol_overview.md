@@ -142,16 +142,18 @@ type Coordinates = { x: number; y: number; geometryToken: string };
 
 ## 动作效果
 
-> **P0 实际**：`click` 的效果摘要字段是 `delivered`、`verified`、`verifiedBy`、`observed`、`converged`、`treeChanged`、`targetChanged`、`noOpSuspected`、
+> **P0 实际**：`click` 的效果摘要字段是 `delivered`、`verificationState`、`verificationReason`、
+> `verified`、`verifiedBy`、`observed`、`converged`、`treeChanged`、`targetChanged`、`noOpSuspected`、
 > `polls`、`elapsed`、`tokenInvalidated`，没有 `focusStolenBy` 与 `snapshotToken`（树变化后旧令牌失效，不发新令牌，由调用方重读）。
 > 见 [MCP 接入面](mcp_surface.md#click_tool)。下面的接口是拟实施设计。
 >
-> **`delivered` 与 `verified` 是两个事实。** `delivered=true` 只表示事件已投递给平台，
-> 不代表界面响应、更不代表命中。`verified=true` 只在观察到具体后置条件时为真：
+> **`delivered` 与 `verificationState` 是两个事实。** `delivered=true` 只表示事件已投递给平台，
+> 不代表界面响应、更不代表命中。`verificationState` 是三值：`verified` 只在观察到声明的后置条件时成立：
 > 元素动作看目标自身（`target_changed` / `target_state`）；坐标点击按落点类型二选一——
-> 文本落点看同一元素 `AXSelectedTextRange` 的变化（`selection_changed`，直接证据），
-> 非文本落点才看落点所在文本行出现插入光标形态的像素变化（`caret_pixels`，启发式）；
-> 其余情形 `verified=false`，报告明写“是否命中未验证”。
+> 文本落点看同一元素 `AXSelectedTextRange` 的变化（`selection_changed`，直接证据）或插入光标形态的像素变化
+> （`caret_pixels`，启发式）；非文本落点没有可读的后置条件，恒为 `unknown` + `no_readable_postcondition`。
+> `refuted` 表示声明的后置条件为假（**只否定那一条谓词**，不证明界面外没有副作用），
+> `unknown` 表示判不了、**不等于成功**。`verified` 是 `verificationState == .verified` 的派生字段。
 > `treeChanged` / `screenshotChanged` **不参与**这个判断。
 
 每个动作返回效果摘要，而不是空返回：

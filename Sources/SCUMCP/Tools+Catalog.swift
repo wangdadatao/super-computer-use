@@ -53,8 +53,9 @@ extension ScuTool {
                 在 get_screenshot 的截图坐标 (x, y) 投递滚轮事件。会改变应用的状态。\
                 坐标以截图左上角为原点，单位是图像像素；必须给出令牌与 screenshot_id。\
                 dy > 0 表示向下滚，dx > 0 表示向右滚；增量为 0 会被拒绝。\
-                点击前会激活并 raise 目标窗口；滚动后重读 AX 树并比较全图像素比例。\
-                报告里 verified 恒为 false（滚动没有光标/焦点这类可读后置条件），不要把它当成功。\
+                动作前会激活并 raise 目标窗口；滚动后重读 AX 树并比较全图像素比例。\
+                滚动没有可读的后置条件：verificationState 恒为 unknown、verificationReason=no_readable_postcondition，\
+                unknown 不等于成功，不要把它当命中。\
                 返回 noOpSuspected=true 时不要反复滚；先用 get_screenshot 核实。
                 """
         case .drag:
@@ -62,8 +63,9 @@ extension ScuTool {
                 在 get_screenshot 的截图坐标内从 (from_x, from_y) 拖到 (to_x, to_y)。\
                 会移动真实光标并可能改变应用状态（移动文件/列表项/画布）。\
                 坐标以截图左上角为原点；必须给出令牌与 screenshot_id；duration_ms 默认 400，范围 100...2000。\
-                点击前会激活并 raise 目标窗口；拖拽后重读 AX 树并比较全图像素比例。\
-                报告里 verified 恒为 false（拖拽没有可读的命中后置条件），不要把它当成功。\
+                动作前会激活并 raise 目标窗口；拖拽后重读 AX 树并比较全图像素比例。\
+                拖拽没有可读的后置条件：verificationState 恒为 unknown、verificationReason=no_readable_postcondition，\
+                unknown 不等于成功，不要把它当命中。\
                 这是高风险动作：调用前应确认起点/终点，不要对不确定的界面拖拽。
                 """
         case .launchApp:
@@ -78,9 +80,11 @@ extension ScuTool {
                 在 get_screenshot 的截图坐标 (x, y) 投递一次鼠标左键点击。会改变应用的状态。\
                 坐标以截图左上角为原点，单位是图像像素；必须同时给出令牌与 screenshot_id。\
                 点击前会核对截图属于该令牌、窗口位置/缩放未变；坐标越界返回 invalid_coordinates。\
-                返回的是**观察到的外部事实**，不是“点中了”的结论：delivered=true 只说明事件已投递；\
-                verified 只在观察到具体后置条件时为 true，目前只认“落点所在文本行出现插入光标形态的像素变化”；\
-                否则明写“是否命中未验证”，treeChanged 不再被当成成功。\
+                返回的是**观察到的外部事实**，不是“点中了”的结论：delivered=true 只说明事件已投递。\
+                verificationState 是三值：verified 表示观察到声明的后置条件（文本落点的选区变化，或插入光标形态的像素变化）；\
+                refuted 表示已确认声明的后置条件为假（只否定该后置条件，不证明界面外没有副作用）；\
+                unknown 表示判不了，原因见 verificationReason，unknown 不等于成功。\
+                非文本落点没有可读的后置条件，恒为 unknown + no_readable_postcondition；要看命中请用 click 的元素寻址。\
                 请用 get_screenshot 核实，不要反复点。屏幕保护/遮挡等情况下可能点到别处，\
                 调用前应确认目标窗口可见且在前台。
                 """
@@ -89,8 +93,10 @@ extension ScuTool {
                 点击元素：对 get_ax_state 输出里的某个句柄执行 AXPress（无障碍的"按下"，不移动真实鼠标）。会改变应用的状态。\
                 必须给出该输出的令牌，并用句柄或标签指定目标（二者二选一）；令牌失效（界面结构变了）、目标已不是读取时的那个、\
                 或应用属于拒绝类目（终端、脚本运行器、密码管理器、系统设置、Cursor 等）时，动作不会执行，并返回分类的错误。\
-                返回的是**观察到的外部事实**，不是“成功”的保证：delivered=true 只表示系统没有报错；\
-                verified 只在观察到目标自身的后置条件时为 true（目标已不是原来那个，或目标自身的字段变了）；\
+                返回的是**观察到的外部事实**，不是“成功”的保证：delivered=true 只表示系统没有报错。\
+                verificationState 是三值：verified 表示观察到目标自身的后置条件（目标已不是原来那个，或目标自身的字段变了）；\
+                refuted 表示界面已稳定、目标仍在、后置条件为假（只否定该后置条件，不证明界面外没有副作用）；\
+                unknown 表示判不了，原因见 verificationReason，unknown 不等于成功。\
                 之后会重读界面直到稳定（最多约 3 秒），报告结构是否变化。\
                 “疑似空操作”表示界面稳定后结构没有任何变化，请核实后再继续。\
                 结构变化时旧令牌作废，需重新 get_ax_state。不支持 AXPress 的元素返回 unsupported_operation。
@@ -104,7 +110,8 @@ extension ScuTool {
                 输入经过应用的按键处理（与"设值"不同），可以触发自动完成、实时校验与回车等行为。\
                 文本里的换行与制表符分别按 Return 与 Tab 投递。\
                 返回的是**观察到的效果**，不是"成功"的保证：之后会重读界面直到稳定，报告结构是否变化；\
-                结构变化时旧令牌作废，需重新 get_ax_state。
+                verificationState 为 verified 表示目标自身字段变了或目标被替换，refuted 表示已稳定且两者都没发生\
+                （只否定该后置条件），unknown 表示判不了、不等于成功；结构变化时旧令牌作废，需重新 get_ax_state。
                 """
         case .pressKey:
             return """
@@ -112,7 +119,9 @@ extension ScuTool {
                 如 Return、Tab、esc、cmd+c、shift+左方向键；可能把目标应用切到前台。\
                 键名用 + 分隔，修饰键顺序无关；不认识键名会拒绝，不猜测。会改变应用的状态。\
                 必须给出 get_ax_state 输出的令牌，并用句柄或标签指定目标（二者二选一）；令牌失效、目标对不上或应用属于拒绝类目时不会执行。\
-                返回的是**观察到的效果**，不是"成功"的保证；结构变化时旧令牌作废。
+                返回的是**观察到的效果**，不是"成功"的保证：verificationState 为 verified 表示目标自身字段变了或目标被替换，\
+                refuted 表示已稳定且两者都没发生（只否定该后置条件），unknown 表示判不了、不等于成功；\
+                结构变化时旧令牌作废。
                 """
         case .setValue:
             return """
@@ -121,6 +130,8 @@ extension ScuTool {
                 因此也不会触发自动完成、实时校验这类"输入过程中"的行为。\
                 只有元素声明了可写的 AXValue 时才执行；不支持时返回 unsupported_operation，\
                 不会自动改成逐字输入（两者的副作用不同）。必须给出令牌，并用句柄或标签指定目标（二者二选一）；\
+                verificationState 为 verified 表示读到了目标字段变化（target_state），refuted 表示已稳定且字段未变\
+                （只否定该后置条件，不证明界面外没有副作用），unknown 表示判不了、不等于成功；\
                 值变化后令牌作废，需要重新 get_ax_state。
                 """
         case .getAXState:

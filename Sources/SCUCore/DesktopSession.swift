@@ -10,17 +10,26 @@ public struct SnapshotToken: Hashable, Sendable, CustomStringConvertible {
 
 /// 一次窗口截图，连同签发它的令牌。标签只包含落在截图窗口内的可交互元素。
 /// 坐标点击的观察结果。坐标点击没有元素身份，只能报告观察到的外部事实：
-/// `delivered` 只说明事件已投递；`verified` 只在观察到具体后置条件时为 true。
+/// `delivered` 只说明事件已投递；`verificationState` 是三值结论（`verified` / `refuted` / `unknown`），
+/// `verified` 只为向后兼容保留，恒等于 `verificationState == .verified`。
 /// 判据按落点类型二选一：文本落点看同一元素的 `AXSelectedTextRange`（`selection_changed`），
-/// 非文本落点看插入光标形态的像素变化（`caret_pixels`，启发式）。
+/// 读不到选区时看插入光标形态的像素变化（`caret_pixels`，启发式）。
+/// 非文本落点与 `scroll_at` / `drag` 没有可读的后置条件：结论固定为 `unknown` +
+/// `no_readable_postcondition`。`refuted` 只否定声明的后置条件，不证明界面外没有副作用。
 public struct CoordinateReport: Sendable {
     public var pid: Int32
     /// 事件已投递给平台。失败时抛错，不返回报告。
     public var delivered: Bool
     /// 观察到具体后置条件。**不**从 `treeChanged` / `screenshotChanged` 推导。
+    /// 恒等于 `verificationState == .verified`（见 `Verification`）。
     public var verified: Bool
-    /// 后置条件的种类：`selection_changed` / `caret_pixels`；nil 表示没有观察到任何后置条件。
+    /// 后置条件的种类：`selection_changed` / `caret_pixels`；只有 `verified` 时有值。
     public var verifiedBy: String?
+    /// 三值结论：`verified` / `refuted` / `unknown`。唯一判定点是 `Verification.coordinate(_:)`。
+    /// `unknown` **不等于成功**，不得据此认为动作已生效。
+    public var verificationState: VerificationState
+    /// `refuted` / `unknown` 的原因；`verified` 时为 nil。
+    public var verificationReason: VerificationReason?
     /// 点击前 hit-test 到的落点元素 role；坐标动作没有探针时为 nil。
     public var landingRole: String?
     /// 点击前同一元素的 `AXSelectedTextRange`（"location,length"）；读不到时为 nil。
@@ -44,6 +53,8 @@ public struct CoordinateReport: Sendable {
 
     public init(
         pid: Int32, delivered: Bool = true, verified: Bool = false, verifiedBy: String? = nil,
+        verificationState: VerificationState = .unknown,
+        verificationReason: VerificationReason? = nil,
         landingRole: String? = nil, selectionBefore: String? = nil,
         selectionAfter: String? = nil, landingElementValid: Bool? = nil,
         clickCount: Int? = nil, verifiedNote: String? = nil,
@@ -55,6 +66,8 @@ public struct CoordinateReport: Sendable {
         self.delivered = delivered
         self.verified = verified
         self.verifiedBy = verifiedBy
+        self.verificationState = verificationState
+        self.verificationReason = verificationReason
         self.landingRole = landingRole
         self.selectionBefore = selectionBefore
         self.selectionAfter = selectionAfter
@@ -69,6 +82,17 @@ public struct CoordinateReport: Sendable {
         self.tokenInvalidated = tokenInvalidated
         self.noOpSuspected = noOpSuspected
         self.elapsed = elapsed
+    }
+
+    /// 把三值判定写进报告。`verified` / `verifiedBy` 是派生字段，只在这里赋值，
+    /// 所以 `verified == (verificationState == .verified)` 与 `verifiedBy != nil ⇔ verified`
+    /// 是结构上成立的，不靠各构造点自觉。观察到后置条件时清掉 `noOpSuspected`。
+    mutating func apply(_ verdict: VerificationVerdict) {
+        verificationState = verdict.state
+        verificationReason = verdict.reason
+        verified = verdict.state == .verified
+        verifiedBy = verdict.by
+        if verified { noOpSuspected = false }
     }
 }
 

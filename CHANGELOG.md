@@ -4,6 +4,24 @@
 0.x 阶段不保证向后兼容，线协议版本单独记录在
 [docs/interfaces/native_wire_protocol.md](docs/interfaces/native_wire_protocol.md)。
 
+## Unreleased
+
+### 新增
+
+- **动作效果的验证三值化。** `click` / `type_text` / `press_key` / `set_value` 与坐标动作
+  （`click_at` / `scroll_at` / `drag`）的效果摘要新增 `verificationState`
+  （`verified` / `refuted` / `unknown`）与 `verificationReason`；0.5.1 的 `verified` / `verifiedBy`
+  原样保留，恒等于 `verificationState == .verified`，老客户端不受影响。线协议不变。
+  - `refuted` 是"**声明的后置条件为假**"，只否定那一条可读谓词，不证明界面外没有副作用。
+  - `unknown` 是"判不了"，**不等于成功**；原因码：`observation_failed`、`tree_truncated`、
+    `screenshot_unavailable`、`baseline_unavailable`、`geometry_changed`、`no_readable_postcondition`、
+    `target_not_visible`、`not_converged`。
+  - 非文本落点的坐标点击、`scroll_at`、`drag` 没有可读的后置条件，恒为 `unknown` +
+    `no_readable_postcondition`；要 `verified` 请用元素寻址的 `click`。
+  - 效果行改为 `effect: delivered=… verification=… verificationReason=… verified=…`；
+    refuted / unknown 各有一句说明，取代原来笼统的"是否命中未验证"。
+  - `noOpSuspected` 降级为观察事实，不参与判定；观察到后置条件时恒为 false。
+
 ## 0.5.1 — 2026-11-04
 
 ### 修复

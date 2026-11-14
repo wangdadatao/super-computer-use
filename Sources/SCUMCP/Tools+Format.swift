@@ -95,8 +95,25 @@ extension ScuTool {
         return s
     }
 
-    /// 坐标点击结果。没有元素身份：`delivered` 只说明事件已投递，`verified` 只在观察到
-    /// 具体后置条件（文本落点的选区变化或插入光标形态）时为 true，其余一律写“是否命中未验证”。
+    /// `verificationReason` 的人话。原因码原样附在后面，调用方仍按码分支。
+    static func verificationReasonText(_ reason: VerificationReason?) -> String {
+        guard let reason else { return "无法判定（未给出原因）" }
+        switch reason {
+        case .postconditionAbsent: return "postcondition_absent（声明的后置条件为假）"
+        case .observationFailed: return "observation_failed（事后重读界面失败）"
+        case .treeTruncated: return "tree_truncated（事后读取被截断）"
+        case .screenshotUnavailable: return "screenshot_unavailable（事后截图取不到或不可比）"
+        case .baselineUnavailable: return "baseline_unavailable（动作前的基线读不到）"
+        case .geometryChanged: return "geometry_changed（动作后窗口位置/缩放变了）"
+        case .noReadablePostcondition:
+            return "no_readable_postcondition（这个动作没有可读的后置条件）"
+        case .targetNotVisible: return "target_not_visible（落点或目标在事后已不可读）"
+        case .notConverged: return "not_converged（界面在静默窗口内没有稳定）"
+        }
+    }
+
+    /// 坐标点击结果。没有元素身份：`delivered` 只说明事件已投递；`verification` 是三值结论，
+    /// `verified` 只为向后兼容保留。refuted 只否定声明的后置条件，unknown 不等于成功。
     static func coordinateText(_ r: CoordinateReport, action: String, detail: String) -> String {
         func flag(_ b: Bool?) -> String { b.map { $0 ? "true" : "false" } ?? "unknown" }
         let secs = String(format: "%.1f", r.elapsed)
@@ -110,15 +127,17 @@ extension ScuTool {
         }
         var lines = [
             "已对 pid \(r.pid) 的\(detail) 投递\(action)。",
-            "effect: delivered=\(flag(r.delivered)) verified=\(flag(r.verified)) "
-                + "verifiedBy=\(r.verifiedBy ?? "-") "
+            "effect: delivered=\(flag(r.delivered)) verification=\(r.verificationState.rawValue) "
+                + "verificationReason=\(r.verificationReason?.rawValue ?? "-") "
+                + "verified=\(flag(r.verified)) verifiedBy=\(r.verifiedBy ?? "-") "
                 + "observed=\(flag(r.observed)) treeChanged=\(flag(r.treeChanged)) "
                 + "screenshotChanged=\(flag(r.screenshotChanged)) "
                 + "diffRatio=\(r.diffRatio.map { String(format: "%.4f", $0) } ?? "unknown") "
                 + "geometryChanged=\(flag(r.geometryChanged)) "
                 + "noOpSuspected=\(flag(r.noOpSuspected)) elapsed=\(secs)s\(probe)",
         ]
-        if r.verified {
+        switch r.verificationState {
+        case .verified:
             switch r.verifiedBy {
             case "caret_pixels":
                 lines.append("已验证：落点所在文本行出现了插入光标形态的像素变化（启发式判据，未读取焦点）。")
@@ -129,9 +148,16 @@ extension ScuTool {
             default:
                 lines.append("已验证：观察到后置条件 \(r.verifiedBy ?? "未知")。")
             }
-        } else {
-            lines.append("是否命中未验证：只确认事件已投递；没有观察到光标、焦点或选中这类后置条件。")
-            if let note = r.verifiedNote { lines.append("未验证原因：\(note)") }
+        case .refuted:
+            lines.append(
+                "已确认未生效（refuted）：落点文本元素的插入光标/选区变化在稳定窗口内为假。"
+                    + "这只否定该后置条件，不证明界面外没有副作用。")
+            if let note = r.verifiedNote { lines.append("观察细节：\(note)") }
+        case .unknown:
+            lines.append(
+                "结果未知（unknown）：\(verificationReasonText(r.verificationReason))。"
+                    + "unknown 不等于成功，不得据此认为动作已生效。")
+            if let note = r.verifiedNote { lines.append("观察细节：\(note)") }
         }
         if !r.observed {
             lines.append("⚠️ 点击已投递，但事后读不到界面，不知道效果；请用 get_screenshot 核实。")
@@ -164,17 +190,25 @@ extension ScuTool {
         let secs = String(format: "%.1f", r.elapsed)
         var lines = [
             "已对 \(name)（pid \(r.pid)）投递\(verb)。",
-            "effect: delivered=\(flag(r.delivered)) verified=\(flag(r.verified)) "
-                + "verifiedBy=\(r.verifiedBy ?? "-") "
+            "effect: delivered=\(flag(r.delivered)) verification=\(r.verificationState.rawValue) "
+                + "verificationReason=\(r.verificationReason?.rawValue ?? "-") "
+                + "verified=\(flag(r.verified)) verifiedBy=\(r.verifiedBy ?? "-") "
                 + "observed=\(flag(r.observed)) converged=\(flag(r.converged)) "
                 + "treeChanged=\(flag(r.treeChanged)) targetChanged=\(flag(r.targetChanged)) "
                 + "noOpSuspected=\(flag(r.noOpSuspected)) polls=\(r.polls) elapsed=\(secs)s",
         ]
-        if r.verified {
+        switch r.verificationState {
+        case .verified:
             let what = r.verifiedBy == "target_changed" ? "目标已不是原来那个" : "目标自身的字段发生变化"
             lines.append("已验证：\(what)（\(r.verifiedBy ?? "-")）。")
-        } else if r.observed {
-            lines.append("是否命中未验证：只确认事件已投递；没有观察到目标自身的光标、焦点或选中这类后置条件。")
+        case .refuted:
+            lines.append(
+                "已确认未生效（refuted）：目标自身的字段变化或目标被替换在稳定窗口内为假。"
+                    + "这只否定该后置条件，不证明界面外没有副作用。")
+        case .unknown:
+            lines.append(
+                "结果未知（unknown）：\(verificationReasonText(r.verificationReason))。"
+                    + "unknown 不等于成功，不得据此认为动作已生效。")
         }
         if !r.observed {
             lines.append(

@@ -43,6 +43,10 @@ SCU 失败返回的结构、分类与可重试性。成功返回的形态见
 `converged` 与 `noOpSuspected` 两个字段。**把它们做成错误会诱导调用方
 对正常情况做异常处理。**
 
+效果摘要的 `verificationState`（`verified` / `refuted` / `unknown`）同理：`refuted` 与 `unknown`
+都是**成功返回**，不是错误码。`refuted` 只否定声明的后置条件，`unknown` 只表示判不了；
+原因在 `verificationReason` 里，调用方按码分支，不要为了“动作没生效”去匹配错误。
+
 <a id="error_structure"></a>
 ## 错误结构
 
