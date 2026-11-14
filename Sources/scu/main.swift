@@ -340,7 +340,12 @@ func main() -> Int32 {
         return e.code
     } catch let e as WireError {
         // 按 code 分支，不解析 message（error_taxonomy.md）。
-        FileHandle.standardError.write(Data("[\(e.code)] \(e.message)（retry=\(e.retry)）\n".utf8))
+        var text = "[\(e.code)] \(e.message)（retry=\(e.retry)）\n"
+        if let details = e.detailsText {
+            // 与 MCP 输出同样的键值对，便于对照；stderr 不是机器契约。
+            text += "details: \(details)\n"
+        }
+        FileHandle.standardError.write(Data(text.utf8))
         return e.code == "system_permission_missing" ? 2 : 1
     } catch {
         FileHandle.standardError.write(Data("\(error)\n".utf8))

@@ -59,6 +59,9 @@ extension ScuTool {
     /// 按 `code` 分支给出提示，不解析 `message`（error_taxonomy.md）。
     static func describe(_ e: WireError) -> String {
         var s = "[\(e.code)] \(e.message)（retry=\(e.retry)）"
+        if let details = e.detailsText {
+            s += "\ndetails: " + details
+        }
         switch e.code {
         case "stale_snapshot", "element_gone":
             s += "\n请重新调用 get_ax_state 取得新令牌与标签/句柄；用 focus 按文本重新定位目标。"
@@ -74,6 +77,10 @@ extension ScuTool {
             s += "\n该应用不在本次连接的允许列表里：让用户确认后调整 --allow-app / --allow-app-file 并重启服务；不要重试或换相近应用。"
         case "window_not_found":
             s += "\n指定的窗口标题不存在或已变化：重新 get_ax_state 查看当前窗口标题，再绑定仍存在的窗口。"
+        case "ambiguous_reference":
+            s += "\n标题对应多个窗口：改用 window_id（list_windows 可查），或关闭多余窗口后重试。"
+        case "focus_not_established":
+            s += "\n焦点不在目标上：先处理挡住目标的窗口/sheet，或改用 set_value；本次未发送任何按键。"
         case "target_switched":
             s += "\n令牌属于之前读取的另一个应用：请对要操作的应用重新 get_ax_state。"
         case "unsupported_operation":

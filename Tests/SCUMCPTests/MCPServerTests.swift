@@ -880,6 +880,53 @@ final class FakeAppLauncher: AppLauncher, @unchecked Sendable {
         #expect(reader.coordinateClicks.isEmpty)
     }
 
+    /// T-019 第二批 §3.6 U3：click_at 的 stale_geometry 在 MCP 文本里带 details。
+    @Test func clickAtFrameChangeCarriesStaleGeometryDetails() {
+        let (t, s, reader) = rig(actions: true)
+        reader.capture = .success(
+            WindowCapture(
+                png: Self.makePNG(width: 400, height: 300), width: 400, height: 300, scale: 1,
+                windowFrame: Rect(x: 0, y: 0, width: 400, height: 300)))
+        let read = t.callTool(s, "get_ax_state", ["pid": 42])
+        let tok = token(from: read)
+        let shot = t.callTool(s, "get_screenshot", ["token": .string(tok)])
+        let sid =
+            shot.text.split(separator: "\n").first
+            .flatMap { $0.split(separator: " ").first { $0.hasPrefix("screenshot_id=") } }
+            .map { String($0.dropFirst("screenshot_id=".count)) } ?? ""
+        reader.capture = .success(
+            WindowCapture(
+                png: Self.makePNG(width: 400, height: 300), width: 400, height: 300, scale: 1,
+                windowFrame: Rect(x: 20, y: 0, width: 400, height: 300)))
+
+        let out = t.callTool(
+            s, "click_at", ["token": .string(tok), "screenshot_id": .string(sid), "x": 10, "y": 10])
+        #expect(out.isError)
+        #expect(out.text.hasPrefix("[stale_geometry]"))
+        #expect(out.text.contains("retry=after_refresh"))
+        #expect(out.text.contains("details: reason=frame_changed"))
+        #expect(out.text.contains("expected=0,0,400,300"))
+        #expect(out.text.contains("actual=20,0,400,300"))
+    }
+
+    /// T-019 第二批 §2.3 U2：读树的同名窗口歧义在 MCP 文本里带 retry 与 details。
+    @Test func ambiguousWindowTitleSurfacesAsToolError() {
+        let (t, s, reader) = rig(actions: false)
+        reader.tree = .failure(
+            WireError.ambiguousReference(
+                title: "同名", count: 2,
+                candidates: [
+                    .init(windowID: 171, frame: Rect(x: 0, y: 0, width: 200, height: 120)),
+                    .init(windowID: 172, frame: Rect(x: 220, y: 0, width: 200, height: 120)),
+                ]))
+        let out = t.callTool(s, "get_ax_state", ["pid": 42, "window": "同名"])
+        #expect(out.isError)
+        #expect(out.text.hasPrefix("[ambiguous_reference]"))
+        #expect(out.text.contains("retry=after_disambiguation"))
+        #expect(out.text.contains("details: reason=title_ambiguous candidate_count=2"))
+        #expect(out.text.contains("window_id"))
+    }
+
     @Test func launchAppUsesTheInjectedLauncher() {
         let launcher = FakeAppLauncher()
         let (t, s, _) = rig(actions: true, launcher: launcher)

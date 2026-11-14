@@ -70,8 +70,15 @@ extension DesktopSession {
             break
         }
         guard let snap = r.snapshot else { throw WireError.internalError("当前令牌缺少快照") }
-        guard let binding = screenshotBindings[screenshotID], binding.token == token else {
-            throw WireError.staleGeometry("截图 \(screenshotID) 不存在、已过期或不属于令牌 \(token)，请重新 get_screenshot。")
+        guard let binding = screenshotBindings[screenshotID] else {
+            throw WireError.staleGeometry(
+                "截图 \(screenshotID) 不存在或已过期，请重新 get_screenshot。",
+                reason: "capture_unknown")
+        }
+        guard binding.token == token else {
+            throw WireError.staleGeometry(
+                "截图 \(screenshotID) 不属于令牌 \(token)，请重新 get_screenshot。",
+                reason: "capture_token_mismatch")
         }
 
         try authorizer.authorizeAction(try identity(for: r), pid: r.pid)
@@ -84,14 +91,53 @@ extension DesktopSession {
     @discardableResult
     func validateCoordinateWindow(_ binding: ScreenshotBinding, pid: Int32) throws -> WindowCapture {
         let target = Target.forWindow(pid: pid, windowID: binding.windowID, titleHint: binding.windowTitle)
-        let current = try reader.captureWindow(target: target)
-        guard current.windowFrame == binding.windowFrame, current.scale == binding.scale,
-            current.width == binding.width, current.height == binding.height,
-            binding.windowID == nil || current.windowID == binding.windowID
-        else {
-            throw WireError.staleGeometry("截图后窗口位置/缩放已变化，请重新 get_screenshot。")
+        let current: WindowCapture
+        do {
+            current = try reader.captureWindow(target: target)
+        } catch let error as WireError where error.code == "window_not_found" {
+            // 原生层如实报“我找不到这个窗口”；知道这是一张旧截图的是这一层。
+            throw WireError.staleGeometry(
+                "截图后目标窗口已不存在，请重新 get_screenshot。", reason: "window_gone",
+                boundBy: binding.windowID != nil ? "window_id" : "window_title")
+        }
+        // 只报第一个失败项，保证同一次调用永远同一个 reason（error_taxonomy.md）。
+        // window_replaced 必须先于 frame/scale/size：ID 变了、几何没变也是换了窗口。
+        if let bound = binding.windowID, let now = current.windowID, bound != now {
+            throw WireError.staleGeometry(
+                "截图后绑定窗口已换成另一个窗口，请重新 get_screenshot。", reason: "window_replaced",
+                expected: "#\(bound)", actual: "#\(now)")
+        }
+        if current.windowFrame != binding.windowFrame {
+            throw WireError.staleGeometry(
+                "截图后窗口位置/尺寸已变化，请重新 get_screenshot。", reason: "frame_changed",
+                expected: Self.frameDetail(binding.windowFrame),
+                actual: Self.frameDetail(current.windowFrame))
+        }
+        if current.scale != binding.scale {
+            throw WireError.staleGeometry(
+                "截图后窗口缩放已变化，请重新 get_screenshot。", reason: "scale_changed",
+                expected: Self.scaleDetail(binding.scale), actual: Self.scaleDetail(current.scale))
+        }
+        if current.width != binding.width || current.height != binding.height {
+            throw WireError.staleGeometry(
+                "截图后窗口图像尺寸已变化，请重新 get_screenshot。", reason: "size_changed",
+                expected: "\(binding.width)×\(binding.height)",
+                actual: "\(current.width)×\(current.height)")
         }
         return current
+    }
+
+    /// `details` 里的 frame 形如 `0,0,800,600`：整数不带小数点，非整数保留三位。
+    static func frameDetail(_ frame: Rect) -> String {
+        "\(detailNumber(frame.x)),\(detailNumber(frame.y)),\(detailNumber(frame.width)),\(detailNumber(frame.height))"
+    }
+
+    static func scaleDetail(_ scale: Double) -> String { String(format: "%.3f", scale) }
+
+    private static func detailNumber(_ value: Double) -> String {
+        let rounded = value.rounded()
+        if abs(value - rounded) < 0.0005 { return String(format: "%.0f", rounded) }
+        return String(format: "%.3f", value)
     }
 
     /// 坐标动作的前置基线，必须在**最后一次激活之后、投递之前**采集（A2）。
