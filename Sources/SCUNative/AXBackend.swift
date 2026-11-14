@@ -39,16 +39,35 @@ public enum AXBackend {
         var minimized: Bool
     }
 
-    /// 按标题精确查找窗口元素。找不到时返回 `window_not_found`，不退回其他窗口。
+    /// 按标题精确查找窗口元素。找不到时返回 `window_not_found`；
+    /// 去重后有两个以上同名窗口时返回 `ambiguous_reference`，不静默取第一个。
     static func windowElement(pid: Int32, title: String) throws -> AXUIElement {
         let app = try appElement(pid: pid)
-        guard let windows = elements(app, kAXWindowsAttribute),
-            let match = windows.first(where: { string($0, kAXTitleAttribute) == title })
-        else {
+        let windows = elements(app, kAXWindowsAttribute) ?? []
+        let titles = windows.map { string($0, kAXTitleAttribute) }
+        switch WindowTitleMatch.resolve(
+            elements: windows, titles: titles, matching: title, same: { CFEqual($0, $1) })
+        {
+        case .notFound:
             throw WireError.windowNotFound(pid: pid, title: title)
+        case .unique(let match):
+            AXUIElementSetMessagingTimeout(match, messagingTimeout)
+            return match
+        case .ambiguous(let count):
+            let matched = ((try? nativeWindows(pid: pid)) ?? []).filter { $0.title == title }
+            throw ambiguousTitleError(title: title, count: count, candidates: matched)
         }
-        AXUIElementSetMessagingTimeout(match, messagingTimeout)
-        return match
+    }
+
+    /// 标题歧义的错误：候选从已经读到的窗口列表来（读不到时降为空的候选清单）。
+    static func ambiguousTitleError(
+        title: String, count: Int, candidates: [NativeWindow]
+    ) -> WireError {
+        WireError.ambiguousReference(
+            title: title, count: count,
+            candidates: candidates.map {
+                WindowTitleMatch.Candidate(windowID: $0.windowID, frame: $0.frame)
+            })
     }
 
     /// 按 CGWindowID 精确查找窗口元素。ID 是窗口生命周期内的稳定标识。

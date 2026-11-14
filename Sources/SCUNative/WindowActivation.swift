@@ -39,10 +39,19 @@ enum WindowActivation {
             }
             chosen = match
         } else if let title = target.windowTitle {
-            guard let match = windows.first(where: { $0.title == title }) else {
+            let titles = windows.map(\.title)
+            switch WindowTitleMatch.resolve(
+                elements: windows, titles: titles, matching: title, same: { CFEqual($0.element, $1.element) })
+            {
+            case .notFound:
                 throw WireError.windowNotFound(pid: target.pid, title: title)
+            case .unique(let match):
+                chosen = match
+            case .ambiguous(let count):
+                throw AXBackend.ambiguousTitleError(
+                    title: title, count: count,
+                    candidates: windows.filter { $0.title == title })
             }
-            chosen = match
         } else {
             let selectable = windows.filter { !$0.minimized }
             chosen = largestIndex(selectable.map(\.frame)).map { selectable[$0] }

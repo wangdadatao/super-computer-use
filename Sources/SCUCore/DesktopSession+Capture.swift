@@ -228,12 +228,18 @@ extension DesktopSession {
     ) -> Int? {
         // AXNode 没有窗口号；优先用截图 frame，标题兜底。窗口 ID 已保证截图/动作
         // 选的是同一个窗口，这里只负责把效果比较限定到它的子树。
+        // 标题不是身份：去重后仍有多个同名窗口时返回 nil（treeChanged=unknown），不抛错——
+        // 动作已经投递，抛错会让调用方以为没发生。单棵树里不会有重复窗口，按条数即可。
         let windows = entries.enumerated().filter { $0.element.node.role == "AXWindow" }
-        let chosen =
-            windows.first { $0.element.node.frame == binding.windowFrame }
-            ?? binding.windowTitle.flatMap { title in
-                windows.first { $0.element.node.title == title }
-            }
+        let chosen: (offset: Int, element: ElementTable.Entry)?
+        if let byFrame = windows.first(where: { $0.element.node.frame == binding.windowFrame }) {
+            chosen = byFrame
+        } else if let title = binding.windowTitle {
+            let byTitle = windows.filter { $0.element.node.title == title }
+            chosen = byTitle.count == 1 ? byTitle[0] : nil
+        } else {
+            chosen = nil
+        }
         guard let chosen else { return nil }
         let end = chosen.offset + chosen.element.size
         guard end <= entries.count else { return nil }
