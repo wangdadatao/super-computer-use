@@ -2,7 +2,7 @@ import Foundation
 
 /// 协议层 ↔ 原生层的协议版本。单调递增整数，两侧必须完全相等（ADR-0012）。
 /// 编译期常量：不是运行时可变状态。
-public let scuNativeProtocolVersion = 13
+public let scuNativeProtocolVersion = 14
 
 /// `dumpTree` 允许的最大深度。超出时原生层拒绝，不做静默截断。
 public let scuMaxTreeDepth = 64
@@ -47,21 +47,29 @@ public func scuTypeTextTimeoutMs(characterCount: Int) -> Int32 {
 
 /// 线上错误。code 取自错误码表。
 ///
-/// **P0 子集**：`error_taxonomy.md` 的 `ScuError` 还定义了 `details` 与 `candidates`，
-/// P0 用不到，这里没有实现。补齐时需同步 `native_wire_protocol.md` 的错误一节。
+/// `details` 是错误码特定的短字符串补充信息；只有本批三个码（`stale_geometry`、
+/// `ambiguous_reference`、`focus_not_established`）填它，其余码保持四字段。
+/// 为 nil 时**不出现在 JSON 里**（Optional 的 `encodeIfPresent`）。`candidates` 仍未实现。
 // @project-doc docs/interfaces/error_taxonomy.md#error_structure
 public struct WireError: Error, Codable, Sendable, Equatable {
     public var code: String
     public var layer: String
     public var retry: String
     public var message: String
+    public var details: [String: String]?
 
-    public init(code: String, layer: String, retry: String, message: String) {
+    public init(
+        code: String, layer: String, retry: String, message: String,
+        details: [String: String]? = nil
+    ) {
         self.code = code
         self.layer = layer
         self.retry = retry
         self.message = message
+        self.details = details
     }
+
+    private enum CodingKeys: String, CodingKey { case code, layer, retry, message, details }
 
     public static func versionMismatch(client: Int, server: Int) -> WireError {
         WireError(
@@ -125,9 +133,49 @@ public struct WireError: Error, Codable, Sendable, Equatable {
         WireError(code: "unsupported_operation", layer: "protocol", retry: "no", message: message)
     }
 
-    /// 截图/坐标令牌的窗口几何已变化。
-    public static func staleGeometry(_ message: String) -> WireError {
-        WireError(code: "stale_geometry", layer: "protocol", retry: "after_refresh", message: message)
+    /// 截图/坐标令牌的窗口几何已变化。`reason` 只报第一个失败项（见 error_taxonomy.md）：
+    /// `capture_unknown` / `capture_token_mismatch` / `window_gone` / `window_replaced` /
+    /// `frame_changed` / `scale_changed` / `size_changed`。
+    public static func staleGeometry(
+        _ message: String, reason: String, expected: String? = nil, actual: String? = nil,
+        boundBy: String? = nil
+    ) -> WireError {
+        var details = ["reason": reason]
+        if let expected { details["expected"] = expected }
+        if let actual { details["actual"] = actual }
+        if let boundBy { details["bound_by"] = boundBy }
+        return WireError(
+            code: "stale_geometry", layer: "protocol", retry: "after_refresh", message: message,
+            details: details)
+    }
+
+    /// 标题不能唯一确定窗口。候选清单只写 `message`，`details` 带数量与原因。
+    public static func ambiguousReference(
+        title: String, count: Int, candidates: [WindowTitleMatch.Candidate]
+    ) -> WireError {
+        let head =
+            candidates.isEmpty
+            ? "窗口标题“\(title)”匹配 \(count) 个窗口，但读不到它们的窗口号与位置。"
+            : "窗口标题“\(title)”匹配 \(count) 个窗口：\(WindowTitleMatch.candidateList(candidates))。"
+        return WireError(
+            code: "ambiguous_reference", layer: "protocol", retry: "after_disambiguation",
+            message: head + "标题不能唯一确定窗口；请改用 window_id（list_windows 可查），或关闭多余窗口后重试。",
+            details: ["reason": "title_ambiguous", "candidate_count": "\(count)"])
+    }
+
+    /// 键盘动作投递前的焦点门禁失败。`keys_posted` 恒为 0（一个按键都没有发）。
+    public static func focusNotEstablished(
+        reason: String, observedRole: String?, appActive: Bool, message: String
+    ) -> WireError {
+        var details = [
+            "reason": reason,
+            "app_active": appActive ? "true" : "false",
+            "keys_posted": "0",
+        ]
+        if let observedRole { details["observed_role"] = observedRole }
+        return WireError(
+            code: "focus_not_established", layer: "platform", retry: "after_user_action",
+            message: message, details: details)
     }
 
     /// 应用不在本次连接的允许列表里。不是硬拒绝类目；用户调整允许列表并重启后可恢复。
@@ -178,6 +226,20 @@ public struct WireError: Error, Codable, Sendable, Equatable {
 
     public static func internalError(_ message: String) -> WireError {
         WireError(code: "internal_error", layer: "boundary", retry: "immediate", message: message)
+    }
+}
+
+extension WireError {
+    /// `details` 的文本形式（`reason=… expected=…`）：`reason` 固定排在最前，
+    /// 其余键按字母序，输出可复现。没有 details 时为 nil。
+    public var detailsText: String? {
+        guard let details, !details.isEmpty else { return nil }
+        var keys = details.keys.sorted()
+        if let index = keys.firstIndex(of: "reason") {
+            keys.remove(at: index)
+            keys.insert("reason", at: 0)
+        }
+        return keys.map { "\($0)=\(details[$0]!)" }.joined(separator: " ")
     }
 }
 
