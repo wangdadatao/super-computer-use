@@ -764,12 +764,20 @@ final class FakeLauncher: AppLauncher, @unchecked Sendable {
 
     @Test func readStateAndElementActionCarryWindowID() throws {
         let (s, r) = session()
-        let st = try s.readState(
-            pid: 10, maxDepth: 12, budgetMs: 1000, windowID: 0xAB, windowTitle: "主")
+        let st = try s.readState(pid: 10, maxDepth: 12, budgetMs: 1000, windowID: 0xAB)
         #expect(st.windowID == 0xAB)
         #expect(r.readWindowIDs == [0xAB])
         _ = try s.click(token: st.token.value, handle: 1)
         #expect(r.actionWindowIDs == [0xAB])
+    }
+
+    @Test func readStateRejectsWindowIDAndTitleTogether() throws {
+        let (s, r) = session()
+        expectError("conflicting_target", retry: "no") {
+            _ = try s.readState(
+                pid: 10, maxDepth: 12, budgetMs: 1000, windowID: 0xAB, windowTitle: "主")
+        }
+        #expect(r.readWindowIDs.isEmpty)
     }
 
     @Test func screenshotBindingUsesCapturedWindowIDForCoordinates() throws {
