@@ -518,6 +518,48 @@ final class FakeLauncher: AppLauncher, @unchecked Sendable {
         #expect(report.screenshotChanged == true)
     }
 
+    /// 插入光标补拍：只要有一帧不可比，就不能把“没看到光标”当成“没有光标”。
+    /// 构造：基线 + 事后帧都可比且无光标，补拍第 1 帧读图失败，第 2 帧可比且仍无光标。
+    @Test func caretRefutationRequiresEveryExtraFrameToBeComparable() throws {
+        let r = ScriptedReader()
+        let s = DesktopSession(reader: r, settle: Clock().settle)
+        r.tree = Self.textWindowTree()
+        let a = try read(s)
+        let blank = Self.windowPNG()
+        r.captureScript = [
+            .success(Self.capture(blank)),
+            .success(Self.capture(blank)),
+            .failure(WireError.internalError("补拍读图失败")),
+            .success(Self.capture(blank)),
+        ]
+        let shot = try s.captureScreenshot(token: a.token.value)
+        let report = try s.clickAt(token: a.token.value, screenshotID: shot.id, x: 40, y: 20)
+        #expect(report.delivered)
+        // 缺一帧就没有资格下否定结论。
+        #expect(report.verificationState == .unknown)
+        #expect(report.verificationState != .refuted)
+        #expect(!report.verified)
+    }
+
+    /// 三帧全部可比且都没有光标形态，才允许 refuted。
+    @Test func caretRefutationHoldsWhenAllFramesAreComparable() throws {
+        let r = ScriptedReader()
+        let s = DesktopSession(reader: r, settle: Clock().settle)
+        r.tree = Self.textWindowTree()
+        let a = try read(s)
+        let blank = Self.windowPNG()
+        r.captureScript = [
+            .success(Self.capture(blank)), .success(Self.capture(blank)),
+            .success(Self.capture(blank)), .success(Self.capture(blank)),
+        ]
+        let shot = try s.captureScreenshot(token: a.token.value)
+        let report = try s.clickAt(token: a.token.value, screenshotID: shot.id, x: 40, y: 20)
+        #expect(report.delivered)
+        #expect(report.verificationState == .refuted)
+        #expect(report.verificationReason == .postconditionAbsent)
+        #expect(!report.verified)
+    }
+
     /// 文本落点：同一元素在点击前后的 AXSelectedTextRange 变了 → 命中。
     /// 直接证据优先于像素代理判据（caret_pixels）。
     @Test func textLandingSelectionChangeIsVerified() throws {

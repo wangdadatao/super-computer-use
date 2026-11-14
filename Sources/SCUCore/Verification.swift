@@ -102,6 +102,14 @@ public enum Verification {
         return .init(state: .unknown, reason: .targetNotVisible)
     }
 
+    /// 坐标动作实际走的判据。两者的可比条件不同：像素看窗口几何，选区只看 AX 读数。
+    public enum CoordinateJudge: String, Sendable, Equatable {
+        /// 同一元素的 `AXSelectedTextRange` 前后比较。窗口位置/缩放不影响它。
+        case selection = "selection_changed"
+        /// 落点所在行的像素形状。窗口挪动、缩放、换尺寸都会让它不可比。
+        case pixels = "caret_pixels"
+    }
+
     /// 坐标动作的判定输入。`readablePostcondition == false` 覆盖非文本落点、`scroll_at` 与 `drag`：
     /// 它们没有声明的可读谓词，结论固定是 unknown + `no_readable_postcondition`。
     public struct CoordinateObservation: Sendable, Equatable {
@@ -121,13 +129,13 @@ public enum Verification {
         public var landingStillReadable: Bool?
         /// 判据结果：true 观察到、false 为假、nil 判不了。
         public var postcondition: Bool?
-        /// 观察到的后置条件种类（`selection_changed` / `caret_pixels`）。
-        public var kind: String?
+        /// 这次观察走的判据。`nil` 表示还没走到任何判据。
+        public var judge: CoordinateJudge?
 
         public init(
             readablePostcondition: Bool, observed: Bool, baselineAvailable: Bool,
             treeTruncated: Bool, geometryChanged: Bool, screenshotAvailable: Bool,
-            landingStillReadable: Bool?, postcondition: Bool?, kind: String?
+            landingStillReadable: Bool?, postcondition: Bool?, judge: CoordinateJudge?
         ) {
             self.readablePostcondition = readablePostcondition
             self.observed = observed
@@ -137,7 +145,7 @@ public enum Verification {
             self.screenshotAvailable = screenshotAvailable
             self.landingStillReadable = landingStillReadable
             self.postcondition = postcondition
-            self.kind = kind
+            self.judge = judge
         }
     }
 
@@ -146,14 +154,19 @@ public enum Verification {
             return .init(state: .unknown, reason: .noReadablePostcondition)
         }
         guard o.observed else { return .init(state: .unknown, reason: .observationFailed) }
-        guard !o.geometryChanged else { return .init(state: .unknown, reason: .geometryChanged) }
+        // 窗口几何变化只让**像素**判据不可比。选区读数来自 AX，与窗口位置/缩放无关；
+        // 把它当全局门禁会把可确认的选区变化和可确认的“选区没变”一并降级成
+        // unknown（双向劫持），等于用无关的证据否掉一条能判的判据。
+        if o.judge == .pixels, o.geometryChanged {
+            return .init(state: .unknown, reason: .geometryChanged)
+        }
         if o.postcondition == true {
             // 没有判据名就不算 verified：`verifiedBy != nil ⇔ verified` 由这里保证。
             // verified 只看判据自己的前后读数，不吃树的基线：选区/光标是独立证据。
-            guard let kind = o.kind else {
+            guard let judge = o.judge else {
                 return .init(state: .unknown, reason: .observationFailed)
             }
-            return .init(state: .verified, by: kind)
+            return .init(state: .verified, by: judge.rawValue)
         }
         // 下否定结论要求整段观察没有缺口：基线在、事后读取没截断。
         if o.postcondition == false {

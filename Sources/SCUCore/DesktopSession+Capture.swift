@@ -295,8 +295,8 @@ extension DesktopSession {
         let landedOnText = probe?.rangeBefore != nil
         /// 判据结果：true 观察到后置条件、false 为假、nil 判不了。
         var postcondition: Bool?
-        /// 观察到的后置条件种类。
-        var kind: String?
+        /// 这次观察实际走的判据（选区 / 像素）。
+        var judge: Verification.CoordinateJudge?
         /// 落点元素在事后是否仍可读。
         var landingStillReadable: Bool?
         // 落点是否落在文本元素上：选区判据之外只算一次，两条路径与判定都要用。
@@ -315,7 +315,7 @@ extension DesktopSession {
             } else if let after = probe.rangeAfter {
                 if after != before {
                     postcondition = true
-                    kind = "selection_changed"
+                    judge = .selection
                 } else {
                     postcondition = false
                     verifiedNote = "点击后同一元素的选区没有变化（\(before)）。"
@@ -373,7 +373,7 @@ extension DesktopSession {
                     }
                     if sawCaret == true {
                         postcondition = true
-                        kind = "caret_pixels"
+                        judge = .pixels
                     } else if comparable {
                         postcondition = false
                     } else {
@@ -394,7 +394,7 @@ extension DesktopSession {
                 baselineAvailable: !baseline.truncated, treeTruncated: truncated,
                 geometryChanged: geometryChanged, screenshotAvailable: screenshotAvailable,
                 landingStillReadable: landingStillReadable, postcondition: postcondition,
-                kind: kind))
+                judge: judge))
         var report = CoordinateReport(
             pid: r.pid, delivered: true, verified: false, verifiedBy: nil,
             landingRole: probe?.role, selectionBefore: probe?.rangeBefore,

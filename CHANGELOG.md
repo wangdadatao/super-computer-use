@@ -46,6 +46,10 @@
 
 ### 修复
 
+- **窗口几何变化不再连坐选区判据。** `geometry_changed` 只说明截图不可比，此前却当成
+  坐标判据的全局门禁：窗口挪动或缩放时，能确认的 `selection_changed` 与能确认的
+  “选区没变”都被降级成 `unknown`。现在这条门禁只作用于像素判据（`caret_pixels`），
+  选区读数来自 AX、与窗口几何无关，照常判 `verified` / `refuted`。
 - **坐标点击能证明命中。** 文本落点不再靠像素猜：点击前记下落点元素的 AX 引用与
   `AXSelectedTextRange`，点击后只读**同一个引用**，选区变了 → `verified=true`、
   `verifiedBy=selection_changed`；元素被应用重建或读不到选区时如实 `verified=false`，

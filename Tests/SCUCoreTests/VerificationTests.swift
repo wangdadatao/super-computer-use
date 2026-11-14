@@ -37,7 +37,7 @@ import Testing
 
     static func allCoordinateObservations() -> [Verification.CoordinateObservation] {
         let flags: [Bool?] = [true, false, nil]
-        let kinds: [String?] = ["selection_changed", "caret_pixels", nil]
+        let judges: [Verification.CoordinateJudge?] = [.selection, .pixels, nil]
         var out: [Verification.CoordinateObservation] = []
         for readable in [true, false] {
             for observed in [true, false] {
@@ -47,7 +47,7 @@ import Testing
                             for screenshot in [true, false] {
                                 for landing in flags {
                                     for met in flags {
-                                        for kind in kinds {
+                                        for judge in judges {
                                             out.append(
                                                 .init(
                                                     readablePostcondition: readable,
@@ -57,7 +57,7 @@ import Testing
                                                     geometryChanged: geometry,
                                                     screenshotAvailable: screenshot,
                                                     landingStillReadable: landing,
-                                                    postcondition: met, kind: kind))
+                                                    postcondition: met, judge: judge))
                                         }
                                     }
                                 }
@@ -247,14 +247,14 @@ import Testing
         func coordinate(
             readable: Bool = true, observed: Bool = true, baseline: Bool = true,
             truncated: Bool = false, geometry: Bool = false, screenshot: Bool = true,
-            landing: Bool? = nil, met: Bool? = nil, kind: String? = nil
+            landing: Bool? = nil, met: Bool? = nil, judge: Verification.CoordinateJudge? = nil
         ) -> VerificationVerdict {
             Verification.coordinate(
                 .init(
                     readablePostcondition: readable, observed: observed,
                     baselineAvailable: baseline, treeTruncated: truncated,
                     geometryChanged: geometry, screenshotAvailable: screenshot,
-                    landingStillReadable: landing, postcondition: met, kind: kind))
+                    landingStillReadable: landing, postcondition: met, judge: judge))
         }
 
         // refuted：已收敛、目标仍在、字段未变。
@@ -274,7 +274,7 @@ import Testing
         #expect(coordinate(readable: false).reason == .noReadablePostcondition)
         #expect(coordinate(readable: false, observed: false).reason == .noReadablePostcondition)
         #expect(coordinate(observed: false).reason == .observationFailed)
-        #expect(coordinate(geometry: true).reason == .geometryChanged)
+        #expect(coordinate(geometry: true, judge: .pixels).reason == .geometryChanged)
         #expect(coordinate(landing: false).reason == .targetNotVisible)
         #expect(coordinate(baseline: false).reason == .baselineUnavailable)
         #expect(coordinate(screenshot: false).reason == .screenshotUnavailable)
@@ -282,9 +282,30 @@ import Testing
         #expect(coordinate(baseline: false, met: false).reason == .baselineUnavailable)
         #expect(coordinate(truncated: true, met: false).reason == .treeTruncated)
         // 判据为真且带判据名才是 verified。
-        #expect(coordinate(met: true, kind: "caret_pixels").state == .verified)
-        #expect(coordinate(met: true, kind: "caret_pixels").by == "caret_pixels")
+        #expect(coordinate(met: true, judge: .pixels).state == .verified)
+        #expect(coordinate(met: true, judge: .pixels).by == "caret_pixels")
         #expect(coordinate(met: true).state == .unknown)
+    }
+
+    // MARK: - 几何变化只否定像素判据，不得连坐选区判据
+
+    @Test func geometryChangeOnlyInvalidatesThePixelJudge() {
+        func coordinate(
+            geometry: Bool, met: Bool, judge: Verification.CoordinateJudge?
+        ) -> VerificationVerdict {
+            Verification.coordinate(
+                .init(
+                    readablePostcondition: true, observed: true, baselineAvailable: true,
+                    treeTruncated: false, geometryChanged: geometry, screenshotAvailable: !geometry,
+                    landingStillReadable: true, postcondition: met, judge: judge))
+        }
+        // 选区判据读 AX：窗口挪了、缩了都不影响这条读数，两个方向都要保住。
+        #expect(coordinate(geometry: true, met: true, judge: .selection).state == .verified)
+        #expect(coordinate(geometry: true, met: true, judge: .selection).by == "selection_changed")
+        #expect(coordinate(geometry: true, met: false, judge: .selection).state == .refuted)
+        // 像素判据确实不可比。
+        #expect(coordinate(geometry: true, met: true, judge: .pixels).reason == .geometryChanged)
+        #expect(coordinate(geometry: true, met: false, judge: .pixels).state == .unknown)
     }
 
     // MARK: - ⑥ treeChanged == true 不蕴含 verified
