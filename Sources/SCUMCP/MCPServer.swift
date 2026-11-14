@@ -117,7 +117,9 @@ public final class MCPServer {
         用 press_key 发送按键或组合键，用 set_value 直接写值。\
         典型流程：list_apps 取得 pid，get_ax_state 读取元素表（标题行有令牌），再用 click / type_text / press_key / set_value（token 加 handle 或 label）。\
         需要看界面时用 get_screenshot（需要屏幕录制权限；不修改内容，但会激活并 raise 目标窗口）；图上会叠加与元素表一致的 [a] 标签。\
-        动作前会核对目标仍是读取时的那个，不是就拒绝并告诉你原因；点击后会报告观察到的效果，\
+        动作前会核对目标仍是读取时的那个，不是就拒绝并告诉你原因；点击后会报告观察到的效果：\
+        verificationState 为 verified 表示观察到声明的后置条件，refuted 表示该后置条件为假（只否定这一条，\
+        不证明界面外没有副作用），unknown 表示判不了、不等于成功（原因见 verificationReason）。\
         结构变化时令牌作废需重读，"疑似空操作"需要你核实。终端、脚本运行器、密码管理器、系统设置、Cursor 等属于拒绝类目，\
         拒绝不可协商，请让用户自己完成。如果服务以应用允许列表启动，列表外的应用会返回 app_not_authorized；\
         不要重试或换相近应用，让用户调整 --allow-app / --allow-app-file 并重启服务。\

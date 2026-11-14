@@ -40,7 +40,7 @@ public struct CoordinateReport: Sendable {
     public var landingElementValid: Bool?
     /// 本次投递的点击次数（`mouseEventClickState`）；没有探针时为 nil。
     public var clickCount: Int?
-    /// 未验证/无法判断时的人类可读原因。
+    /// `refuted` / `unknown` 时的人类可读细节（例如为什么没走成哪条判据）。
     public var verifiedNote: String?
     public var observed: Bool
     public var treeChanged: Bool?
