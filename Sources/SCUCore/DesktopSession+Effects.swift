@@ -174,7 +174,7 @@ extension DesktopSession {
             .init(
                 observed: report.observed, converged: report.converged,
                 baselineAvailable: !pre.truncated, truncated: settled.truncated,
-                targetResolved: report.targetChanged, stateChanged: stateChanged))
+                targetChanged: report.targetChanged, stateChanged: stateChanged))
         report.apply(verdict)
         return report
     }

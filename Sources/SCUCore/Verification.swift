@@ -67,20 +67,20 @@ public enum Verification {
         public var baselineAvailable: Bool
         /// 事后读取被截断。
         public var truncated: Bool
-        /// 目标是否仍在原路径上。nil 表示判不了。
-        public var targetResolved: Bool?
+        /// 目标是否已离开原路径（被替换/移除）。nil 表示判不了。
+        public var targetChanged: Bool?
         /// 同一节点自身字段是否变了（目标仍在路径上时才看）。
         public var stateChanged: Bool
 
         public init(
             observed: Bool, converged: Bool, baselineAvailable: Bool, truncated: Bool,
-            targetResolved: Bool?, stateChanged: Bool
+            targetChanged: Bool?, stateChanged: Bool
         ) {
             self.observed = observed
             self.converged = converged
             self.baselineAvailable = baselineAvailable
             self.truncated = truncated
-            self.targetResolved = targetResolved
+            self.targetChanged = targetChanged
             self.stateChanged = stateChanged
         }
     }
@@ -94,9 +94,9 @@ public enum Verification {
         guard !o.truncated else { return .init(state: .unknown, reason: .treeTruncated) }
         // 没稳定就没有资格下否定结论；已见变化也不能算证明（判据要求同一份稳定读数）。
         guard o.converged else { return .init(state: .unknown, reason: .notConverged) }
-        if o.targetResolved == true { return .init(state: .verified, by: "target_changed") }
+        if o.targetChanged == true { return .init(state: .verified, by: "target_changed") }
         if o.stateChanged { return .init(state: .verified, by: "target_state") }
-        if o.targetResolved == false {
+        if o.targetChanged == false {
             return .init(state: .refuted, reason: .postconditionAbsent)
         }
         return .init(state: .unknown, reason: .targetNotVisible)

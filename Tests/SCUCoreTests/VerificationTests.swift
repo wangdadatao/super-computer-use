@@ -13,19 +13,19 @@ import Testing
     // MARK: - 输入穷举
 
     static func allActionObservations() -> [Verification.ActionObservation] {
-        let resolvedOptions: [Bool?] = [true, false, nil]
+        let targetChangedOptions: [Bool?] = [true, false, nil]
         var out: [Verification.ActionObservation] = []
         for observed in [true, false] {
             for converged in [true, false] {
                 for baseline in [true, false] {
                     for truncated in [true, false] {
-                        for resolved in resolvedOptions {
+                        for targetChangedValue in targetChangedOptions {
                             for changed in [true, false] {
                                 out.append(
                                     .init(
                                         observed: observed, converged: converged,
                                         baselineAvailable: baseline, truncated: truncated,
-                                        targetResolved: resolved, stateChanged: changed))
+                                        targetChanged: targetChangedValue, stateChanged: changed))
                             }
                         }
                     }
@@ -233,12 +233,12 @@ import Testing
     @Test func reasonsFollowTheDeclaredTable() {
         func action(
             observed: Bool = true, converged: Bool = true, baseline: Bool = true,
-            truncated: Bool = false, resolved: Bool? = false, changed: Bool = false
+            truncated: Bool = false, targetChanged: Bool? = false, changed: Bool = false
         ) -> VerificationVerdict {
             Verification.action(
                 .init(
                     observed: observed, converged: converged, baselineAvailable: baseline,
-                    truncated: truncated, targetResolved: resolved, stateChanged: changed))
+                    truncated: truncated, targetChanged: targetChanged, stateChanged: changed))
         }
         func coordinate(
             readable: Bool = true, observed: Bool = true, baseline: Bool = true,
@@ -261,7 +261,7 @@ import Testing
         #expect(action(baseline: false).reason == .baselineUnavailable)
         #expect(action(truncated: true).reason == .treeTruncated)
         #expect(action(converged: false).reason == .notConverged)
-        #expect(action(resolved: nil).reason == .targetNotVisible)
+        #expect(action(targetChanged: nil).reason == .targetNotVisible)
         // 截断 / 未收敛时不得下否定结论。
         #expect(action(truncated: true).state == .unknown)
         #expect(action(converged: false).state == .unknown)

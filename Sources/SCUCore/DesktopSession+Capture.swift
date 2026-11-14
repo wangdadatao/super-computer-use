@@ -306,7 +306,11 @@ extension DesktopSession {
                         guard let again = try? reader.captureWindow(target: boundTarget),
                             again.width == after.width, again.height == after.height,
                             again.windowFrame == after.windowFrame
-                        else { continue }
+                        else {
+                            // 补拍失败或几何变了：这一帧不可比，不能当成“没有光标”。
+                            comparable = false
+                            continue
+                        }
                         if let seen = ScreenshotDiff.caretAppeared(
                             before: baseline.png, after: again.png, at: point, scale: binding.scale)
                         {
