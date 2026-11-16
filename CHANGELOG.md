@@ -4,7 +4,7 @@
 0.x 阶段不保证向后兼容，线协议版本单独记录在
 [docs/interfaces/native_wire_protocol.md](docs/interfaces/native_wire_protocol.md)。
 
-## Unreleased
+## 0.5.2 — 2026-11-16
 
 ### 新增
 
@@ -42,14 +42,19 @@
   原生层的 `window_not_found` 在坐标动作的复核点翻成 `stale_geometry/window_gone`；
   `get_screenshot` 仍报 `window_not_found`。MCP 与 CLI 在错误首行后追加 `details: k=v` 一行。
 
-## 0.5.1 — 2026-11-04
-
 ### 修复
 
 - **窗口几何变化不再连坐选区判据。** `geometry_changed` 只说明截图不可比，此前却当成
   坐标判据的全局门禁：窗口挪动或缩放时，能确认的 `selection_changed` 与能确认的
   “选区没变”都被降级成 `unknown`。现在这条门禁只作用于像素判据（`caret_pixels`），
   选区读数来自 AX、与窗口几何无关，照常判 `verified` / `refuted`。
+- **插入光标的补拍帧必须比对 `scale`。** 判 `refuted` 要求三帧都可用且可比；先前补拍只比
+  位置与尺寸，缩放变化时坐标映射已错位却仍被当成可比帧，可能把“光标位置没变”误判为成立。
+
+## 0.5.1 — 2026-11-04
+
+### 修复
+
 - **坐标点击能证明命中。** 文本落点不再靠像素猜：点击前记下落点元素的 AX 引用与
   `AXSelectedTextRange`，点击后只读**同一个引用**，选区变了 → `verified=true`、
   `verifiedBy=selection_changed`；元素被应用重建或读不到选区时如实 `verified=false`，

@@ -83,10 +83,15 @@ about reference implementations are registered with sources in
 
 ## Status
 
-Version 0.5.1 (2026-11-04); window identity shipped in 0.5.0; coordinate-click verification and screenshot scale fixed in 0.5.1. Verified so far:
+Version 0.5.2 (2026-11-16); window identity shipped in 0.5.0, coordinate-click verification and screenshot scale in 0.5.1, and three-valued action verification, ambiguous window titles and the keyboard focus gate in 0.5.2. Verified so far:
 
-- 157 automated tests, plus docs structure/link/anchor checks and mermaid rendering;
+- 369 automated tests across 4 targets, 22 of them on a real-app fixture; plus docs structure/link/anchor checks and mermaid rendering;
 - snapshot tokens and effect summaries hold on a controlled fixture (0/8 false rejections);
+- three-valued verification checked on real TextEdit: a selection change is `verified` 12/12, an unchanged selection is `refuted`;
+- with an unsaved-changes sheet in front, `type_text` reports `focus_not_established`, `keys_posted=0`, and the text stays unchanged;
+- addressing a window by an ambiguous title reports `ambiguous_reference` with candidates; `window_id` works;
+- clicking a screenshot after its window closed reports `stale_geometry` with `reason=window_gone`, no event landing elsewhere;
+- wire protocol 14 against an old binary reports `protocol_version_mismatch` instead of silently dropping fields;
 - real-app runs on NetEase Cloud Music (CEF), TextEdit multi-window, Calculator and Edge;
 - 6 real tasks: 5 passed, 1 partially passed.
 
